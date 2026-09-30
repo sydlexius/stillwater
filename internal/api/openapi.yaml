@@ -271,6 +271,29 @@ components:
         note:
           type: string
           description: Platform-specific advisory note.
+    AIBlocklistStatus:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        source_host:
+          type: string
+          description: Host the list is downloaded from. Omitted when disabled.
+        loaded:
+          type: boolean
+        rules:
+          type: integer
+        last_fetch:
+          type: string
+          format: date-time
+          description: When the active list was downloaded.
+        last_checked:
+          type: string
+          format: date-time
+          description: When the last refresh attempt finished.
+        last_error:
+          type: string
+          description: Plain-language description of the last failure.
     Error:
       type: object
       properties:
@@ -16366,6 +16389,37 @@ paths:
                 $ref: "#/components/schemas/Error"
         "502":
           description: Failed to fetch backdrop from platform
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /images/ai-blocklist/status:
+    get:
+      tags: [Images]
+      summary: AI image blocklist status
+      operationId: aiBlocklistStatus
+      description: >
+        Administrator only. Reports the community list used by the "Filter AI
+        images" web-search switch: whether the download is enabled, the host it
+        comes from (never the full URL), whether a list is loaded, how many
+        rules it has, when it was last downloaded and last checked, and the last
+        error in plain words.
+      responses:
+        "200":
+          description: Current list status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIBlocklistStatus"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Administrator role required
           content:
             application/json:
               schema:
