@@ -23,6 +23,7 @@ flowchart TD
     js_test["JS Unit Tests"]
     lint["Lint Check"]
     lint_summary["Lint"]
+    prune_go_caches["Prune Stale Go Caches"]
     test["Test Shard"]
     test_summary["Test"]
 
@@ -51,6 +52,7 @@ flowchart TD
     changes --> lint
     changes --> lint_summary
     lint --> lint_summary
+    go_cache_primer --> prune_go_caches
     changes --> test
     changes --> test_summary
     test --> test_summary
