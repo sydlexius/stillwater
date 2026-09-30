@@ -286,7 +286,10 @@ components:
         last_fetch:
           type: string
           format: date-time
-          description: When the active list was downloaded.
+          description: >
+            When the active list was last downloaded, or the cache file's
+            modification time when the active list was loaded from disk at
+            startup.
         last_checked:
           type: string
           format: date-time
