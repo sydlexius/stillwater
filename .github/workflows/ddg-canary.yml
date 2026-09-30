@@ -1,0 +1,83 @@
+name: DuckDuckGo Canary
+
+# Weekly live check of the DuckDuckGo image-search adapter (#3230). It makes
+# EXACTLY ONE live search through the production adapter via the opt-in
+# TestSearchImagesLive and never retries: a refused request penalizes the
+# runner's IP, so a retry only fails again and hides the original cause.
+# Never runs on pull_request and is not part of `go test ./...` (the test is
+# gated on SW_DDG_LIVE=1) or scripts/pre-push-gate.sh.
+
+on:
+  schedule:
+    - cron: '17 6 * * 1' # Mondays 06:17 UTC
+  workflow_dispatch:
+    inputs:
+      force_failure:
+        description: 'Require an unreachable result count so the run fails and files the tracking issue (still one live search)'
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    if: github.ref == 'refs/heads/main'
+    name: Live search
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write # only to open/comment on the single tracking issue
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Run one live search
+        env:
+          SW_DDG_LIVE: '1'
+          SW_DDG_LIVE_MIN_RESULTS: ${{ inputs.force_failure && '1000' || '20' }}
+        run: |
+          set +e
+          go test -count=1 -v -run '^TestSearchImagesLive$' ./internal/provider/duckduckgo/ 2>&1 | tee canary.log
+          status=${PIPESTATUS[0]}
+          # A skip (env gate not honored) must not read as a pass.
+          if [ "$status" -eq 0 ] && ! grep -q -- '--- PASS: TestSearchImagesLive' canary.log; then
+            echo 'DDG-CANARY: live test did not run (skipped or not found)' >> canary.log
+            status=1
+          fi
+          exit "$status"
+
+      - name: Open or update the tracking issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_TITLE: 'DuckDuckGo image search canary is failing'
+        run: |
+          reason=$(grep -m1 'DDG-CANARY:' canary.log | sed 's/^.*DDG-CANARY: //' || true)
+          [ -n "$reason" ] || reason='live test failed before classification (see run log)'
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          printf 'Weekly DuckDuckGo canary failed.\n\nReason: %s\n\nRun: %s\n' "$reason" "$run_url" > body.md
+          existing=$(gh issue list --state all --label ddg-canary --limit 1000 --json number,title,state,createdAt \
+            --jq '[.[] | select(.title == env.ISSUE_TITLE)] | sort_by(.createdAt) | last | select(. != null) | "\(.number) \(.state)"')
+          if [ -n "$existing" ]; then
+            number=${existing% *}
+            # A closed tracking issue is reopened, never duplicated.
+            if [ "${existing#* }" = CLOSED ]; then gh issue reopen "$number"; fi
+            existing=$number
+            gh issue comment "$existing" --body-file body.md
+          else
+            # The milestone must name an OPEN milestone or creation fails.
+            gh issue create --title "$ISSUE_TITLE" --body-file body.md \
+              --label bug --label providers --label images --label ddg-canary \
+              --milestone 'Image Search & Artwork UI'
+          fi

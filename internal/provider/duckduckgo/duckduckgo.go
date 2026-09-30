@@ -85,6 +85,11 @@ type Adapter struct {
 	logger  *slog.Logger
 	baseURL string
 	htmlURL string
+
+	// noVQDFallback skips the /html/ POST fallback in getVQDToken. Only the
+	// live canary sets it (#3230), so it makes exactly one search's requests
+	// and reports the real first-stage error. Production leaves it false.
+	noVQDFallback bool
 }
 
 // New creates a DuckDuckGo image search adapter with default URLs.
@@ -241,6 +246,10 @@ func (a *Adapter) getVQDToken(ctx context.Context, client *http.Client, query st
 	token, err := a.getVQDFromMainPage(ctx, client, query)
 	if err == nil && token != "" {
 		return token, nil
+	}
+
+	if a.noVQDFallback {
+		return "", err
 	}
 
 	a.logger.Debug("main page VQD extraction failed, trying HTML endpoint",
