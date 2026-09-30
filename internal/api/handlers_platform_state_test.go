@@ -336,3 +336,50 @@ func TestHandlePullMetadata_ConcurrentPullsKeepBothGenres(t *testing.T) {
 		}
 	}
 }
+
+// TestHandlePullMetadata_FailedReReadSkipsGenres makes the locked re-read
+// fail by deleting the artist while the platform call is in flight (after the
+// handler's first load). The pull must skip genres rather than write from the
+// stale snapshot: on a deleted row that write would "succeed" as a no-op and
+// report "genres" as updated.
+func TestHandlePullMetadata_FailedReReadSkipsGenres(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, _ := testRouterWithHistory(t)
+	ctx := context.Background()
+	a := addTestArtist(t, artistSvc, "Vanishing Artist")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if err := artistSvc.Delete(ctx, a.ID); err != nil {
+			t.Errorf("deleting artist mid-pull: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"Name":"x","Genres":["Folk"],"Tags":[],"ProviderIds":{},"ImageTags":{},"BackdropImageTags":[],"LockedFields":[]}`)
+	}))
+	t.Cleanup(srv.Close)
+	conn := &connection.Connection{Name: "Emby", Type: connection.TypeEmby, URL: srv.URL, APIKey: "k",
+		Emby: &connection.EmbyConfig{PlatformUserID: "u"}, Enabled: true}
+	if err := r.connectionService.Create(ctx, conn); err != nil {
+		t.Fatalf("creating connection: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(ctx, a.ID, conn.ID, "emby-1"); err != nil {
+		t.Fatalf("setting platform id: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/pull?connection_id="+conn.ID, nil)
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+	r.handlePullMetadata(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Updated []any `json:"updated"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if slices.Contains(resp.Updated, any("genres")) {
+		t.Errorf("updated = %v, want genres absent after a failed re-read", resp.Updated)
+	}
+	if _, err := artistSvc.GetByID(ctx, a.ID); err == nil {
+		t.Error("artist still exists; the test did not make the re-read fail")
+	}
+}
