@@ -546,3 +546,96 @@ func TestNextWait(t *testing.T) {
 		t.Errorf("wait %v not capped at Interval", wait)
 	}
 }
+
+func TestStoreSourceHostDefaultStoreAndLastChecked(t *testing.T) {
+	for url, want := range map[string]string{
+		"https://lists.example/path/x.txt?token=secret": "lists.example",
+		"://bad":                                 "",
+		"https://user:pass@lists.example:8443/x": "lists.example:8443",
+	} {
+		if got := NewStore(Options{URL: url}).SourceHost(); got != want {
+			t.Errorf("SourceHost(%q) = %q, want %q", url, got, want)
+		}
+	}
+	if got := NewStore(Options{URL: "https://lists.example/x", Disabled: true}).SourceHost(); got != "" {
+		t.Errorf("disabled SourceHost = %q, want empty", got)
+	}
+	SetDefault(NewStore(Options{}))
+	t.Cleanup(func() { SetDefault(nil) })
+	if DefaultStore() != defaultStore.Load() || DefaultStore() == nil {
+		t.Error("DefaultStore must return the installed store")
+	}
+	ls := newListServer(t, http.StatusInternalServerError, "")
+	s := ls.store("", time.Hour)
+	if !s.Status().LastChecked.IsZero() {
+		t.Fatal("LastChecked must be zero before any attempt")
+	}
+	_ = s.Refresh(context.Background())
+	if s.Status().LastChecked.IsZero() {
+		t.Error("a failed attempt must still stamp LastChecked")
+	}
+}
+
+func TestStoreRefreshIfDue(t *testing.T) {
+	ls := newListServer(t, http.StatusOK, readSample(t))
+	s := ls.store("", time.Hour)
+	ctx := context.Background()
+	if ran, _, err := s.RefreshIfDue(ctx, time.Minute); !ran || err != nil {
+		t.Fatalf("first RefreshIfDue = ran %v, err %v; want a clean run", ran, err)
+	}
+	if ran, wait, err := s.RefreshIfDue(ctx, time.Minute); ran || err != nil || wait <= 0 || wait > time.Minute {
+		t.Errorf("second RefreshIfDue = ran %v, wait %v, err %v; want a refusal with a wait up to 1m", ran, wait, err)
+	}
+	if n := ls.hits.Load(); n != 1 {
+		t.Errorf("list server got %d requests, want 1", n)
+	}
+	if ran, _, _ := s.RefreshIfDue(ctx, 0); !ran {
+		t.Error("a zero gap must always run")
+	}
+}
+
+// A disabled store must never fetch: NewStore swaps an empty URL for the
+// upstream SourceURL, so only an explicit check keeps Refresh off the network.
+func TestStoreDisabledNeverFetches(t *testing.T) {
+	ls := newListServer(t, http.StatusOK, readSample(t))
+	s := NewStore(Options{URL: ls.URL, Client: ls.Client(), Disabled: true})
+	if err := s.Refresh(context.Background()); err == nil {
+		t.Error("Refresh on a disabled store must return an error")
+	}
+	if ran, _, err := s.RefreshIfDue(context.Background(), 0); err == nil {
+		t.Errorf("RefreshIfDue on a disabled store = ran %v, err nil; want an error", ran)
+	}
+	if n := ls.hits.Load(); n != 0 {
+		t.Errorf("list server got %d requests, want 0", n)
+	}
+}
+
+// RefreshIfDue must not queue behind a refresh already running (up to the
+// client timeout); it reports ran=false at once.
+func TestStoreRefreshIfDueDoesNotWaitForRunningRefresh(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(unblock)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(started)
+		<-release
+		_, _ = w.Write([]byte(readSample(t)))
+	}))
+	t.Cleanup(srv.Close)
+	s := NewStore(Options{URL: srv.URL, Client: srv.Client()})
+	done := make(chan struct{})
+	go func() { defer close(done); _ = s.Refresh(context.Background()) }()
+	<-started
+	res := make(chan bool, 1)
+	go func() { ran, _, _ := s.RefreshIfDue(context.Background(), time.Minute); res <- ran }()
+	select {
+	case ran := <-res:
+		if ran {
+			t.Error("RefreshIfDue ran while another refresh was in flight")
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("RefreshIfDue blocked behind a running refresh")
+	}
+	unblock()
+	<-done
+}
