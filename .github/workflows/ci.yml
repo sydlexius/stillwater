@@ -559,7 +559,47 @@ jobs:
       - name: Install Playwright browser binary (${{ matrix.engine }})
         run: npx playwright install ${{ matrix.engine }}
 
+      # apt .deb cache key: distro release (os-release) + image build
+      # (ImageVersion), so it self-invalidates when ubuntu-latest moves to
+      # Ubuntu 26 (2026-10-19). `pk` hashes the RESOLVED versions of the
+      # packages Playwright would install, so a package version bump changes the
+      # exact key (an exact hit is never re-saved, so without it a bump would be
+      # re-downloaded every run until the image changes). The index refresh here
+      # is tolerant (warns, never fails): the deps step repeats it strictly after the
+      # Chrome source is disabled (#3219). The restore-key prefix (engine+os)
+      # stays, so older entries still seed SHA-verified .debs.
+      - name: Compute apt cache key (${{ matrix.engine }})
+        id: apt-key
+        run: |
+          os=$(. /etc/os-release && echo "$ID-$VERSION_ID")
+          echo "os=$os" >> "$GITHUB_OUTPUT"
+          echo "img=${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+          sudo apt-get update >/dev/null 2>&1 || echo "::warning::apt-get update failed while computing the cache key"
+          dry=$(npx playwright install-deps --dry-run ${{ matrix.engine }} || true)
+          pkgs=$(printf '%s\n' "$dry" | sed -nE 's/^  ([a-z0-9][a-z0-9.+:-]*)$/\1/p' | tr '\n' ' ')
+          inst=""
+          # shellcheck disable=SC2086 # word-splitting the package list is intended
+          [ -z "$pkgs" ] || inst=$(apt-get install -s --no-install-recommends $pkgs | grep '^Inst' || true)
+          pk=none
+          [ -z "$inst" ] || pk=$(printf '%s\n' "$inst" | sort | sha256sum | cut -c1-12)
+          echo "pk=$pk" >> "$GITHUB_OUTPUT"
+          echo "apt cache key parts: os=$os image=${ImageVersion:-unknown} pk=$pk"
+
+      # Persist the .debs ACROSS PRs: every run restores, only main pushes save
+      # (a PR-ref cache is invisible to other PRs). apt does NOT hash-check a
+      # .deb already in its archive, so the deps step seeds only .debs whose
+      # SHA256 matches the signed index (stale versions never match).
+      - name: Restore apt packages cache (${{ matrix.engine }})
+        id: apt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/playwright-apt/${{ matrix.engine }}
+          key: playwright-apt-${{ matrix.engine }}-${{ steps.apt-key.outputs.os }}-${{ steps.apt-key.outputs.img }}-${{ steps.apt-key.outputs.pk }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            playwright-apt-${{ matrix.engine }}-${{ steps.apt-key.outputs.os }}-
+
       - name: Install Playwright browser system dependencies (${{ matrix.engine }})
+        id: apt-deps
         # Always install OS-level deps (libnss3, libgbm, libdbus-glib for
         # firefox, etc.); they are OS packages, not part of the cached
         # browser archive. Scoped to this shard's own engine for the same
@@ -577,9 +617,23 @@ jobs:
         # only on a Linux runner and cannot be verified anywhere else, so the
         # timeout is removed rather than made more elaborate.
         #
+        # THE ONE BOUNDED EXCEPTION (2026-09-30 incident): the dependency .debs
+        # are prefetched by `sudo timeout -k 10 150 apt-get ...`, with timeout
+        # as the PARENT of apt-get: timeout's direct child is apt-get, which
+        # holds the dpkg lock and releases it when killed (the #3084/#3219
+        # orphaned-lock shape came from wrapping npx, not apt-get).
+        # Why: azure.archive.ubuntu.com crawled at 50-100 KB/s and the ~52 MB
+        # firefox set (chromium ~35 MB) outran the old 8-minute step limit
+        # twice. APT::Acquire::Retries does not help a slow-but-moving fetch.
+        # apt resumes partial downloads, so each bounded attempt keeps progress
+        # (4 x 150 s; a mirror slower than ~90 KB/s can still exhaust this).
+        # The .debs are also cached across PRs (restore/save steps around this
+        # one), so the mirror is only hit on a cache miss.
+        #
         # What remains bounds the damage without orphaning anything:
-        #   - APT::Acquire::Retries makes apt itself retry a flaky mirror
-        #     in-process, which is where the transient faults actually are.
+        #   - APT::Acquire::Retries was meant to make apt retry in-process, but
+        #     the image's own apt config may override it, so do not rely on "3"
+        #     retries (the setting is tracked in #3300 and left untouched here).
         #   - DEBIAN_FRONTEND=noninteractive removes the prompt-wait class of
         #     hang entirely.
         #   - the job-level timeout-minutes below is the backstop for a genuine
@@ -588,13 +642,13 @@ jobs:
         # THE STEP REMAINS BLOCKING. The a11y job is a required check, and a11y
         # coverage that can be skipped is a11y coverage nobody has. Do not add
         # continue-on-error here.
-        timeout-minutes: 8
+        timeout-minutes: 12
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
           set -eu
-          # Let apt absorb a flaky mirror itself: retried in-process, so no
-          # child is ever killed and no dpkg lock is ever orphaned.
+          # Intended to make apt retry in-process (no child killed, no lock
+          # orphaned); probably ineffective on the current image, see #3300.
           echo 'APT::Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/99-ci-retries >/dev/null
 
           # Disable the runner image's Google Chrome apt source (#3219). We do
@@ -667,7 +721,74 @@ jobs:
             echo "note: no Google Chrome apt source found to disable (already absent)"
           fi
 
+          cache_dir="$HOME/.cache/playwright-apt/${{ matrix.engine }}"
+          mkdir -p "$cache_dir"
+          sudo apt-get update
+
+          # Seed the apt archive from the restored cache, but ONLY .debs whose
+          # SHA256 matches the signed index: apt checks just the size of a .deb
+          # already in the archive, so an unverified seed would install
+          # attacker-controlled bytes as root. Stale versions simply mismatch.
+          for f in "$cache_dir"/*.deb; do
+            [ -e "$f" ] || break
+            # shellcheck disable=SC2016 # dpkg-deb format string, not shell
+            meta=$(dpkg-deb -W --showformat='${Package}:${Architecture}=${Version}' "$f" 2>/dev/null) || continue
+            want=$(apt-cache show --no-all-versions "$meta" 2>/dev/null | sed -n 's/^SHA256: //p' | head -n1)
+            if [ -n "$want" ] && [ "$(sha256sum < "$f" | cut -d' ' -f1)" = "$want" ]; then
+              sudo cp "$f" /var/cache/apt/archives/
+            else
+              echo "skipping unverified cached package: $f"
+            fi
+          done
+
+          # Prefetch the exact package set Playwright will install. `--dry-run`
+          # (1.63) runs `apt-get install -s` and prints "Missing system
+          # dependencies (N):" followed by one "  <pkg>" line each, exiting 1
+          # when any are missing; it prints "All system dependencies are
+          # installed." (exit 0) otherwise. No Ubuntu version is hardcoded.
+          dry=$(npx playwright install-deps --dry-run ${{ matrix.engine }} || true)
+          echo "$dry"
+          if ! printf '%s\n' "$dry" | grep -q 'All system dependencies are installed'; then
+            pkgs=$(printf '%s\n' "$dry" | sed -nE 's/^  ([a-z0-9][a-z0-9.+:-]*)$/\1/p' | tr '\n' ' ')
+            if [ -z "$pkgs" ]; then
+              echo "::error::could not derive the package list from 'install-deps --dry-run' output"
+              exit 1
+            fi
+            for attempt in 1 2 3 4; do
+              # shellcheck disable=SC2086 # word-splitting the package list is intended
+              if sudo timeout -k 10 150 apt-get install -y --no-install-recommends --download-only $pkgs; then
+                break
+              fi
+              if [ "$attempt" -eq 4 ]; then
+                echo "::error::dependency download failed after 4 bounded attempts"
+                exit 1
+              fi
+              echo "download attempt $attempt timed out or failed; resuming"
+            done
+          fi
+
+          # Installs from the local archive populated above, then stage the
+          # archive into the user-owned cache dir for the save step.
           npx playwright install-deps ${{ matrix.engine }}
+          # Replace (not merge) so the cache holds only this run's archive.
+          rm -f "$cache_dir"/*.deb
+          # An empty archive is legitimate (everything already installed): report
+          # staged=false so the save step is skipped, never an empty cache. Real
+          # copy errors still fail the step.
+          if ls /var/cache/apt/archives/*.deb >/dev/null 2>&1; then
+            sudo cp /var/cache/apt/archives/*.deb "$cache_dir"/
+            sudo chown -R "$(id -u):$(id -g)" "$cache_dir"
+            echo "staged=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "staged=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Save apt packages cache (${{ matrix.engine }})
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true' && steps.apt-deps.outputs.staged == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/playwright-apt/${{ matrix.engine }}
+          key: playwright-apt-${{ matrix.engine }}-${{ steps.apt-key.outputs.os }}-${{ steps.apt-key.outputs.img }}-${{ steps.apt-key.outputs.pk }}-${{ hashFiles('package-lock.json') }}
 
       - name: Generate templ
         run: go tool templ generate
