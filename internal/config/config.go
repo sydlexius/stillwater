@@ -202,6 +202,9 @@ type RuleEngineConfig struct {
 // typo than an intent.
 const maxDecodeConcurrency = 64
 
+// defaultAIBlocklistURL mirrors aiblock.SourceURL (see ImageConfig.AIBlocklistURL).
+const defaultAIBlocklistURL = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/main/list_uBlacklist.txt"
+
 // ImageConfig holds image-processing execution settings.
 type ImageConfig struct {
 	// DecodeConcurrency bounds how many DECODED IMAGES may be live at once
@@ -225,6 +228,15 @@ type ImageConfig struct {
 	// image-decoding package; TestDecodeConcurrencyDefaultMatchesImagePackage
 	// fails if the two ever drift.
 	DecodeConcurrency int `yaml:"decode_concurrency" toml:"decode_concurrency" env:"SW_IMAGE_DECODE_CONCURRENCY" default:"2" desc:"Number of decoded images Stillwater keeps in memory at once across the whole process. Default 2. A slot is held for as long as the decoded image is in use, not merely while it is being decoded, and each one can hold up to 400 MB, so raising this raises the container memory peak proportionally and any mem_limit / GOMEMLIMIT must be raised with it. Requests arriving while every slot is busy wait up to 30 seconds and are then rejected rather than queuing without bound. Must be a positive integer no greater than 64; non-positive or non-numeric values are silently ignored, and a larger value is clamped to 64. When set from the environment, this value takes precedence over the saved setting."`
+
+	// AIBlocklistURL is where the AI-image blocklist used to filter web image
+	// search results is downloaded from (#2310). An explicitly empty value
+	// disables the download entirely, so a test harness or an
+	// offline install never reaches out to GitHub; loadFromEnv reads it with
+	// LookupEnv for that reason. Kept as a literal rather than referencing
+	// aiblock.SourceURL so internal/config does not import the provider tree;
+	// TestAIBlocklistURLDefaultMatchesSource fails if the two drift.
+	AIBlocklistURL string `yaml:"ai_blocklist_url" toml:"ai_blocklist_url" env:"SW_AI_BLOCKLIST_URL" default:"https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/main/list_uBlacklist.txt" desc:"Where the community AI-image blocklist used to filter web image search results is downloaded from. Stillwater fetches it at startup and once a day, and keeps the last good copy in the cache folder next to the database. Set it to an empty value to turn the download off; no list is then loaded."`
 }
 
 // Default returns a Config with sensible defaults.
@@ -270,6 +282,7 @@ func Default() *Config {
 		},
 		Image: ImageConfig{
 			DecodeConcurrency: 2,
+			AIBlocklistURL:    defaultAIBlocklistURL,
 		},
 	}
 }
@@ -424,6 +437,11 @@ func Load(path string) (*Config, error) {
 	if err := cfg.loadFromEnv(); err != nil {
 		return nil, fmt.Errorf("loading env: %w", err)
 	}
+
+	// Normalize once, after both overlays, so the file and env paths agree:
+	// a whitespace-only SW_AI_BLOCKLIST_URL or ai_blocklist_url disables the
+	// download exactly like an empty one.
+	cfg.Image.AIBlocklistURL = strings.TrimSpace(cfg.Image.AIBlocklistURL)
 
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
@@ -659,6 +677,13 @@ func (c *Config) loadFromEnv() error {
 	// intact; a present-but-empty value sets Enabled = false (original behavior).
 	if v, ok := os.LookupEnv("SW_BACKUP_ENABLED"); ok {
 		c.Backup.Enabled = v == "true" || v == "1"
+	}
+
+	// SW_AI_BLOCKLIST_URL: LookupEnv so present-but-empty DISABLES the
+	// blocklist download (the harness servers rely on this), while unset keeps
+	// the file/default value.
+	if v, ok := os.LookupEnv("SW_AI_BLOCKLIST_URL"); ok {
+		c.Image.AIBlocklistURL = v // trimmed in Load, with the file value
 	}
 
 	return nil

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -261,13 +262,93 @@ func TestDefaultFollowsInstalledStore(t *testing.T) {
 	if Default().MatchURL(blockedURL) {
 		t.Error("with no store, Default must block nothing")
 	}
+	if m, st := Snapshot(); st.Loaded || m.MatchURL(blockedURL) {
+		t.Error("with no store, Snapshot must be the empty matcher and not loaded")
+	}
 	ls := newListServer(t, http.StatusOK, readSample(t))
 	s := ls.store("", time.Hour)
 	SetDefault(s)
+	if _, st := Snapshot(); st.Loaded {
+		t.Error("installed but not refreshed: Snapshot must report not loaded")
+	}
 	if err := s.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if !Default().MatchURL(blockedURL) {
 		t.Error("Default must return the installed store's active matcher")
+	}
+	if m, st := Snapshot(); !st.Loaded || st.Rules == 0 || !m.MatchURL(blockedURL) {
+		t.Errorf("Snapshot status = %+v, want the installed store's loaded list and matcher", st)
+	}
+}
+
+// Disabled is reported through Status (before and after a load) so callers
+// can tell "turned off" from "not loaded yet".
+func TestStoreDisabledIsReported(t *testing.T) {
+	if NewStore(Options{}).Status().Disabled {
+		t.Error("a default store must not report disabled")
+	}
+	t.Cleanup(func() { SetDefault(nil) })
+	SetDefault(NewStore(Options{Disabled: true}))
+	if _, st := Snapshot(); !st.Disabled || st.Loaded {
+		t.Errorf("disabled store: Snapshot status = %+v, want Disabled and not loaded", st)
+	}
+}
+
+// Snapshot's contract (#2310 review F8): the matcher and status it returns
+// describe ONE list. Readers race a writer that installs fresh stores and
+// refreshes them; a loaded status must never pair with the empty matcher (or
+// an unloaded one with a real matcher), and a loaded status's rule count must
+// be the matcher's. Bounded to ~1s; a correct Snapshot never fails it.
+//
+// Coverage of both states is deterministic: the writer itself takes a
+// Snapshot after each phase (not loaded right after installing a fresh store,
+// loaded right after its Refresh) and asserts it. The racing readers only add
+// the concurrent consistency check, so scheduling can neither let the test
+// pass without exercising both states nor fail it when Snapshot is correct.
+func TestSnapshotMatcherAndStatusAgree(t *testing.T) {
+	ls := newListServer(t, http.StatusOK, readSample(t))
+	t.Cleanup(func() { SetDefault(nil) })
+	consistent := func(m *Matcher, st Status) bool {
+		return st.Loaded != (m == emptyMatcher) && (!st.Loaded || m.ruleCount() == st.Rules)
+	}
+	var stop atomic.Bool
+	var bad atomic.Int64
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for !stop.Load() {
+				if m, st := Snapshot(); !consistent(m, st) {
+					bad.Add(1)
+				}
+			}
+		}()
+	}
+	halt := func() { stop.Store(true); wg.Wait() }
+	phases := 0
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); phases++ {
+		s := ls.store("", time.Hour)
+		SetDefault(s)
+		if m, st := Snapshot(); st.Loaded || m != emptyMatcher {
+			halt()
+			t.Fatalf("fresh store: Snapshot status %+v (empty matcher: %v), want not loaded with the empty matcher", st, m == emptyMatcher)
+		}
+		if err := s.Refresh(context.Background()); err != nil {
+			halt()
+			t.Fatal(err)
+		}
+		if m, st := Snapshot(); !st.Loaded || !consistent(m, st) {
+			halt()
+			t.Fatalf("after Refresh: Snapshot status %+v with a %d-rule matcher, want loaded and matching", st, m.ruleCount())
+		}
+	}
+	halt()
+	if phases == 0 {
+		t.Fatal("the writer ran no phases")
+	}
+	if n := bad.Load(); n != 0 {
+		t.Fatalf("%d snapshots paired a matcher with a status describing a different list", n)
 	}
 }

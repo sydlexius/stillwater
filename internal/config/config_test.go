@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/provider/aiblock"
 )
 
 func TestDefault(t *testing.T) {
@@ -1717,5 +1719,79 @@ func TestEnsureScaffold_IncludesTLSSection(t *testing.T) {
 	// Round-trip: the scaffold itself must still parse.
 	if _, err := Load(path); err != nil {
 		t.Fatalf("Load after scaffold: %v", err)
+	}
+}
+
+// The config default (a literal, so internal/config does not import the
+// provider tree) and its documented default: tag must both equal
+// aiblock.SourceURL, or the env-var reference documents a URL never used.
+func TestAIBlocklistURLDefaultMatchesSource(t *testing.T) {
+	if got := Default().Image.AIBlocklistURL; got != aiblock.SourceURL {
+		t.Errorf("config default = %q, want aiblock.SourceURL %q", got, aiblock.SourceURL)
+	}
+	f, _ := reflect.TypeOf(ImageConfig{}).FieldByName("AIBlocklistURL")
+	if tag := f.Tag.Get("default"); tag != aiblock.SourceURL {
+		t.Errorf("default: tag = %q, want aiblock.SourceURL %q", tag, aiblock.SourceURL)
+	}
+}
+
+// SW_AI_BLOCKLIST_URL: unset keeps the default, set overrides (trimmed), and
+// present-but-empty DISABLES the download, which every harness server needs.
+func TestLoad_AIBlocklistURLEnv(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "absent.toml")
+	load := func(t *testing.T) string {
+		t.Helper()
+		cfg, err := Load(missing)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		return cfg.Image.AIBlocklistURL
+	}
+	t.Run("unset keeps the default", func(t *testing.T) {
+		t.Setenv("SW_AI_BLOCKLIST_URL", "x") // registers the restore
+		if err := os.Unsetenv("SW_AI_BLOCKLIST_URL"); err != nil {
+			t.Fatal(err)
+		}
+		if got := load(t); got != aiblock.SourceURL {
+			t.Errorf("unset: got %q, want %q", got, aiblock.SourceURL)
+		}
+	})
+	t.Run("set overrides", func(t *testing.T) {
+		t.Setenv("SW_AI_BLOCKLIST_URL", " https://mirror.example.org/list.txt ")
+		if got := load(t); got != "https://mirror.example.org/list.txt" {
+			t.Errorf("set: got %q", got)
+		}
+	})
+	t.Run("empty disables", func(t *testing.T) {
+		t.Setenv("SW_AI_BLOCKLIST_URL", "")
+		if got := load(t); got != "" {
+			t.Errorf("empty: got %q, want \"\" (download disabled)", got)
+		}
+	})
+}
+
+// The file path normalizes like the env path: a whitespace-only TOML
+// ai_blocklist_url disables the download, and a padded URL is trimmed.
+func TestLoad_AIBlocklistURLTOMLTrimmed(t *testing.T) {
+	clearSWEnv(t)
+	t.Setenv("SW_AI_BLOCKLIST_URL", "x") // registers the restore; then unset
+	if err := os.Unsetenv("SW_AI_BLOCKLIST_URL"); err != nil {
+		t.Fatal(err)
+	}
+	for body, want := range map[string]string{
+		"[image]\nai_blocklist_url = \"   \"\n":                                 "",
+		"[image]\nai_blocklist_url = \"  https://mirror.example.org/l.txt \"\n": "https://mirror.example.org/l.txt",
+	} {
+		path := filepath.Join(t.TempDir(), "config.toml")
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load(%q): %v", body, err)
+		}
+		if cfg.Image.AIBlocklistURL != want {
+			t.Errorf("TOML %q: AIBlocklistURL = %q, want %q", body, cfg.Image.AIBlocklistURL, want)
+		}
 	}
 }
