@@ -86,6 +86,24 @@ func aiFilterSearch(t *testing.T, r *Router, artistID, userID string, htmx bool)
 	return w
 }
 
+// aiFilterSearchValidated is the JSON path of aiFilterSearch routed through
+// serveValidated, so the response (including the required ai_filter object)
+// is checked against the OpenAPI spec.
+func aiFilterSearchValidated(t *testing.T, r *Router, artistID, userID string) *httptest.ResponseRecorder {
+	t.Helper()
+	ctx := middleware.WithTestUserID(context.Background(), userID)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/artists/"+artistID+"/images/websearch?type=thumb", nil)
+	h := http.HandlerFunc(func(w http.ResponseWriter, rq *http.Request) {
+		rq.SetPathValue("id", artistID)
+		r.handleWebImageSearch(w, rq)
+	})
+	w := serveValidated(t, h, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", w.Code, w.Body.String())
+	}
+	return w
+}
+
 const (
 	aiHostImage    = "https://images.nightcafe.studio/jobs/aGVsbG8/aGVsbG8.jpg"
 	plainHostImage = "https://img.freepik.com/premium-vector/dragon-illustration_1234.jpg"
@@ -210,7 +228,7 @@ func TestWebImageSearch_AIFilterJSONOutcome(t *testing.T) {
 			var resp struct {
 				AIFilter *outcome `json:"ai_filter"`
 			}
-			if err := json.Unmarshal(aiFilterSearch(t, r, a.ID, "u-json", false).Body.Bytes(), &resp); err != nil {
+			if err := json.Unmarshal(aiFilterSearchValidated(t, r, a.ID, "u-json").Body.Bytes(), &resp); err != nil {
 				t.Fatal(err)
 			}
 			if resp.AIFilter == nil {
