@@ -35,7 +35,32 @@ const (
 	maxRegexes    = 1000
 	maxRegexBytes = 1024
 	fetchTimeout  = 30 * time.Second
+	// DefaultRetryInitial is the first delay after a failed refresh; it doubles
+	// up to DefaultRetryMax, so a host that boots before its network is up
+	// recovers within minutes instead of waiting a full DefaultRefreshInterval.
+	DefaultRetryInitial = time.Minute
+	// DefaultRetryMax caps the retry backoff.
+	DefaultRetryMax = time.Hour
+	// shrinkFloorPercent is the smallest share of the active list's rules a
+	// replacement must keep. The upstream list only grows or is pruned a little
+	// at a time, so a list under half the size is a truncation, a rewrite or a
+	// hostile swap; half leaves room for a real cleanup and still catches a
+	// gutted list. It never applies to the first load (nothing is active).
+	shrinkFloorPercent = 50
 )
+
+// errCacheWrite marks a refresh whose list was valid and is now active in
+// memory, but could not be persisted.
+var errCacheWrite = errors.New("list is active but was not cached")
+
+// errOversize is a list over maxListBytes. A refetch returns the same list, so
+// unlike a transport failure it is not retried on the backoff.
+var errOversize = fmt.Errorf("list exceeds %d bytes", maxListBytes)
+
+// fetchErr marks a transport or HTTP failure, the only kind a retry can fix.
+type fetchErr struct{ error }
+
+func (e fetchErr) Unwrap() error { return e.error }
 
 // emptyMatcher is the matcher before any list has loaded: it blocks nothing.
 var emptyMatcher = &Matcher{}
@@ -48,6 +73,16 @@ var canaryURLs = [...]string{
 	"https://coverartarchive.org/release/76df3287-6cda-33eb-8e9a-044b5e15ffdd/829521842.jpg",
 	"https://i.discogs.com/R-1234-1600000000.jpeg",
 	"https://www.example.co.uk/images/artist.jpg",
+	// Hosts Stillwater's image providers serve from.
+	"https://assets.fanart.tv/fanart/music/5b11f4ce-a62d-471e-81fc-a69a8278c7da/artistbackground/nirvana-4f5e1c3b6a1d3.jpg",
+	"https://r2.theaudiodb.com/images/media/artist/thumb/xxxx1234567890.jpg",
+	"https://cdn-images.dzcdn.net/images/artist/0123456789abcdef0123456789abcdef/1000x1000-000000-80-0-0.jpg",
+	"https://lastfm.freetls.fastly.net/i/u/770x0/0123456789abcdef0123456789abcdef.jpg",
+	"https://i.scdn.co/image/ab6761610000e5eb0123456789abcdef01234567",
+	"https://commons.wikimedia.org/wiki/Special:FilePath/Example.jpg",
+	"https://e-cdns-images.dzcdn.net/images/artist/0123456789abcdef0123456789abcdef/500x500-000000-80-0-0.jpg",
+	"https://ia800000.us.archive.org/0/items/mbid-76df3287-6cda-33eb-8e9a-044b5e15ffdd/mbid-76df3287-6cda-33eb-8e9a-044b5e15ffdd-829521842.jpg",
+	"https://images.genius.com/0123456789abcdef0123456789abcdef.1000x1000x1.jpg",
 }
 
 // defaultStore backs Default(); see SetDefault.
@@ -78,6 +113,9 @@ type Options struct {
 	Interval time.Duration
 	// Client performs the fetch; nil means httpsafe.SafeClient.
 	Client *http.Client
+	// RetryInitial and RetryMax bound the backoff after a failed refresh; zero
+	// means DefaultRetryInitial and DefaultRetryMax.
+	RetryInitial, RetryMax time.Duration
 	// URL overrides SourceURL (tests).
 	URL    string
 	Logger *slog.Logger
@@ -111,6 +149,11 @@ type Status struct {
 type Store struct {
 	opts   Options
 	active atomic.Pointer[Matcher]
+	// baseline is the rule count of the last list this process fetched; the
+	// shrink floor compares against it. It is zero after a cache load, so a
+	// stale cache (old URL, upstream restructure) never blocks a fresh fetch
+	// and a restart recovers a wedged store. Guarded by refreshMu.
+	baseline int
 
 	// refreshMu serializes loads (fetch through persist), so a slow earlier
 	// fetch can never overwrite a newer list in memory or in the cache.
@@ -127,6 +170,12 @@ func NewStore(opts Options) *Store {
 	if opts.Interval <= 0 {
 		opts.Interval = DefaultRefreshInterval
 	}
+	if opts.RetryInitial <= 0 {
+		opts.RetryInitial = DefaultRetryInitial
+	}
+	if opts.RetryMax <= 0 {
+		opts.RetryMax = DefaultRetryMax
+	}
 	if opts.Client == nil {
 		opts.Client = httpsafe.SafeClient(fetchTimeout)
 	}
@@ -142,7 +191,7 @@ func NewStore(opts Options) *Store {
 	return s
 }
 
-// snapshot returns the active matcher and its Status under mu, the lock adopt
+// snapshot returns the active matcher and its Status under mu, the lock publish
 // holds across the swap, so the pair always describes one list.
 func (s *Store) snapshot() (*Matcher, Status) {
 	s.mu.Lock()
@@ -168,21 +217,51 @@ func (s *Store) Start(ctx context.Context) <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		t := time.NewTicker(s.opts.Interval)
-		defer t.Stop()
+		retry := s.opts.RetryInitial
 		for {
-			if err := s.Refresh(ctx); err != nil && ctx.Err() == nil {
-				s.opts.Logger.Warn("AI blocklist: refresh failed; keeping the current list",
-					slog.String("url", s.opts.URL), slog.String("error", err.Error()))
+			err := s.Refresh(ctx)
+			if err != nil && ctx.Err() != nil {
+				return
 			}
+			var wait time.Duration
+			wait, retry = s.nextWait(err, retry)
+			if err != nil {
+				msg := "AI blocklist: refresh failed; keeping the current list"
+				if errors.Is(err, errCacheWrite) {
+					msg = "AI blocklist: list is active in memory but could not be cached"
+				}
+				s.opts.Logger.Warn(msg, slog.String("url", s.opts.URL),
+					slog.String("error", err.Error()), slog.Duration("next_attempt_in", wait))
+			}
+			timer := time.NewTimer(wait)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return
-			case <-t.C:
+			case <-timer.C:
 			}
 		}
 	}()
 	return done
+}
+
+// nextWait schedules the next refresh from the last result. Only a fetch
+// failure backs off (retry, doubling, capped by RetryMax and Interval), since a
+// refetch cannot fix a rejected list or an unwritable cache; everything else
+// waits the normal Interval and resets the backoff. It returns the wait and
+// the retry delay to use after it.
+func (s *Store) nextWait(err error, retry time.Duration) (wait, next time.Duration) {
+	var fe fetchErr
+	if !errors.As(err, &fe) {
+		return s.opts.Interval, s.opts.RetryInitial
+	}
+	// Saturate before doubling: retry*2 would overflow Duration for a huge
+	// RetryMax and go negative, which makes time.NewTimer fire immediately.
+	next = s.opts.RetryMax
+	if retry <= next/2 {
+		next = retry * 2
+	}
+	return min(retry, s.opts.RetryMax, s.opts.Interval), next
 }
 
 // loadCache adopts the cached list if there is a usable one.
@@ -205,10 +284,13 @@ func (s *Store) loadCache() {
 	default:
 		body, err = os.ReadFile(path) //nolint:gosec // G304: path is operator config plus a constant name
 	}
+	var m *Matcher
 	if err == nil {
-		err = s.adopt(string(body), info.ModTime())
+		m, err = s.validate(string(body))
 	}
-	if err != nil {
+	if err == nil {
+		s.publish(m, info.ModTime())
+	} else {
 		s.setError(fmt.Errorf("cached list: %w", err))
 		s.opts.Logger.Warn("AI blocklist: ignoring cached list",
 			slog.String("path", path), slog.String("error", err.Error()))
@@ -216,28 +298,39 @@ func (s *Store) loadCache() {
 }
 
 // Refresh fetches the list once. A list is adopted only if it downloads in
-// full with a 200 and passes adopt's checks; on any failure the current
-// matcher and the cache file are left untouched. Concurrent calls serialize.
+// full with a 200 and passes validate's checks; on any such failure the
+// current matcher and the cache file are left untouched. Once valid the list is
+// written to the cache and then published; if that write fails the list is
+// still published (a valid list beats none, e.g. on a read-only data dir) and
+// the returned error wraps errCacheWrite. Concurrent calls serialize.
 func (s *Store) Refresh(ctx context.Context) error {
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()
 	body, err := s.fetch(ctx)
+	if err != nil && !errors.Is(err, errOversize) {
+		err = fetchErr{err}
+	}
+	var m *Matcher
 	if err == nil {
-		err = s.adopt(body, time.Now())
+		m, err = s.validate(body)
 	}
 	if err != nil {
 		s.setError(err)
 		return err
 	}
+	var werr error
 	if s.opts.CacheDir != "" {
 		path := filepath.Join(s.opts.CacheDir, CacheFileName)
-		if werr := filesystem.WriteFileAtomic(path, []byte(body), 0o644); werr != nil {
-			werr = fmt.Errorf("writing cache: %w", werr)
-			s.setError(werr)
-			return werr
+		if err := filesystem.WriteFileAtomic(path, []byte(body), 0o644); err != nil {
+			werr = fmt.Errorf("%w: writing cache: %w", errCacheWrite, err)
 		}
 	}
-	return nil
+	s.publish(m, time.Now())
+	s.baseline = m.ruleCount()
+	if werr != nil {
+		s.setError(werr)
+	}
+	return werr
 }
 
 func (s *Store) fetch(ctx context.Context) (string, error) {
@@ -259,35 +352,45 @@ func (s *Store) fetch(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("reading list: %w", err)
 	}
 	if len(data) > maxListBytes {
-		return "", fmt.Errorf("list exceeds %d bytes", maxListBytes)
+		return "", errOversize
 	}
 	return strings.ReplaceAll(string(data), "\r\n", "\n"), nil
 }
 
-// adopt parses body and, if it passes validation, makes it the active matcher.
-// It rejects a list with no rules, over the regex caps, or blocking a canary.
-func (s *Store) adopt(body string, fetched time.Time) error {
+// validate parses body and returns its matcher if it is acceptable, without
+// publishing it. It rejects a list with no rules, over the regex caps, blocking
+// a canary, or shrinking the last fetched list below shrinkFloorPercent.
+// Callers hold refreshMu, so the active list cannot change underneath it.
+func (s *Store) validate(body string) (*Matcher, error) {
 	if err := checkRegexCaps(body); err != nil {
-		return err
+		return nil, err
 	}
 	m := Parse(body)
 	n := m.ruleCount()
 	if n == 0 {
-		return errors.New("list has no usable rules")
+		return nil, errors.New("list has no usable rules")
 	}
 	for _, u := range canaryURLs {
 		if m.MatchURL(u) {
-			return fmt.Errorf("list blocks known-clean URL %s", u)
+			return nil, fmt.Errorf("list blocks known-clean URL %s", u)
 		}
+	}
+	if n*100 < s.baseline*shrinkFloorPercent {
+		return nil, fmt.Errorf("list has %d rules, under %d%% of the %d fetched earlier; restart Stillwater to accept it",
+			n, shrinkFloorPercent, s.baseline)
 	}
 	if m.Skipped > 0 {
 		s.opts.Logger.Warn("AI blocklist: skipped unparsable lines", slog.Int("skipped", m.Skipped))
 	}
+	return m, nil
+}
+
+// publish makes a validated matcher the active one.
+func (s *Store) publish(m *Matcher, fetched time.Time) {
 	s.mu.Lock()
 	s.active.Store(m)
-	s.status = Status{Loaded: true, Rules: n, LastFetch: fetched, Disabled: s.opts.Disabled}
+	s.status = Status{Loaded: true, Rules: m.ruleCount(), LastFetch: fetched, Disabled: s.opts.Disabled}
 	s.mu.Unlock()
-	return nil
 }
 
 // checkRegexCaps rejects a list with too many or too long regex lines. It
