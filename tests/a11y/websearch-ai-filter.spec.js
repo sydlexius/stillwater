@@ -66,6 +66,8 @@ test('with the download turned off, filter on says results are unfiltered; filte
 
 test('one click = one preference write and exactly one re-search, then unchecked', async ({ page }) => {
   const toggle = await triggerWebSearch(page);
+  const errors = [];
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
   const searches = [];
   const writes = [];
@@ -80,6 +82,9 @@ test('one click = one preference write and exactly one re-search, then unchecked
   await expect(page.locator('#sw-ai-filter-toggle')).toBeEnabled();
   expect(writes, 'preference PUTs').toHaveLength(1);
   expect(searches, 'web searches').toHaveLength(1);
+  // A successful re-search is not reported as failed.
+  await expect(page.locator('[data-sw-ai-filter-refresh-failed]')).toHaveCount(0);
+  expect(errors.filter((e) => e.includes('toggleAIImageFilter')), 'toggle errors on success').toEqual([]);
 });
 
 test('a double click still produces exactly one re-search (control disabled in flight)', async ({ page }) => {
@@ -155,6 +160,26 @@ test('a failed save is detected even when the cache already holds the requested 
   expect(searches, 'web searches after a failed write').toHaveLength(0);
 });
 
+// save() must report failure for every failure shape, not only an HTTP 500:
+// a dropped connection, a 403, and a 2xx whose body is not JSON (#2310 F1).
+for (const [name, fail] of [
+  ['network error', (route) => route.abort('failed')],
+  ['HTTP 403', (route) => route.fulfill({ status: 403, body: '{"error":"forbidden"}', contentType: 'application/json' })],
+  ['2xx with a non-JSON body', (route) => route.fulfill({ status: 200, body: 'not json', contentType: 'application/json' })],
+]) {
+  test(`a failed save (${name}) does not re-search and does not flip the switch`, async ({ page }) => {
+    const toggle = await triggerWebSearch(page);
+    await page.route('**/api/v1/preferences/filter_ai_images', (route) => (route.request().method() === 'PUT' ? fail(route) : route.continue()));
+    const searches = [];
+    page.on('request', (req) => { if (req.url().includes('/images/websearch')) searches.push(req.url()); });
+
+    await toggle.click();
+    await expect(page.locator('#sw-ai-filter-toggle')).toBeEnabled({ timeout: 10_000 });
+    await expect(page.locator('#sw-ai-filter-toggle')).toHaveAttribute('aria-checked', 'true');
+    expect(searches, 'web searches after a failed write').toHaveLength(0);
+  });
+}
+
 test('a failed re-search leaves the switch showing the SAVED value, and the next click flips back (F4)', async ({ page, request }) => {
   const toggle = await triggerWebSearch(page);
   const putBodies = [];
@@ -172,10 +197,27 @@ test('a failed re-search leaves the switch showing the SAVED value, and the next
   await expect(page.locator('#sw-ai-filter-toggle')).toHaveAttribute('aria-checked', 'false');
   const saved = await apiFetch(request, 'GET', '/api/v1/preferences/filter_ai_images');
   expect((await saved.json()).value).toBe('false');
+  // The stale panel must not contradict the switch: a refresh-failed notice
+  // replaces the filter notice that described the old (filter-on) results.
+  await expect(page.locator('[data-sw-ai-filter-refresh-failed]')).toBeVisible();
+  await expect(page.locator('[data-sw-ai-filter-refresh-failed]')).toContainText('could not be refreshed');
+  await expect(page.locator('[data-sw-ai-filter-disabled]')).toHaveCount(0);
 
   await page.locator('#sw-ai-filter-toggle').click();
   await expect(page.locator('#sw-ai-filter-toggle')).toHaveAttribute('aria-checked', 'true', { timeout: 10_000 });
   expect(putBodies.map((b) => JSON.parse(b).value)).toEqual(['false', 'true']);
+});
+
+test('the switch renders and toggles on the generic Manage artwork layout too (#web-search-results)', async ({ page }) => {
+  // No ?type= selects the generic layout, whose web search results render into
+  // #web-search-results instead of #image-results.
+  await page.goto(`/artists/${artistId}/images`);
+  await page.waitForLoadState('load');
+  await page.getByRole('button', { name: /^Extend: / }).first().click();
+  const toggle = page.locator('#web-search-results #sw-ai-filter-toggle');
+  await expect(toggle).toHaveAttribute('aria-checked', 'true', { timeout: 10_000 });
+  await toggle.click();
+  await expect(page.locator('#web-search-results #sw-ai-filter-toggle')).toHaveAttribute('aria-checked', 'false', { timeout: 10_000 });
 });
 
 for (const theme of ['dark', 'light']) {

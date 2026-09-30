@@ -1649,7 +1649,7 @@ func webSearchURL(artistID, imageType, sortBy string) string {
 // search results. One click = one persisted preference write + ONE re-search
 // (a fresh DuckDuckGo request); see toggleAIImageFilter for the guards.
 templ webSearchAIFilterToggle(artistID string, f WebSearchAIFilter, activeSort string) {
-	<div class="flex items-center justify-end gap-2 mb-3" data-sw-ai-filter>
+	<div class="flex items-center justify-end gap-2 mb-3" data-sw-ai-filter data-sw-refresh-failed-msg={ t(ctx, "image.filter_ai_images_refresh_failed") }>
 		<span id="sw-ai-filter-label" class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "image.filter_ai_images") }</span>
 		<button
 			id={ webSearchAIFilterToggleID }
@@ -1675,8 +1675,12 @@ templ webSearchAIFilterToggle(artistID string, f WebSearchAIFilter, activeSort s
 // disabled from click until the re-search settles, so a double click cannot
 // fire two searches. If the preference write fails there is no re-search and
 // the switch does not flip. If the write succeeds but the re-search fails, the
-// switch shows the SAVED value. Focus returns to the switch after the panel
-// re-renders (the swap replaces the button). Failures are logged loudly.
+// switch shows the SAVED value, and because htmx leaves the old panel in place
+// on an HTTP error (its ajax promise still resolves), an inline status notice
+// says the results could not be refreshed, and any filter notice describing
+// the old results is removed, so the panel never contradicts the switch.
+// Focus returns to the switch after the panel re-renders (the swap replaces
+// the button). Every failure is logged with console.error.
 script toggleAIImageFilter(btnID string, searchURL string) {
 	var btn = document.getElementById(btnID);
 	if (!btn || btn.disabled) { return; }
@@ -1711,7 +1715,26 @@ script toggleAIImageFilter(btnID string, searchURL string) {
 		if (btn.firstElementChild) {
 			btn.firstElementChild.className = on ? btn.dataset.swKnobOn : btn.dataset.swKnobOff;
 		}
-		return htmx.ajax('GET', searchURL, { target: target, swap: 'innerHTML' });
+		// htmx.ajax resolves even when the request fails with an HTTP error, so
+		// read the outcome from htmx:afterRequest instead of the promise. The
+		// button is passed as source so the event is dispatched from it and
+		// bubbles to target (without a source htmx dispatches it on body).
+		var ok = false;
+		function onAfter(evt) { ok = !!(evt.detail && evt.detail.successful); }
+		target.addEventListener('htmx:afterRequest', onAfter, { once: true });
+		return htmx.ajax('GET', searchURL, { source: btn, target: target, swap: 'innerHTML' }).then(function () {
+			target.removeEventListener('htmx:afterRequest', onAfter);
+			if (ok) { return; }
+			console.error('toggleAIImageFilter: re-running the web search failed; the results shown are stale');
+			var wrap = btn.closest('[data-sw-ai-filter]');
+			target.querySelectorAll('[data-sw-ai-filter-disabled], [data-sw-ai-filter-not-loaded], [data-sw-ai-filter-refresh-failed]').forEach(function (el) { el.remove(); });
+			var note = document.createElement('p');
+			note.className = 'text-xs text-amber-700 dark:text-amber-400 mb-3';
+			note.setAttribute('role', 'status');
+			note.setAttribute('data-sw-ai-filter-refresh-failed', '');
+			note.textContent = wrap ? wrap.getAttribute('data-sw-refresh-failed-msg') : '';
+			if (wrap) { wrap.insertAdjacentElement('afterend', note); }
+		});
 	}).catch(function (err) {
 		console.error('toggleAIImageFilter: re-running the web search failed', err);
 	}).then(function () {
