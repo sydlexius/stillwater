@@ -261,13 +261,35 @@ func TestDefaultFollowsInstalledStore(t *testing.T) {
 	if Default().MatchURL(blockedURL) {
 		t.Error("with no store, Default must block nothing")
 	}
+	if m, st := Snapshot(); st.Loaded || m.MatchURL(blockedURL) {
+		t.Error("with no store, Snapshot must be the empty matcher and not loaded")
+	}
 	ls := newListServer(t, http.StatusOK, readSample(t))
 	s := ls.store("", time.Hour)
 	SetDefault(s)
+	if _, st := Snapshot(); st.Loaded {
+		t.Error("installed but not refreshed: Snapshot must report not loaded")
+	}
 	if err := s.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if !Default().MatchURL(blockedURL) {
 		t.Error("Default must return the installed store's active matcher")
+	}
+	if m, st := Snapshot(); !st.Loaded || st.Rules == 0 || !m.MatchURL(blockedURL) {
+		t.Errorf("Snapshot status = %+v, want the installed store's loaded list and matcher", st)
+	}
+}
+
+// Disabled is reported through Status (before and after a load) so callers
+// can tell "turned off" from "not loaded yet".
+func TestStoreDisabledIsReported(t *testing.T) {
+	if NewStore(Options{}).Status().Disabled {
+		t.Error("a default store must not report disabled")
+	}
+	t.Cleanup(func() { SetDefault(nil) })
+	SetDefault(NewStore(Options{Disabled: true}))
+	if _, st := Snapshot(); !st.Disabled || st.Loaded {
+		t.Errorf("disabled store: Snapshot status = %+v, want Disabled and not loaded", st)
 	}
 }

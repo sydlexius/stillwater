@@ -56,6 +56,18 @@ var defaultStore atomic.Pointer[Store]
 // SetDefault installs s as the store Default() reads from.
 func SetDefault(s *Store) { defaultStore.Store(s) }
 
+// Snapshot returns the installed store's active matcher together with the
+// Status describing it, read under one lock, so a caller filtering with the
+// matcher reports the state of that same list (a load finishing mid-request
+// cannot pair an empty matcher with Loaded=true). With no store installed it
+// is the empty matcher and the zero Status (not loaded).
+func Snapshot() (*Matcher, Status) {
+	if s := defaultStore.Load(); s != nil {
+		return s.snapshot()
+	}
+	return emptyMatcher, Status{}
+}
+
 // Options configures a Store. The zero value is usable: no disk cache, the
 // upstream SourceURL, a 24h refresh, and the SSRF-guarded shared client.
 type Options struct {
@@ -69,6 +81,10 @@ type Options struct {
 	// URL overrides SourceURL (tests).
 	URL    string
 	Logger *slog.Logger
+	// Disabled marks a store whose download the operator turned off. It is
+	// only reported through Status, so callers can say "off" rather than
+	// "not loaded yet"; the caller is responsible for never starting it.
+	Disabled bool
 }
 
 // Status describes the list a Store is filtering with, for display.
@@ -84,6 +100,9 @@ type Status struct {
 	LastFetch time.Time
 	// LastError is the most recent failure, cleared by a clean refresh.
 	LastError string
+	// Disabled is true when the operator turned the download off, so no list
+	// will ever load (Options.Disabled).
+	Disabled bool
 }
 
 // Store owns the active blocklist. It loads a cached copy at start, then
@@ -118,8 +137,17 @@ func NewStore(opts Options) *Store {
 		opts.Logger = slog.Default()
 	}
 	s := &Store{opts: opts}
+	s.status.Disabled = opts.Disabled
 	s.active.Store(emptyMatcher)
 	return s
+}
+
+// snapshot returns the active matcher and its Status under mu, the lock adopt
+// holds across the swap, so the pair always describes one list.
+func (s *Store) snapshot() (*Matcher, Status) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.active.Load(), s.status
 }
 
 // Matcher returns the active matcher. It is never nil.
@@ -257,7 +285,7 @@ func (s *Store) adopt(body string, fetched time.Time) error {
 	}
 	s.mu.Lock()
 	s.active.Store(m)
-	s.status = Status{Loaded: true, Rules: n, LastFetch: fetched}
+	s.status = Status{Loaded: true, Rules: n, LastFetch: fetched, Disabled: s.opts.Disabled}
 	s.mu.Unlock()
 	return nil
 }

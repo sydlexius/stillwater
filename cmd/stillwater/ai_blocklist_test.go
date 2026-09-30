@@ -67,8 +67,8 @@ func TestStartAIBlocklist_EmptyURLStaysOffline(t *testing.T) {
 	if a.aiBlocklistDone != nil {
 		t.Fatal("empty URL started the refresh loop")
 	}
-	if st := a.aiBlocklist.Status(); st.Loaded {
-		t.Errorf("empty URL: Status = %+v, want not loaded", st)
+	if st := a.aiBlocklist.Status(); st.Loaded || !st.Disabled {
+		t.Errorf("empty URL: Status = %+v, want not loaded and Disabled", st)
 	}
 	if aiblock.Default().MatchURL("https://images.nightcafe.studio/x.jpg") {
 		t.Error("empty URL: the default matcher must block nothing")
@@ -91,7 +91,7 @@ func TestStartAIBlocklist_LoadsCacheBesideDatabaseAndDrains(t *testing.T) {
 	if a.aiBlocklistDone == nil {
 		t.Fatal("URL set but the refresh loop was not started")
 	}
-	if st := a.aiBlocklist.Status(); !st.Loaded || st.Rules == 0 {
+	if st := a.aiBlocklist.Status(); !st.Loaded || st.Rules == 0 || st.Disabled {
 		t.Errorf("Status = %+v, want the cached list loaded", st)
 	}
 	if !aiblock.Default().MatchURL("https://images.nightcafe.studio/x.jpg") {

@@ -1579,6 +1579,9 @@ func (a *Application) newAIBlocklist() {
 		CacheDir: filepath.Join(filepath.Dir(a.cfg.Database.Path), "cache"),
 		URL:      a.cfg.Image.AIBlocklistURL,
 		Logger:   a.logger,
+		// Reported through Status so the UI can say "off", not "not loaded
+		// yet"; startAIBlocklist never starts a disabled store.
+		Disabled: a.cfg.Image.AIBlocklistURL == "",
 	})
 	a.aiBlocklist = st
 	aiblock.SetDefault(st)
