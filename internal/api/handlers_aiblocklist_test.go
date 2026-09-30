@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/provider/aiblock"
@@ -83,6 +84,38 @@ const (
 	aiStatusPath  = "/api/v1/images/ai-blocklist/status"
 	aiRefreshPath = "/api/v1/images/ai-blocklist/refresh"
 )
+
+// aiWait bounds a channel receive so a stuck test fails instead of hanging.
+// It must be called on the test goroutine (it may t.Fatal).
+func aiWait[T any](t *testing.T, ch <-chan T, what string) T {
+	t.Helper()
+	select {
+	case v := <-ch:
+		return v
+	case <-time.After(10 * time.Second):
+		t.Fatalf("timed out waiting for %s", what)
+		panic("unreachable")
+	}
+}
+
+// aiHeldServer is a list host that answers only after unblock is called.
+// started closes when the first request arrives. Cleanup unblocks BEFORE
+// closing the server (cleanups run last-in first-out, and Close waits for
+// active requests), so a failed test cannot hang on teardown.
+func aiHeldServer(t *testing.T) (srv *httptest.Server, started <-chan struct{}, unblock func()) {
+	t.Helper()
+	st, release := make(chan struct{}), make(chan struct{})
+	markStarted := sync.OnceFunc(func() { close(st) })
+	unblock = sync.OnceFunc(func() { close(release) })
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		markStarted()
+		<-release
+		_, _ = w.Write([]byte(aiListBody))
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(unblock)
+	return srv, st, unblock
+}
 
 func TestAIBlocklistStatus(t *testing.T) {
 	good, _ := aiListServer(t, http.StatusOK)
@@ -222,29 +255,23 @@ func TestAIBlocklistRefresh(t *testing.T) {
 	})
 
 	t.Run("concurrent calls fetch once", func(t *testing.T) {
-		goodHits.Store(0)
-		installAIStore(t, aiblock.Options{URL: good.URL, Client: good.Client()})
+		held, started, unblock := aiHeldServer(t)
+		installAIStore(t, aiblock.Options{URL: held.URL, Client: held.Client()})
 		do := aiMux(t, "administrator")
-		var wg sync.WaitGroup
-		var ok, limited atomic.Int32
+		codes := make(chan int, 5)
 		for range 5 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				switch w := do(http.MethodPost, aiRefreshPath); w.Code {
-				case http.StatusOK:
-					ok.Add(1)
-				case http.StatusTooManyRequests:
-					limited.Add(1)
-				}
-			}()
+			go func() { codes <- do(http.MethodPost, aiRefreshPath).Code }()
 		}
-		wg.Wait()
-		if ok.Load() != 1 || limited.Load() != 4 {
-			t.Errorf("got %d x 200 and %d x 429, want exactly one 200 and four 429", ok.Load(), limited.Load())
+		// The winner is held upstream, so the other four must answer 429 now.
+		aiWait(t, started, "the first refresh to reach the list server")
+		for i := range 4 {
+			if c := aiWait(t, codes, "a rejected refresh"); c != http.StatusTooManyRequests {
+				t.Errorf("rejected call %d: status = %d, want 429", i, c)
+			}
 		}
-		if n := goodHits.Load(); n != 1 {
-			t.Errorf("list server got %d requests, want exactly 1", n)
+		unblock()
+		if c := aiWait(t, codes, "the winning refresh"); c != http.StatusOK {
+			t.Errorf("winning call: status = %d, want 200", c)
 		}
 	})
 }
@@ -335,26 +362,22 @@ func TestAIBlocklistRefresh_SessionPostNeedsCSRFToken(t *testing.T) {
 // finish: a disconnect must not record a false last_error or start the 429
 // lockout.
 func TestAIBlocklistRefresh_ClientDisconnectDoesNotCancelFetch(t *testing.T) {
-	started, release := make(chan struct{}), make(chan struct{})
-	unblock := sync.OnceFunc(func() { close(release) })
-	t.Cleanup(unblock)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		close(started)
-		<-release
-		_, _ = w.Write([]byte(aiListBody))
-	}))
-	t.Cleanup(srv.Close)
+	srv, started, unblock := aiHeldServer(t)
 	installAIStore(t, aiblock.Options{URL: srv.URL, Client: srv.Client()})
 	reqCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Setup can t.Fatal, so it runs here on the test goroutine; the worker only
+	// calls the returned function.
+	do := aiMuxCtx(t, "administrator", reqCtx)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		aiMuxCtx(t, "administrator", reqCtx)(http.MethodPost, aiRefreshPath)
+		do(http.MethodPost, aiRefreshPath)
 	}()
-	<-started
+	aiWait(t, started, "the refresh to reach the list server")
 	cancel()
 	unblock()
-	<-done
+	aiWait(t, done, "the refresh handler to return")
 	w := aiMux(t, "administrator")(http.MethodGet, aiStatusPath)
 	if body := w.Body.String(); !strings.Contains(body, `"loaded":true`) || strings.Contains(body, "last_error") {
 		t.Errorf("after a client disconnect the list must be loaded with no error; body %s", body)

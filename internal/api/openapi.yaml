@@ -16437,8 +16437,8 @@ paths:
         Administrator only. Downloads the list once and returns the new status;
         a failed download is reported in last_error with status 200. Returns 409
         when the download is turned off, and 429 with a Retry-After header when
-        a refresh finished less than 60 seconds ago. Concurrent calls result in
-        a single download.
+        a refresh is already running or finished less than 60 seconds ago.
+        Concurrent calls result in a single download; rejected calls return 429.
       responses:
         "200":
           description: Status after the refresh attempt
@@ -16465,7 +16465,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "429":
-          description: A refresh ran less than 60 seconds ago
+          description: A refresh is running or ran less than 60 seconds ago
           headers:
             Retry-After:
               description: Seconds until another refresh is allowed
