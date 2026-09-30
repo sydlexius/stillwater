@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -156,29 +157,7 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if len(state.Genres) > 0 {
-		// Serialize the genre read-merge-write per artist (the platform call
-		// above stays outside the lock). This orders pull-vs-pull only;
-		// pull-vs-refresh/edit is the general lost-update gap tracked by #2804.
-		lk, _ := r.pullGenresLocks.LoadOrStore(artistID, &sync.Mutex{})
-		mu := lk.(*sync.Mutex)
-		mu.Lock()
-		defer mu.Unlock()
-		// Re-read inside the lock: `a` predates the network call.
-		cur, err := r.artistService.GetByID(req.Context(), artistID)
-		if err != nil {
-			r.logger.Warn("reloading artist for genre pull", "error", err)
-			cur = a
-		}
-		ctx := r.injectMetadataLanguages(req.Context())
-		merged := tagdict.ApplyVocabFilter(tagdict.MetadataVocab(ctx), tagdict.VocabFieldGenres,
-			tagdict.MergeAndDeduplicateLocale(cur.Genres, state.Genres, provider.FirstMetadataLang(ctx)))
-		if r.pullGenresReadHook != nil {
-			r.pullGenresReadHook()
-		}
-		changed, err := r.artistService.UpdateField(ctx, artistID, "genres", strings.Join(merged, ", "))
-		if err != nil {
-			r.logger.Warn("updating genres from platform", "error", err)
-		} else if changed {
+		if r.pullGenres(req.Context(), artistID, state.Genres) {
 			updated = append(updated, "genres")
 		}
 	}
@@ -211,6 +190,38 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 		"status":  "pulled",
 		"updated": updated,
 	})
+}
+
+// pullGenres adds the platform's genres to the artist's existing ones and
+// reports whether the stored list changed. The read-merge-write is serialized
+// per artist (the platform call and the rest of the pull stay outside the
+// lock). This orders pull-vs-pull only; pull-vs-refresh/edit is the general
+// lost-update gap tracked by #2804.
+func (r *Router) pullGenres(reqCtx context.Context, artistID string, platform []string) bool {
+	lk, _ := r.pullGenresLocks.LoadOrStore(artistID, &sync.Mutex{})
+	mu := lk.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
+	// Re-read inside the lock: the caller's artist predates the network call.
+	// If the re-read fails, skip the genre update rather than merge into a
+	// stale snapshot.
+	cur, err := r.artistService.GetByID(reqCtx, artistID)
+	if err != nil {
+		r.logger.Warn("reloading artist for genre pull, skipping genres", "artist_id", artistID, "error", err)
+		return false
+	}
+	ctx := r.injectMetadataLanguages(reqCtx)
+	merged := tagdict.ApplyVocabFilter(tagdict.MetadataVocab(ctx), tagdict.VocabFieldGenres,
+		tagdict.MergeAndDeduplicateLocale(cur.Genres, platform, provider.FirstMetadataLang(ctx)))
+	if r.pullGenresReadHook != nil {
+		r.pullGenresReadHook()
+	}
+	changed, err := r.artistService.UpdateField(ctx, artistID, "genres", strings.Join(merged, ", "))
+	if err != nil {
+		r.logger.Warn("updating genres from platform", "error", err)
+		return false
+	}
+	return changed
 }
 
 // newStateGetter instantiates an ArtistStateGetter for the given connection type.
