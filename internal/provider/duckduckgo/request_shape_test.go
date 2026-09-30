@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -394,6 +395,73 @@ func TestSSRFGuardSurvivesJarAttach(t *testing.T) {
 	}
 }
 
+// classifyLiveFailure names which stage of a live search failed, from the
+// error strings the adapter already returns (ErrProviderUnavailable causes
+// "VQD request returned status N", "VQD token not found in response", and
+// "image search returned status N", wrapped by SearchImages as "getting VQD
+// token: ..." / "fetching images: ..."). On success it also enforces the pass
+// bar: at least minResults full-size results (http(s) URL, width and height
+// above 0). The label is what the canary workflow files as the
+// tracking-issue reason (#3230).
+func classifyLiveFailure(err error, images []provider.ImageResult, minResults int) string {
+	full := 0
+	for _, img := range images {
+		u, perr := url.Parse(img.URL)
+		if perr == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != "" &&
+			img.Width > 0 && img.Height > 0 {
+			full++
+		}
+	}
+	n := len(images)
+	switch {
+	case err == nil && n == 0:
+		return "i.js 200 but no results parsed (response shape changed)"
+	case err == nil && full < minResults:
+		return "too few full-size results with dimensions (partial or degraded response)"
+	case err == nil:
+		return ""
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "getting VQD token") && strings.Contains(msg, "VQD token not found"):
+		return "vqd token not found (page format changed)"
+	case strings.Contains(msg, "getting VQD token") && strings.Contains(msg, "returned status"):
+		return "vqd fetch refused"
+	case strings.Contains(msg, "getting VQD token"):
+		return "vqd fetch failed (transport error)"
+	case strings.Contains(msg, "fetching images") && strings.Contains(msg, "returned status 403"):
+		return "i.js 403 (request refused)"
+	case strings.Contains(msg, "fetching images") && strings.Contains(msg, "returned status"):
+		return "i.js returned a non-200 status"
+	case strings.Contains(msg, "parsing image results"):
+		return "i.js 200 but body was not valid JSON"
+	}
+	return "search failed (unclassified)"
+}
+
+// newCanaryAdapter applies the canary-only setting: one search's requests
+// only (no /html/ fallback), so the real first-stage cause is reported (#3230).
+// Shared by the live test and the offline classifier tests.
+func newCanaryAdapter(a *Adapter) *Adapter {
+	a.noVQDFallback = true
+	return a
+}
+
+// liveMinResults is the pass threshold for TestSearchImagesLive: 1 by
+// default, raised by the scheduled canary via SW_DDG_LIVE_MIN_RESULTS=20.
+func liveMinResults(t *testing.T) int {
+	t.Helper()
+	v := os.Getenv("SW_DDG_LIVE_MIN_RESULTS")
+	if v == "" {
+		return 1
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		t.Fatalf("SW_DDG_LIVE_MIN_RESULTS=%q: want a positive integer", v)
+	}
+	return n
+}
+
 // TestSearchImagesLive is an opt-in integration test against the real
 // DuckDuckGo. Skipped unless SW_DDG_LIVE=1. Per the issue's warning, a
 // malformed request can penalize the operator's IP for minutes, so this
@@ -405,28 +473,112 @@ func TestSearchImagesLive(t *testing.T) {
 
 	limiter := provider.NewRateLimiterMap()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	a := New(limiter, logger)
+	a := newCanaryAdapter(New(limiter, logger))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	minResults := liveMinResults(t)
+	// Exactly one live search, never retried (a 403 penalizes the IP).
 	images, err := a.SearchImages(ctx, "Radiohead", provider.ImageThumb)
-	if err != nil {
-		t.Fatalf("live SearchImages: %v", err)
+	if reason := classifyLiveFailure(err, images, minResults); reason != "" {
+		// The DDG-CANARY prefix is what the canary workflow greps to build
+		// the tracking-issue text; keep it stable.
+		t.Fatalf("DDG-CANARY: %s (results=%d, want >= %d, err=%v)", reason, len(images), minResults, err)
 	}
-	if len(images) == 0 {
-		t.Fatal("live SearchImages: expected at least 1 result, got 0")
-	}
+}
 
-	found := false
-	for _, img := range images {
-		if img.Width > 0 && img.Height > 0 &&
-			(strings.HasPrefix(img.URL, "http://") || strings.HasPrefix(img.URL, "https://")) {
-			found = true
-			break
+// TestClassifyLiveFailure pins the canary's failure labels (#3230) against
+// the real adapter (with the canary's noVQDFallback set), driven through an
+// httptest server so no live request is made. Each case breaks one stage.
+func TestClassifyLiveFailure(t *testing.T) {
+	// hs serves the main page ("/"), the /html/ fallback and i.js separately
+	// so the stages can diverge.
+	hs := func(mainStatus int, mainBody string, htmlStatus int, imgStatus int, imgBody string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/":
+				w.WriteHeader(mainStatus)
+				_, _ = w.Write([]byte(mainBody))
+			case "/html/":
+				w.WriteHeader(htmlStatus)
+			default:
+				w.WriteHeader(imgStatus)
+				_, _ = w.Write([]byte(imgBody))
+			}
 		}
 	}
-	if !found {
-		t.Fatalf("live SearchImages: no result had both a full http(s) URL and width/height > 0: %+v", images)
+	const vqdPage = `<script>vqd='4-1'</script>`
+	tests := []struct {
+		name string
+		h    http.HandlerFunc
+		want string
+	}{
+		{"vqd refused", hs(403, "", 403, 200, ""), "vqd fetch refused"},
+		{"vqd refused, fallback 200 no token", hs(403, "", 200, 200, ""), "vqd fetch refused"},
+		{"vqd token missing", hs(200, "<html></html>", 200, 200, ""), "vqd token not found"},
+		{"i.js 403", hs(200, vqdPage, 200, 403, ""), "i.js 403"},
+		{"i.js 429 is not 403", hs(200, vqdPage, 200, 429, ""), "non-200"},
+		{"i.js 200 empty", hs(200, vqdPage, 200, 200, `{"results":[]}`), "no results parsed"},
+		{"i.js 200 not json", hs(200, vqdPage, 200, 200, `<html>`), "not valid JSON"},
+		{"pass", hs(200, vqdPage, 200, 200, oneResultBody), ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(tt.h)
+			defer srv.Close()
+			a := newCanaryAdapter(newTestAdapter(t, srv.URL))
+			images, err := a.SearchImages(context.Background(), "Radiohead", provider.ImageThumb)
+			got := classifyLiveFailure(err, images, 1)
+			if (tt.want == "" && got != "") || !strings.Contains(got, tt.want) {
+				t.Errorf("classifyLiveFailure = %q (err=%v), want it to contain %q", got, err, tt.want)
+			}
+		})
+	}
+
+	t.Run("vqd transport error", func(t *testing.T) {
+		srv := httptest.NewServer(http.NotFoundHandler())
+		a := newCanaryAdapter(newTestAdapter(t, srv.URL))
+		srv.Close() // connection refused
+		images, err := a.SearchImages(context.Background(), "Radiohead", provider.ImageThumb)
+		if got := classifyLiveFailure(err, images, 1); !strings.Contains(got, "transport error") {
+			t.Errorf("got %q (err=%v), want transport error label", got, err)
+		}
+	})
+
+	// Threshold boundaries, counted on full-size results only.
+	mk := func(full, bad int) []provider.ImageResult {
+		var out []provider.ImageResult
+		for i := 0; i < full; i++ {
+			out = append(out, provider.ImageResult{URL: "https://example.com/x.jpg", Width: 10, Height: 10})
+		}
+		for i := 0; i < bad; i++ {
+			out = append(out, provider.ImageResult{URL: "ftp://example.com/x.jpg", Width: 10, Height: 10})
+		}
+		return out
+	}
+	with := func(r provider.ImageResult) []provider.ImageResult { return append(mk(19, 0), r) }
+	noWidth := with(provider.ImageResult{URL: "https://example.com/y.jpg", Height: 10})
+	noHost := with(provider.ImageResult{URL: "https://", Width: 10, Height: 10})
+	noHeight := with(provider.ImageResult{URL: "https://example.com/y.jpg", Width: 10})
+	for _, c := range []struct {
+		name   string
+		images []provider.ImageResult
+		tooFew bool
+	}{
+		{"19 full fails", mk(19, 0), true},
+		{"20 full passes", mk(20, 0), false},
+		{"30 full passes", mk(30, 0), false},
+		{"19 full + non-http fails", mk(19, 5), true},
+		{"19 full + missing width fails", noWidth, true},
+		{"19 full + missing height fails", noHeight, true},
+		{"19 full + hostless URL fails", noHost, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got := classifyLiveFailure(nil, c.images, 20)
+			if c.tooFew != strings.Contains(got, "too few") || (!c.tooFew && got != "") {
+				t.Errorf("got %q, tooFew=%v", got, c.tooFew)
+			}
+		})
 	}
 }
