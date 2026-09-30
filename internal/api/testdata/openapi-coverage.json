@@ -28,6 +28,13 @@
     "covered": true
   },
   {
+    "operationId": "aiBlocklistRefresh",
+    "method": "POST",
+    "path": "/images/ai-blocklist/refresh",
+    "handler": "handleAIBlocklistRefresh",
+    "covered": true
+  },
+  {
     "operationId": "aiBlocklistStatus",
     "method": "GET",
     "path": "/images/ai-blocklist/status",
