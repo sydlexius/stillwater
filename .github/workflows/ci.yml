@@ -278,6 +278,7 @@ jobs:
           # degrades to a partial warm rather than a cold rebuild.
           # go.mod is hashed too so a toolchain-directive bump that leaves
           # go.sum untouched still invalidates the stale build cache.
+          # prune-go-caches owns retention for this prefix.
           key: ${{ runner.os }}-go-${{ hashFiles('go.mod', '**/go.sum') }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-go-${{ hashFiles('go.mod', '**/go.sum') }}-
@@ -296,6 +297,49 @@ jobs:
       # read-only shards restore them instead of cold-compiling -race.
       - name: Warm Go build cache (race-instrumented)
         run: go test -race -count=1 -run='^$' ./...
+
+  # Prune stale per-commit Go caches. The primer's key embeds github.sha (see
+  # above), so every main commit adds an ~800 MB entry and nothing evicts the
+  # old ones before the 10 GiB cap (8 entries = ~6.4 GiB of dead weight). Only
+  # the primer saves a Go cache (the test shards use actions/cache/restore), so
+  # this is the single writer to keep in step with.
+  # Ordering: actions/cache saves in its POST step, after every normal step of
+  # the primer job, so pruning inside that job would run BEFORE this commit's
+  # save. A separate job with `needs: go-cache-primer` starts only after the
+  # primer (post step included) has finished, so the current entry exists.
+  # Keep-2 means: slot 1 is this commit, slot 2 is the PREVIOUS commit's entry,
+  # which this run's own test shards may still be restoring (concurrent main
+  # runs are cancelled by the workflow-level concurrency group). KEEP must not
+  # drop to 1. Trade-off: re-running an old main commit re-saves its entry and
+  # can push the head's entry out (lost warmth only; heals on the next push).
+  # Scope: main-ref `Linux-go-` entries only; PR-ref and other caches untouched.
+  # Fail-safe: a listing or delete failure only warns, never fails CI.
+  prune-go-caches:
+    name: Prune Stale Go Caches
+    runs-on: ubuntu-latest
+    needs: [go-cache-primer]
+    if: github.event_name == 'push' && needs.go-cache-primer.result == 'success'
+    permissions:
+      actions: write
+    steps:
+      - name: Delete older per-commit Go caches on main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          KEEP: "2"
+        run: |
+          # --paginate: more than 100 entries exist, one page would miss some.
+          ids=$(gh api --paginate "repos/${REPO}/actions/caches?per_page=100&ref=refs/heads/main&key=Linux-go-" \
+            --jq '.actions_caches[] | .id' 2>/dev/null) || {
+            echo "::warning::cache listing failed; skipping prune."; exit 0; }
+          # Ids are monotonic: highest = newest; everything past the first KEEP is stale.
+          stale=$(printf '%s\n' "$ids" | sed '/^$/d' | sort -rn | tail -n +$((KEEP + 1)))
+          [ -z "$stale" ] && { echo "Nothing to prune (<= ${KEEP} Go caches)."; exit 0; }
+          for id in $stale; do
+            gh api -X DELETE "repos/${REPO}/actions/caches/${id}" >/dev/null \
+              && echo "Deleted cache ${id}" \
+              || echo "::warning::could not delete cache ${id}"
+          done
 
   # Worker job: does the real lint work, gated on code changes. The always-
   # running lint-summary wrapper below owns the required "Lint" check name so
