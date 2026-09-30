@@ -269,7 +269,10 @@ func TestWebImageSearch_AIFilterToggleRendering(t *testing.T) {
 // instead of implying it filtered them. The notice is absent once a list has
 // loaded, and absent when the filter is off (nothing was promised).
 func TestWebImageSearch_AIFilterNotLoadedNotice(t *testing.T) {
-	const notice, offNotice = "data-sw-ai-filter-not-loaded", "data-sw-ai-filter-disabled"
+	// Match the rendered element (attribute plus its role), not the bare
+	// attribute name, which the switch's inline script also mentions in a
+	// selector.
+	const notice, offNotice = `data-sw-ai-filter-not-loaded role="status"`, `data-sw-ai-filter-disabled role="status"`
 	for _, tc := range []struct {
 		name          string
 		loaded        bool
