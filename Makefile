@@ -80,7 +80,9 @@ test-js:
 # Every test-harness server sets it: test-a11y, bruno-ci, the CI a11y and
 # Bruno jobs, the provider-failure smoke, and the base-path a11y server
 # (tests/a11y/helpers/base-path-server.js). TestHarnessServersSkipAIBlocklist
-# (cmd/stillwater) fails if a new harness boot site omits it.
+# (cmd/stillwater) fails if a new harness boot site omits it. It detects boot
+# sites by their SW_DB_PATH assignment; one configured through SW_CONFIG_PATH
+# TOML instead is NOT detected, so set the variable there by hand.
 test-a11y: build
 	@set -euo pipefail; \
 	SW_DB="$${TMPDIR:-/tmp}/stillwater-a11y-$$$$.db"; \

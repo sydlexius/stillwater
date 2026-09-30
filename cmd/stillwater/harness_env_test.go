@@ -25,8 +25,12 @@ import (
 )
 
 var (
-	dbPathAssign    = regexp.MustCompile(`SW_DB_PATH\s*[:=]`)
-	blocklistAssign = regexp.MustCompile(`SW_AI_BLOCKLIST_URL\s*[:=]`)
+	dbPathAssign = regexp.MustCompile(`SW_DB_PATH\s*[:=]`)
+	// blocklistAssign matches an EMPTY assignment in every syntax the boot
+	// sites use: `VAR= \` (make/shell continued), `VAR="" \`, `VAR: ""` (YAML)
+	// and `VAR: '',` (JS). The value must be followed by a continuation, a
+	// comma or the line end, so a real URL (`VAR="https://..."`) never matches.
+	blocklistAssign = regexp.MustCompile(`(?m)SW_AI_BLOCKLIST_URL\s*[:=][ \t]*(?:""|'')?[ \t]*(?:\\|,|$)`)
 	makeTarget      = regexp.MustCompile(`^([A-Za-z0-9_.-]+)\s*:`)
 )
 
@@ -77,7 +81,10 @@ func indentBlock(lines []string, i int) (int, int) {
 func findHarnessBootSites(name, content string) []harnessBootSite {
 	lines := strings.Split(content, "\n")
 	isMake := filepath.Base(name) == "Makefile"
-	byIndent := strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".js")
+	byIndent := false
+	for _, ext := range []string{".yml", ".yaml", ".js", ".mjs", ".cjs", ".ts"} {
+		byIndent = byIndent || strings.HasSuffix(name, ext)
+	}
 	var sites []harnessBootSite
 	target := ""
 	for i, l := range lines {
@@ -98,36 +105,50 @@ func findHarnessBootSites(name, content string) []harnessBootSite {
 		} else {
 			lo, hi = continuationBlock(lines, i)
 		}
-		sites = append(sites, harnessBootSite{file: name, line: i + 1, block: strings.Join(lines[lo:hi+1], "\n")})
+		// Comment lines are dropped, so a commented-out assignment cannot
+		// satisfy the check.
+		var code []string
+		for _, bl := range lines[lo : hi+1] {
+			if !isCommentLine(bl) {
+				code = append(code, bl)
+			}
+		}
+		sites = append(sites, harnessBootSite{file: name, line: i + 1, block: strings.Join(code, "\n")})
 	}
 	return sites
 }
 
-// harnessFiles lists the files a test-harness boot site can live in.
+// harnessFiles lists the files a test-harness boot site can live in: the
+// Makefile, every workflow, and every script or JS/TS file under scripts/ and
+// tests/ at any depth (node_modules skipped). A boot site configured through
+// SW_CONFIG_PATH TOML instead of SW_DB_PATH is not detected.
 func harnessFiles(t *testing.T, root string) []string {
 	t.Helper()
 	files := []string{filepath.Join(root, "Makefile")}
-	for _, g := range []string{".github/workflows/*.yml", "scripts/*.sh"} {
+	for _, g := range []string{".github/workflows/*.yml", ".github/workflows/*.yaml"} {
 		m, err := filepath.Glob(filepath.Join(root, g))
 		if err != nil {
 			t.Fatal(err)
 		}
 		files = append(files, m...)
 	}
-	err := filepath.WalkDir(filepath.Join(root, "tests"), func(p string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
+	exts := map[string]bool{".sh": true, ".js": true, ".mjs": true, ".cjs": true, ".ts": true}
+	for _, dir := range []string{"scripts", "tests"} {
+		err := filepath.WalkDir(filepath.Join(root, dir), func(p string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() && d.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			if !d.IsDir() && exts[filepath.Ext(p)] {
+				files = append(files, p)
+			}
+			return nil
+		})
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
 		}
-		if d.IsDir() && d.Name() == "node_modules" {
-			return filepath.SkipDir
-		}
-		if !d.IsDir() && strings.HasSuffix(p, ".js") {
-			files = append(files, p)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 	return files
 }
@@ -176,5 +197,64 @@ func TestFindHarnessBootSites(t *testing.T) {
 	sh := "FOO=1 \\\n  SW_AI_BLOCKLIST_URL=\"\" \\\n  SW_DB_PATH=/tmp/x \\\n  ./bin &\n"
 	if s := findHarnessBootSites("scripts/x.sh", sh); len(s) != 1 || !blocklistAssign.MatchString(s[0].block) {
 		t.Errorf("shell: the var set earlier in the same continued command must count: %+v", s)
+	}
+
+	// G2: a commented-out assignment does not count.
+	yml := "        env:\n          SW_DB_PATH: /tmp/x.db\n          # SW_AI_BLOCKLIST_URL: \"\"\n          SW_PORT: 1\n"
+	if s := findHarnessBootSites(".github/workflows/x.yml", yml); len(s) != 1 || blocklistAssign.MatchString(s[0].block) {
+		t.Errorf("a commented-out SW_AI_BLOCKLIST_URL must not satisfy the check: %+v", s)
+	}
+	// G3: a non-empty value does not count, in each syntax.
+	for name, body := range map[string]string{
+		"scripts/x.sh":            "SW_AI_BLOCKLIST_URL=\"https://mirror.example/l.txt\" \\\n  SW_DB_PATH=/tmp/x \\\n  ./bin &\n",
+		".github/workflows/x.yml": "        env:\n          SW_DB_PATH: /tmp/x.db\n          SW_AI_BLOCKLIST_URL: https://mirror.example/l.txt\n",
+		"tests/x.js":              "  env: {\n    SW_DB_PATH: db,\n    SW_AI_BLOCKLIST_URL: 'https://mirror.example/l.txt',\n  },\n",
+	} {
+		if s := findHarnessBootSites(name, body); len(s) != 1 || blocklistAssign.MatchString(s[0].block) {
+			t.Errorf("%s: a non-empty SW_AI_BLOCKLIST_URL must not satisfy the check: %+v", name, s)
+		}
+	}
+	// Every empty syntax the real boot sites use does count.
+	for _, ok := range []string{"SW_AI_BLOCKLIST_URL= \\", "SW_AI_BLOCKLIST_URL=\"\" \\", "SW_AI_BLOCKLIST_URL: \"\"", "SW_AI_BLOCKLIST_URL: '',", "X=1 SW_AI_BLOCKLIST_URL= \\"} {
+		if !blocklistAssign.MatchString(ok) {
+			t.Errorf("empty assignment %q must satisfy the check", ok)
+		}
+	}
+}
+
+// G4: the file walk reaches .mjs helpers and nested tests/**/*.sh scripts.
+func TestHarnessFilesScanDepthAndExtensions(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, body string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("Makefile", "")
+	write("tests/e2e/helpers/boot.mjs", "  env: {\n    SW_DB_PATH: db,\n  },\n")
+	write("tests/smoke/nested/boot.sh", "SW_DB_PATH=/tmp/x \\\n  ./bin &\n")
+	write("tests/node_modules/pkg/boot.js", "SW_DB_PATH: x,\n")
+	found := map[string]bool{}
+	for _, f := range harnessFiles(t, root) {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rel, _ := filepath.Rel(root, f)
+		for _, s := range findHarnessBootSites(rel, string(b)) {
+			found[s.file] = true
+		}
+	}
+	for _, want := range []string{"tests/e2e/helpers/boot.mjs", "tests/smoke/nested/boot.sh"} {
+		if !found[want] {
+			t.Errorf("boot site in %s not found; found %v", want, found)
+		}
+	}
+	if found["tests/node_modules/pkg/boot.js"] {
+		t.Error("node_modules must be skipped")
 	}
 }

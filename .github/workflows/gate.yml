@@ -687,7 +687,9 @@ jobs:
   gate-invariant:
     name: Gate Invariant
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 15, not 5: the harness boot-site guard below compiles cmd/stillwater,
+    # which a cold Go cache cannot do inside 5 minutes.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -738,6 +740,22 @@ jobs:
 
       - name: PR trigger guard self-test
         run: bash scripts/test-check-pr-trigger-scope.sh
+
+      # Harness boot-site guard (#2310): every test-harness server must set
+      # SW_AI_BLOCKLIST_URL empty so no test job downloads the AI blocklist.
+      # The boot sites it guards live in tests/**, scripts/**, workflows and
+      # the Makefile, and none of those edits trigger the cmd test shard in
+      # ci.yml or the changed-packages local test step, so it runs here, in
+      # the always-running required job.
+      # SHA verified against live tag via:
+      #   gh api repos/actions/setup-go/git/ref/tags/v6 --jq '.object.sha'
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Harness servers skip the AI blocklist download
+        run: go test -count=1 -run 'TestHarnessServersSkipAIBlocklist|TestFindHarnessBootSites|TestHarnessFilesScanDepthAndExtensions' ./cmd/stillwater/
 
       # Asserts the gate REFUSES an unrecognized RUN_* value instead of folding
       # it into "unset" and printing "skipped by default" over a tier the
