@@ -21,6 +21,7 @@ The table is generated from the Go preference registry (`internal/api.Preference
 | <a id="pref-bg_opacity"></a>`bg_opacity` | Background Opacity | `85` | 20..100 (step 5) | How opaque cards and the top bar are over the backdrop. The 85% floor keeps text AA-legible over the artwork; raise it toward 100% for fully solid surfaces. Lite mode forces opaque. |
 | <a id="pref-content_width"></a>`content_width` | Content Width | `narrow` | `narrow`, `wide` | Narrow caps line length for comfortable reading. Wide fills the screen to fit more per row. |
 | <a id="pref-density"></a>`density` | Layout Density | `comfortable` | `compact`, `comfortable`, `spacious` | Controls vertical spacing in lists and grids. Compact fits more content; Spacious adds breathing room. |
+| <a id="pref-filter_ai_images"></a>`filter_ai_images` | Filter AI Images | `true` | `true`, `false` | Hide web image search results from sites on a community-maintained list of AI-image sources. |
 | <a id="pref-font_family"></a>`font_family` | Font Family | `inter` | `system`, `inter`, `atkinson` | Inter is the default. System uses your operating system's native font. Atkinson Hyperlegible boosts legibility for low-vision readers. |
 | <a id="pref-font_size"></a>`font_size` | Font Size | `medium` | `small`, `medium`, `large`, `x-large`, `xx-large` | Scales text across the entire app. |
 | <a id="pref-kbd_hints"></a>`kbd_hints` | Keyboard Hints | `show` | `show`, `hide` | Show or hide keyboard shortcut badges throughout the UI. |

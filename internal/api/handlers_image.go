@@ -28,6 +28,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/i18n"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/provider/aiblock"
 	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/web/templates"
 )
@@ -1009,6 +1010,10 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 
 	imageType := provider.ImageType(typeFilter)
 
+	// Per-user "Filter AI images" preference (#2310). Default and read-error
+	// fallback are both true (filter); getUserBoolPreference logs a read error.
+	filterAI := r.getUserBoolPreference(req.Context(), PrefFilterAIImages, true)
+
 	var (
 		allImages        []provider.ImageResult
 		attempted        int
@@ -1048,6 +1053,19 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 			continue
 		}
 		allImages = append(allImages, images...)
+	}
+
+	// Stillwater-side AI filter: drop results hosted on sites from the
+	// community AI-image blocklist, which is downloaded at startup and
+	// refreshed daily (cmd/stillwater installs the store). It runs after the
+	// provider returned, so it never alters what a provider sends, and only
+	// when the preference is on. Until a list has loaded the matcher is empty
+	// and removes nothing. Matcher and status come from ONE snapshot, so the
+	// reported state always describes the list that actually filtered.
+	aiMatcher, aiStatus := aiblock.Snapshot()
+	aiFilter := webSearchAIFilterResult{Applied: filterAI, ListLoaded: aiStatus.Loaded, Disabled: aiStatus.Disabled}
+	if filterAI {
+		allImages, aiFilter.Removed = aiMatcher.Filter(allImages)
 	}
 
 	// Normalize http:// URLs to https:// so they satisfy the img-src CSP
@@ -1094,7 +1112,20 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 		"images":                images,
 		"status":                status,
 		"unavailable_providers": unavailableProviders,
+		"ai_filter":             aiFilter,
 	})
+}
+
+// webSearchAIFilterResult reports the "Filter AI images" outcome (#2310) to
+// API callers, so "filtered, nothing matched" is distinguishable from "no list
+// loaded, nothing was filtered". Applied is the caller's preference; Removed
+// counts results the blocklist dropped (always 0 when not applied or when no
+// list is loaded); Disabled means the operator turned the download off.
+type webSearchAIFilterResult struct {
+	Applied    bool `json:"applied"`
+	ListLoaded bool `json:"list_loaded"`
+	Disabled   bool `json:"disabled"`
+	Removed    int  `json:"removed"`
 }
 
 // handleImageCrop accepts base64-encoded image data, optionally applies a server-side crop

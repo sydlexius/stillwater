@@ -35,8 +35,12 @@ const (
 	PrefMetadataNameRomanization = "metadata_name_romanization_fallback"
 	PrefNotificationEnabled      = "notification_enabled"
 	PrefAutoFetchImages          = "auto_fetch_images"
-	PrefBgOpacity                = "bg_opacity"
-	PrefPageSize                 = "page_size"
+	// PrefFilterAIImages (#2310): hide AI-generated images in web image search
+	// results (DuckDuckGo). Default true = filtered. Toggled from the Manage
+	// Artwork web search results panel.
+	PrefFilterAIImages = "filter_ai_images"
+	PrefBgOpacity      = "bg_opacity"
+	PrefPageSize       = "page_size"
 
 	// M55 #1774: new preference keys introduced by the preferences flyout drawer.
 	// density controls layout density (compact/comfortable/spacious); mono_font
@@ -109,6 +113,7 @@ var preferenceDefaults = map[string]preferenceDef{
 	PrefLanguage:            {defaultValue: "en", allowedValues: []string{"en"}},
 	PrefNotificationEnabled: {defaultValue: "true", allowedValues: []string{"true", "false"}},
 	PrefAutoFetchImages:     {defaultValue: "false", allowedValues: []string{"true", "false"}},
+	PrefFilterAIImages:      {defaultValue: "true", allowedValues: []string{"true", "false"}},
 	// M55 #1774: preferences flyout drawer keys.
 	PrefDensity:  {defaultValue: "comfortable", allowedValues: []string{"compact", "comfortable", "spacious"}},
 	PrefMonoFont: {defaultValue: "jetbrains", allowedValues: []string{"system", "jetbrains", "cascadia"}},
