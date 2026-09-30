@@ -124,6 +124,7 @@ assert_status() {
 # Cleanup trap
 # ---------------------------------------------------------------------------
 
+# shellcheck disable=SC2329 # invoked indirectly via trap cleanup EXIT
 cleanup() {
   if [[ -n "$TOKEN" && -n "$TOKEN_ID" ]]; then
     curl -s -o /dev/null -X DELETE \
