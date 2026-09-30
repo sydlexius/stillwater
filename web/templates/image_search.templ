@@ -1699,6 +1699,24 @@ script toggleAIImageFilter(btnID string, searchURL string) {
 	var next = btn.getAttribute('aria-checked') === 'true' ? 'false' : 'true';
 	var hadFocus = document.activeElement === btn;
 	btn.disabled = true;
+	// Another search can swap this panel mid-save; its switch arrives enabled
+	// and rendered from the server's pre-save value. Keep the live switch (found
+	// by id) disabled until this save and re-search finish, and repaint it from
+	// the last value the server confirmed when they do (#3288).
+	var shown = btn.getAttribute('aria-checked');
+	function paint(b, val) {
+		var on = val === 'true';
+		b.setAttribute('aria-checked', val);
+		b.className = on ? b.dataset.swBtnOn : b.dataset.swBtnOff;
+		if (b.firstElementChild) {
+			b.firstElementChild.className = on ? b.dataset.swKnobOn : b.dataset.swKnobOff;
+		}
+	}
+	function holdDisabled() {
+		var b = document.getElementById(btnID);
+		if (b) { b.disabled = true; }
+	}
+	document.addEventListener('htmx:afterSwap', holdDisabled);
 	function restoreFocus() {
 		var b = document.getElementById(btnID);
 		if (b && hadFocus) { b.focus(); }
@@ -1712,22 +1730,22 @@ script toggleAIImageFilter(btnID string, searchURL string) {
 		}
 		// Show the saved value now, so a failed re-search still leaves the
 		// switch truthful.
-		var on = next === 'true';
-		btn.setAttribute('aria-checked', next);
-		btn.className = on ? btn.dataset.swBtnOn : btn.dataset.swBtnOff;
-		if (btn.firstElementChild) {
-			btn.firstElementChild.className = on ? btn.dataset.swKnobOn : btn.dataset.swKnobOff;
-		}
+		shown = next;
+		var live = document.getElementById(btnID);
+		if (live) { paint(live, shown); holdDisabled(); }
 		// htmx.ajax resolves even when the request fails with an HTTP error, so
 		// read the outcome from htmx:afterRequest instead of the promise. The
-		// button is passed as source so the event is dispatched from it and
-		// bubbles to target (without a source htmx dispatches it on body).
+		// live switch is passed as source so the event is dispatched from it
+		// (without a source htmx dispatches it on body). Listen on the source
+		// itself, not the container: a stale swap of the container mid-flight
+		// would otherwise hide the outcome and show a spurious failure notice.
+		var src = live || btn;
 		var ok = false;
 		function onAfter(evt) { ok = !!(evt.detail && evt.detail.successful); }
-		target.addEventListener('htmx:afterRequest', onAfter, { once: true });
+		src.addEventListener('htmx:afterRequest', onAfter, { once: true });
 		function showRefreshFailed(err) {
 			console.error('toggleAIImageFilter: re-running the web search failed; the results shown are stale', err || '');
-			var wrap = btn.closest('[data-sw-ai-filter]');
+			var wrap = (document.getElementById(btnID) || btn).closest('[data-sw-ai-filter]');
 			target.querySelectorAll('[data-sw-ai-filter-disabled], [data-sw-ai-filter-not-loaded], [data-sw-ai-filter-refresh-failed]').forEach(function (el) { el.remove(); });
 			var note = document.createElement('p');
 			note.className = 'text-xs text-amber-700 dark:text-amber-400 mb-3';
@@ -1737,18 +1755,21 @@ script toggleAIImageFilter(btnID string, searchURL string) {
 			if (wrap) { wrap.insertAdjacentElement('afterend', note); }
 		}
 		// An HTTP error resolves (read from afterRequest); a transport failure rejects.
-		return htmx.ajax('GET', searchURL, { source: btn, target: target, swap: 'innerHTML' }).then(function () {
-			target.removeEventListener('htmx:afterRequest', onAfter);
+		// htmx drops a request whose source is detached, so issue it from the
+		// live switch (target is the stable container and stays connected).
+		return htmx.ajax('GET', searchURL, { source: src, target: target, swap: 'innerHTML' }).then(function () {
+			src.removeEventListener('htmx:afterRequest', onAfter);
 			if (!ok) { showRefreshFailed(); }
 		}, function (err) {
-			target.removeEventListener('htmx:afterRequest', onAfter);
+			src.removeEventListener('htmx:afterRequest', onAfter);
 			showRefreshFailed(err);
 		});
 	}).catch(function (err) {
 		console.error('toggleAIImageFilter: re-running the web search failed', err);
 	}).then(function () {
+		document.removeEventListener('htmx:afterSwap', holdDisabled);
 		var b = document.getElementById(btnID);
-		if (b) { b.disabled = false; }
+		if (b) { paint(b, shown); b.disabled = false; }
 		restoreFocus();
 	});
 }
