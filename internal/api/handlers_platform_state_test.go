@@ -9,7 +9,9 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -282,5 +284,55 @@ func TestHandleFieldUpdate_GenresStillReplace(t *testing.T) {
 	}
 	if want := []string{"Folk"}; !reflect.DeepEqual(got.Genres, want) {
 		t.Errorf("genres = %v, want %v", got.Genres, want)
+	}
+}
+
+// Two concurrent pulls on one artist must keep both platforms' genres; the
+// read hook widens the window so a missing lock loses one deterministically.
+func TestHandlePullMetadata_ConcurrentPullsKeepBothGenres(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, _ := testRouterWithHistory(t)
+	ctx := context.Background()
+	r.pullGenresReadHook = func() { time.Sleep(150 * time.Millisecond) }
+	a := addTestArtist(t, artistSvc, "Concurrent Pull Artist")
+	if _, err := artistSvc.UpdateField(ctx, a.ID, "genres", "Rock"); err != nil {
+		t.Fatalf("seeding genres: %v", err)
+	}
+	var reqs []*http.Request
+	for i, g := range []string{"Folk", "Jazz"} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"Name":"x","Genres":[%q],"Tags":[],"ProviderIds":{},"ImageTags":{},"BackdropImageTags":[],"LockedFields":[]}`, g)
+		}))
+		t.Cleanup(srv.Close)
+		conn := &connection.Connection{Name: fmt.Sprintf("Emby %d", i), Type: connection.TypeEmby, URL: srv.URL, APIKey: "k",
+			Emby: &connection.EmbyConfig{PlatformUserID: "u"}, Enabled: true}
+		if err := r.connectionService.Create(ctx, conn); err != nil {
+			t.Fatalf("creating connection: %v", err)
+		}
+		if err := artistSvc.SetPlatformID(ctx, a.ID, conn.ID, fmt.Sprintf("emby-%d", i)); err != nil {
+			t.Fatalf("setting platform id: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/pull?connection_id="+conn.ID, nil)
+		req.SetPathValue("id", a.ID)
+		reqs = append(reqs, req)
+	}
+	var wg sync.WaitGroup
+	for _, req := range reqs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r.handlePullMetadata(httptest.NewRecorder(), req)
+		}()
+	}
+	wg.Wait()
+	got, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	for _, want := range []string{"Rock", "Folk", "Jazz"} {
+		if !slices.Contains(got.Genres, want) {
+			t.Errorf("genres = %v, missing %q (lost update)", got.Genres, want)
+		}
 	}
 }

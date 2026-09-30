@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
@@ -155,9 +156,25 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if len(state.Genres) > 0 {
+		// Serialize the genre read-merge-write per artist (the platform call
+		// above stays outside the lock). This orders pull-vs-pull only;
+		// pull-vs-refresh/edit is the general lost-update gap tracked by #2804.
+		lk, _ := r.pullGenresLocks.LoadOrStore(artistID, &sync.Mutex{})
+		mu := lk.(*sync.Mutex)
+		mu.Lock()
+		defer mu.Unlock()
+		// Re-read inside the lock: `a` predates the network call.
+		cur, err := r.artistService.GetByID(req.Context(), artistID)
+		if err != nil {
+			r.logger.Warn("reloading artist for genre pull", "error", err)
+			cur = a
+		}
 		ctx := r.injectMetadataLanguages(req.Context())
 		merged := tagdict.ApplyVocabFilter(tagdict.MetadataVocab(ctx), tagdict.VocabFieldGenres,
-			tagdict.MergeAndDeduplicateLocale(a.Genres, state.Genres, provider.FirstMetadataLang(ctx)))
+			tagdict.MergeAndDeduplicateLocale(cur.Genres, state.Genres, provider.FirstMetadataLang(ctx)))
+		if r.pullGenresReadHook != nil {
+			r.pullGenresReadHook()
+		}
 		changed, err := r.artistService.UpdateField(ctx, artistID, "genres", strings.Join(merged, ", "))
 		if err != nil {
 			r.logger.Warn("updating genres from platform", "error", err)
