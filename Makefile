@@ -74,6 +74,15 @@ test-js:
 # endpoint returning an error. Keep it mirrored in the "Start Stillwater
 # (ephemeral)" step's env in .github/workflows/ci.yml -- if only one of the
 # two carries it, that harness silently tests against a real network call.
+# SW_AI_BLOCKLIST_URL= (empty) is the same kind of guard (#2310): it turns off
+# the AI-image blocklist download so the harness never reaches GitHub and the
+# list's state is deterministic (never loaded).
+# Every test-harness server sets it: test-a11y, bruno-ci, the CI a11y and
+# Bruno jobs, the provider-failure smoke, and the base-path a11y server
+# (tests/a11y/helpers/base-path-server.js). TestHarnessServersSkipAIBlocklist
+# (cmd/stillwater) fails if a new harness boot site omits it. It detects boot
+# sites by their SW_DB_PATH assignment; one configured through SW_CONFIG_PATH
+# TOML instead is NOT detected, so set the variable there by hand.
 test-a11y: build
 	@set -euo pipefail; \
 	SW_DB="$${TMPDIR:-/tmp}/stillwater-a11y-$$$$.db"; \
@@ -98,7 +107,7 @@ test-a11y: build
 	echo "[test-a11y] starting server on port $$SW_PORT (db=$$SW_DB)"; \
 	SW_DB_PATH="$$SW_DB" SW_PORT="$$SW_PORT" SW_LOG_FORMAT=text SW_LOG_LEVEL=warn \
 	  SW_BACKUP_ENABLED=false SW_UX=next SW_MUSIC_PATH="$$SW_EMPTY_LIB" \
-	  SW_FORCE_PROVIDER_ERROR=duckduckgo \
+	  SW_FORCE_PROVIDER_ERROR=duckduckgo SW_AI_BLOCKLIST_URL= \
 	  ./$(BINARY) > "$$LOG_FILE" 2>&1 & \
 	echo $$! > "$$PID_FILE"; \
 	\
@@ -451,6 +460,7 @@ bruno-ci: build
 	\
 	echo "[bruno-ci] starting server on port $$SW_PORT (db=$$SW_DB)"; \
 	SW_DB_PATH="$$SW_DB" SW_PORT="$$SW_PORT" SW_LOG_FORMAT=text SW_LOG_LEVEL=warn \
+	  SW_AI_BLOCKLIST_URL= \
 	  ./$(BINARY) > "$${TMPDIR:-/tmp}/stillwater-ci-$$$$.log" 2>&1 & \
 	echo $$! > "$$PID_FILE"; \
 	\
