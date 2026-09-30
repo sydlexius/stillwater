@@ -406,8 +406,9 @@ func TestSSRFGuardSurvivesJarAttach(t *testing.T) {
 func classifyLiveFailure(err error, images []provider.ImageResult, minResults int) string {
 	full := 0
 	for _, img := range images {
-		if img.Width > 0 && img.Height > 0 &&
-			(strings.HasPrefix(img.URL, "http://") || strings.HasPrefix(img.URL, "https://")) {
+		u, perr := url.Parse(img.URL)
+		if perr == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != "" &&
+			img.Width > 0 && img.Height > 0 {
 			full++
 		}
 	}
@@ -558,6 +559,7 @@ func TestClassifyLiveFailure(t *testing.T) {
 	}
 	with := func(r provider.ImageResult) []provider.ImageResult { return append(mk(19, 0), r) }
 	noWidth := with(provider.ImageResult{URL: "https://example.com/y.jpg", Height: 10})
+	noHost := with(provider.ImageResult{URL: "https://", Width: 10, Height: 10})
 	noHeight := with(provider.ImageResult{URL: "https://example.com/y.jpg", Width: 10})
 	for _, c := range []struct {
 		name   string
@@ -570,6 +572,7 @@ func TestClassifyLiveFailure(t *testing.T) {
 		{"19 full + non-http fails", mk(19, 5), true},
 		{"19 full + missing width fails", noWidth, true},
 		{"19 full + missing height fails", noHeight, true},
+		{"19 full + hostless URL fails", noHost, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			got := classifyLiveFailure(nil, c.images, 20)

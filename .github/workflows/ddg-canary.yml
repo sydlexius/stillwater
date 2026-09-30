@@ -25,6 +25,7 @@ concurrency:
 
 jobs:
   canary:
+    if: github.ref == 'refs/heads/main'
     name: Live search
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -66,9 +67,13 @@ jobs:
           [ -n "$reason" ] || reason='live test failed before classification (see run log)'
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           printf 'Weekly DuckDuckGo canary failed.\n\nReason: %s\n\nRun: %s\n' "$reason" "$run_url" > body.md
-          existing=$(gh issue list --state open --label ddg-canary --limit 1000 --json number,title \
-            --jq "[.[] | select(.title == env.ISSUE_TITLE)][0].number // empty")
+          existing=$(gh issue list --state all --label ddg-canary --limit 1000 --json number,title,state,createdAt \
+            --jq '[.[] | select(.title == env.ISSUE_TITLE)] | sort_by(.createdAt) | last | select(. != null) | "\(.number) \(.state)"')
           if [ -n "$existing" ]; then
+            number=${existing% *}
+            # A closed tracking issue is reopened, never duplicated.
+            if [ "${existing#* }" = CLOSED ]; then gh issue reopen "$number"; fi
+            existing=$number
             gh issue comment "$existing" --body-file body.md
           else
             # The milestone must name an OPEN milestone or creation fails.
