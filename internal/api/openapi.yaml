@@ -8891,6 +8891,7 @@ paths:
         Update one or more settings as key-value string pairs.
         Known keys include:
         auto_fetch_images (true/false),
+        filter_ai_images (true/false),
         show_platform_debug (true/false),
         notif_badge_enabled (true/false),
         notif_badge_severity_error (true/false),
@@ -9126,6 +9127,15 @@ paths:
                     description: >
                       Whether to automatically search providers when opening
                       the image search panel.
+                  filter_ai_images:
+                    type: string
+                    enum: ["true", "false"]
+                    description: >
+                      Whether web image search hides results from sites on a
+                      community-maintained list of AI-image sources (the HUGE
+                      AI Blocklist), applied by Stillwater after the search
+                      returns. Best-effort: AI images hosted elsewhere can
+                      still appear. Defaults to "true" (filtered).
                   metadata_name_romanization_fallback:
                     type: string
                     enum: ["true", "false"]
@@ -9196,6 +9206,7 @@ paths:
                   - page_size
                   - metadata_languages
                   - auto_fetch_images
+                  - filter_ai_images
                   - metadata_name_romanization_fallback
                   - bg_opacity
                   - density
@@ -9254,6 +9265,7 @@ paths:
                 language: { type: string }
                 notification_enabled: { type: string }
                 auto_fetch_images: { type: string }
+                filter_ai_images: { type: string }
                 metadata_name_romanization_fallback: { type: string }
                 page_size: { type: string }
                 bg_opacity: { type: string, example: "85" }
@@ -9345,6 +9357,7 @@ paths:
                   - page_size
                   - metadata_languages
                   - auto_fetch_images
+                  - filter_ai_images
                   - metadata_name_romanization_fallback
                   - bg_opacity
                   - density
@@ -9419,6 +9432,7 @@ paths:
                   - page_size
                   - metadata_languages
                   - auto_fetch_images
+                  - filter_ai_images
                   - metadata_name_romanization_fallback
                   - bg_opacity
                   - density
@@ -15691,13 +15705,38 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [images, status, unavailable_providers]
+                required: [images, status, unavailable_providers, ai_filter]
                 properties:
                   images:
                     type: array
                     items:
                       type: object
                     description: Image results from web search providers. Always an array, never null; empty when nothing was found or the search was unavailable.
+                  ai_filter:
+                    type: object
+                    required: [applied, list_loaded, disabled, removed]
+                    description: >-
+                      Outcome of the per-user filter_ai_images preference, which drops results
+                      hosted on sites in the community AI-image blocklist after the providers
+                      return. Best-effort: AI images hosted elsewhere are not detected.
+                    properties:
+                      applied:
+                        type: boolean
+                        description: The caller's filter_ai_images preference was on for this search.
+                      list_loaded:
+                        type: boolean
+                        description: >-
+                          A blocklist has been downloaded (or read from the cache). When false,
+                          nothing was filtered even if applied is true.
+                      disabled:
+                        type: boolean
+                        description: >-
+                          The operator turned the blocklist download off (SW_AI_BLOCKLIST_URL
+                          set empty), so no list will ever load.
+                      removed:
+                        type: integer
+                        minimum: 0
+                        description: Number of results the blocklist removed. 0 when not applied or no list is loaded.
                   status:
                     type: string
                     enum: [ok, unavailable]

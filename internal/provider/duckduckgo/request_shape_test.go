@@ -17,6 +17,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -158,6 +159,24 @@ func TestRequestShapeHeadersAndParams(t *testing.T) {
 		if got := imgReq.query.Get(k); got != want {
 			t.Errorf("i.js param %s = %q, want %q", k, got, want)
 		}
+	}
+	// EXACT key set: nothing beyond the known-good params may ride along
+	// (#2310 review F2). The AI filter is applied Stillwater-side after the
+	// results return, so it must never add a param or a cookie.
+	wantKeys := []string{"f", "l", "o", "p", "q", "s", "vqd"}
+	var gotKeys []string
+	for k := range imgReq.query {
+		gotKeys = append(gotKeys, k)
+	}
+	sort.Strings(gotKeys)
+	if strings.Join(gotKeys, ",") != strings.Join(wantKeys, ",") {
+		t.Errorf("i.js query keys = %v, want exactly %v", gotKeys, wantKeys)
+	}
+	if got := imgReq.header.Get("Cookie"); got != "" {
+		t.Errorf("i.js Cookie header = %q, want none (the test server sets no cookie)", got)
+	}
+	if got := vqdReq.header.Get("Cookie"); got != "" {
+		t.Errorf("vqd Cookie header = %q, want none", got)
 	}
 	if got := imgReq.query.Get("vqd"); got != "4-123456789" {
 		t.Errorf("i.js vqd = %q, want 4-123456789", got)

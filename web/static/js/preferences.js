@@ -35,6 +35,8 @@
     language: 'en',
     notification_enabled: 'true',
     auto_fetch_images: 'false',
+    // #2310: hide AI-generated images in web image search (default on).
+    filter_ai_images: 'true',
     // M55 #2060: per-user debug tab toggle (migrated from global app setting).
     show_platform_debug: 'false',
     bg_opacity: '85',
