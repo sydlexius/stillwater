@@ -208,6 +208,25 @@ test('a failed re-search leaves the switch showing the SAVED value, and the next
   expect(putBodies.map((b) => JSON.parse(b).value)).toEqual(['false', 'true']);
 });
 
+test('a transport failure of the re-search shows the refresh-failed notice', async ({ page }) => {
+  const toggle = await triggerWebSearch(page);
+  await page.route('**/images/websearch**', (route) => route.abort('failed'));
+  await toggle.click();
+  await expect(page.locator('[data-sw-ai-filter-refresh-failed]')).toBeVisible({ timeout: 10_000 });
+});
+
+test('the switch is disabled while another trigger searches the same panel', async ({ page }) => {
+  await triggerWebSearch(page);
+  let release;
+  const held = new Promise((r) => { release = r; });
+  await page.route('**/images/websearch**', async (route) => { await held; return route.continue(); });
+  await page.locator('[aria-haspopup="true"]').first().click();
+  await page.getByRole('menuitem', { name: 'Web Search' }).click();
+  await expect(page.locator('#sw-ai-filter-toggle')).toBeDisabled();
+  release();
+  await expect(page.locator('#sw-ai-filter-toggle')).toBeEnabled({ timeout: 10_000 });
+});
+
 test('the switch renders and toggles on the generic Manage artwork layout too (#web-search-results)', async ({ page }) => {
   // No ?type= selects the generic layout, whose web search results render into
   // #web-search-results instead of #image-results.
