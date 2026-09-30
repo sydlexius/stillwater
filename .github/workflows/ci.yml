@@ -561,14 +561,26 @@ jobs:
 
       # apt .deb cache key: distro release (os-release) + image build
       # (ImageVersion), so it self-invalidates when ubuntu-latest moves to
-      # Ubuntu 26 (2026-10-19). Printed so the run log proves the values.
+      # Ubuntu 26 (2026-10-19). `pk` hashes the RESOLVED versions of the
+      # packages Playwright would install, so a package version bump changes the
+      # exact key (an exact hit is never re-saved, so without it a bump would be
+      # re-downloaded every run until the image changes). The index refresh here
+      # is tolerant (`|| true`): the deps step repeats it strictly after the
+      # Chrome source is disabled (#3219). The restore-key prefix (engine+os)
+      # stays, so older entries still seed SHA-verified .debs.
       - name: Compute apt cache key (${{ matrix.engine }})
         id: apt-key
         run: |
           os=$(. /etc/os-release && echo "$ID-$VERSION_ID")
           echo "os=$os" >> "$GITHUB_OUTPUT"
           echo "img=${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
-          echo "apt cache key parts: os=$os image=${ImageVersion:-unknown}"
+          sudo apt-get update >/dev/null 2>&1 || echo "::warning::apt-get update failed while computing the cache key"
+          dry=$(npx playwright install-deps --dry-run ${{ matrix.engine }} || true)
+          pkgs=$(printf '%s\n' "$dry" | sed -nE 's/^  ([a-z0-9][a-z0-9.+:-]*)$/\1/p' | tr '\n' ' ')
+          # shellcheck disable=SC2086 # word-splitting the package list is intended
+          pk=$( { [ -n "$pkgs" ] && apt-get install -s --no-install-recommends $pkgs | grep '^Inst' | sort | sha256sum | cut -c1-12; } || echo none)
+          echo "pk=$pk" >> "$GITHUB_OUTPUT"
+          echo "apt cache key parts: os=$os image=${ImageVersion:-unknown} pk=$pk"
 
       # Persist the .debs ACROSS PRs: every run restores, only main pushes save
       # (a PR-ref cache is invisible to other PRs). apt does NOT hash-check a
@@ -579,11 +591,12 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/playwright-apt/${{ matrix.engine }}
-          key: playwright-apt-${{ matrix.engine }}-${{ steps.apt-key.outputs.os }}-${{ steps.apt-key.outputs.img }}-${{ hashFiles('package-lock.json') }}
+          key: playwright-apt-${{ matrix.engine }}-${{ steps.apt-key.outputs.os }}-${{ steps.apt-key.outputs.img }}-${{ steps.apt-key.outputs.pk }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             playwright-apt-${{ matrix.engine }}-${{ steps.apt-key.outputs.os }}-
 
       - name: Install Playwright browser system dependencies (${{ matrix.engine }})
+        id: apt-deps
         # Always install OS-level deps (libnss3, libgbm, libdbus-glib for
         # firefox, etc.); they are OS packages, not part of the cached
         # browser archive. Scoped to this shard's own engine for the same
@@ -615,8 +628,9 @@ jobs:
         # one), so the mirror is only hit on a cache miss.
         #
         # What remains bounds the damage without orphaning anything:
-        #   - APT::Acquire::Retries makes apt itself retry a flaky mirror
-        #     in-process, which is where the transient faults actually are.
+        #   - APT::Acquire::Retries was meant to make apt retry in-process, but
+        #     the image's own apt config may override it, so do not rely on "3"
+        #     retries (the setting is tracked in #3300 and left untouched here).
         #   - DEBIAN_FRONTEND=noninteractive removes the prompt-wait class of
         #     hang entirely.
         #   - the job-level timeout-minutes below is the backstop for a genuine
@@ -755,23 +769,23 @@ jobs:
           npx playwright install-deps ${{ matrix.engine }}
           # Replace (not merge) so the cache holds only this run's archive.
           rm -f "$cache_dir"/*.deb
+          # An empty archive is legitimate (everything already installed): report
+          # staged=false so the save step is skipped, never an empty cache. Real
+          # copy errors still fail the step.
           if ls /var/cache/apt/archives/*.deb >/dev/null 2>&1; then
             sudo cp /var/cache/apt/archives/*.deb "$cache_dir"/
             sudo chown -R "$(id -u):$(id -g)" "$cache_dir"
-          fi
-          # Never let main save an empty cache under the exact key.
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ] \
-            && [ -z "$(find "$cache_dir" -name '*.deb' -print -quit)" ]; then
-            echo "::error::no .debs staged for the apt cache"
-            exit 1
+            echo "staged=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "staged=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Save apt packages cache (${{ matrix.engine }})
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true' && steps.apt-deps.outputs.staged == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/playwright-apt/${{ matrix.engine }}
-          key: playwright-apt-${{ matrix.engine }}-${{ steps.apt-key.outputs.os }}-${{ steps.apt-key.outputs.img }}-${{ hashFiles('package-lock.json') }}
+          key: playwright-apt-${{ matrix.engine }}-${{ steps.apt-key.outputs.os }}-${{ steps.apt-key.outputs.img }}-${{ steps.apt-key.outputs.pk }}-${{ hashFiles('package-lock.json') }}
 
       - name: Generate templ
         run: go tool templ generate
