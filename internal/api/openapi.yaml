@@ -8891,7 +8891,6 @@ paths:
         Update one or more settings as key-value string pairs.
         Known keys include:
         auto_fetch_images (true/false),
-        filter_ai_images (true/false),
         show_platform_debug (true/false),
         notif_badge_enabled (true/false),
         notif_badge_severity_error (true/false),
@@ -9134,8 +9133,10 @@ paths:
                       Whether web image search hides results from sites on a
                       community-maintained list of AI-image sources (the HUGE
                       AI Blocklist), applied by Stillwater after the search
-                      returns. Best-effort: AI images hosted elsewhere can
-                      still appear. Defaults to "true" (filtered).
+                      returns. Best-effort and limited to listed sites: AI
+                      images hosted on other sites can still appear, and some
+                      non-AI images from listed sites may also be hidden.
+                      Defaults to "true" (filtered).
                   metadata_name_romanization_fallback:
                     type: string
                     enum: ["true", "false"]
@@ -15718,7 +15719,9 @@ paths:
                     description: >-
                       Outcome of the per-user filter_ai_images preference, which drops results
                       hosted on sites in the community AI-image blocklist after the providers
-                      return. Best-effort: AI images hosted elsewhere are not detected.
+                      return. Best-effort and limited to listed sites: AI images hosted on other
+                      sites can still appear, and some non-AI images from listed sites may also be
+                      hidden.
                     properties:
                       applied:
                         type: boolean
