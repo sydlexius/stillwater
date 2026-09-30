@@ -43,6 +43,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/provider/aiblock"
 	"github.com/sydlexius/stillwater/internal/provider/audiodb"
 	"github.com/sydlexius/stillwater/internal/provider/deezer"
 	"github.com/sydlexius/stillwater/internal/provider/discogs"
@@ -226,6 +227,12 @@ type Application struct {
 	// finds it nil and skips the drain rather than blocking on a channel
 	// that will never close. See drainLockDamageRepair.
 	lockDamageRepairDone chan struct{}
+
+	// aiBlocklist is the runtime-fetched AI-image blocklist (#2310), built in
+	// wireProviders; aiBlocklistDone closes when its refresh loop exits and
+	// stays nil when the loop never started. See ai_blocklist.go.
+	aiBlocklist     *aiblock.Store
+	aiBlocklistDone <-chan struct{}
 
 	// Testing seams: override these via functional options before calling run phases.
 	encKeyResolver func(cfg *config.Config, logger *slog.Logger) (string, error)
@@ -868,6 +875,7 @@ func (a *Application) wireProviders(ctx context.Context) error {
 	a.providerRegistry.Register(spotify.New(a.rateLimiters, a.providerSettings, logger))
 
 	a.webSearchRegistry = provider.NewWebSearchRegistry()
+	a.newAIBlocklist()
 	a.webSearchRegistry.Register(duckduckgo.New(a.rateLimiters, logger))
 
 	a.orchestrator = provider.NewOrchestrator(a.providerRegistry, a.providerSettings, logger, aimdCtrl)
@@ -1391,6 +1399,10 @@ func (a *Application) startListeners() error {
 	// One-shot repair of locked fields a past rule run overwrote (#3038).
 	a.startLockDamageRepair(ctx, db, logger)
 
+	// AI-image blocklist used to filter web image search results (#2310):
+	// load the cached copy, then fetch and refresh daily.
+	a.startAIBlocklist(ctx)
+
 	// Fanart per-slot hash backfill (issue #2564).
 	a.startFanartHashBackfill(ctx, db)
 
@@ -1542,11 +1554,82 @@ func (a *Application) startListeners() error {
 		logger.Warn("locked-field damage repair drain did not complete cleanly", slog.String("error", err.Error()))
 	}
 
+	// Drain the AI blocklist refresh loop (#2310). Same slot and reasoning as
+	// the drains above; the helper owns its bound and logs a timeout.
+	a.drainAIBlocklistOnShutdown()
+
 	// Stop the scanner -- the listener layer has drained, so no new scan
 	// requests can race with the scanner's WaitGroup.
 	a.scannerService.Shutdown()
 
 	return srvErr
+}
+
+// newAIBlocklist builds the runtime-fetched AI-image blocklist behind web
+// image search result filtering (#2310) and installs it as aiblock's
+// default. It only constructs: nothing is read or fetched until
+// startAIBlocklist runs from startListeners, so building services stays free
+// of network and disk side effects.
+//
+// The cache file lives at <data dir>/cache/ai_blocklist.txt, next to the
+// image cache, so a restart filters with the last good list before the first
+// fetch completes.
+func (a *Application) newAIBlocklist() {
+	st := aiblock.NewStore(aiblock.Options{
+		CacheDir: filepath.Join(filepath.Dir(a.cfg.Database.Path), "cache"),
+		URL:      a.cfg.Image.AIBlocklistURL,
+		Logger:   a.logger,
+	})
+	a.aiBlocklist = st
+	aiblock.SetDefault(st)
+}
+
+// startAIBlocklist starts the store's load-then-refresh loop. When
+// SW_AI_BLOCKLIST_URL is explicitly empty the loop is never started: no
+// download and no cached copy adopted, so the matcher stays empty and Status
+// reports not loaded. The test harness servers rely on that to stay offline.
+// (The empty check must happen here: aiblock.NewStore maps an empty URL to
+// its upstream default.)
+func (a *Application) startAIBlocklist(ctx context.Context) {
+	if a.aiBlocklist == nil {
+		a.logger.Error("AI blocklist: startAIBlocklist called before newAIBlocklist; the filter will remove nothing")
+		return
+	}
+	if a.cfg.Image.AIBlocklistURL == "" {
+		a.logger.Info("AI blocklist download disabled (SW_AI_BLOCKLIST_URL is empty); no list will be loaded")
+		return
+	}
+	a.aiBlocklistDone = a.aiBlocklist.Start(ctx)
+}
+
+// drainAIBlocklistOnShutdown runs drainAIBlocklist with a 10s bound and logs
+// a timeout. stop() has already canceled the shared ctx and the fetch is
+// ctx-bound, so the bound only covers a cache write wedged in
+// non-context-aware I/O. (Kept out of startListeners to hold its cognitive
+// complexity under the lint ceiling.)
+func (a *Application) drainAIBlocklistOnShutdown() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := a.drainAIBlocklist(ctx); err != nil {
+		a.logger.Warn("AI blocklist refresh drain did not complete cleanly", slog.String("error", err.Error()))
+	}
+}
+
+// drainAIBlocklist waits for the refresh loop to exit after the shared ctx is
+// canceled, or for ctx to expire. The fetch is ctx-bound, so a healthy loop
+// exits at once; the drain keeps a cache-file write from outliving shutdown,
+// the same reason the other background workers are drained. A loop that was
+// never started (disabled, or startup never got that far) has nothing to wait on.
+func (a *Application) drainAIBlocklist(ctx context.Context) error {
+	if a.aiBlocklistDone == nil {
+		return nil
+	}
+	select {
+	case <-a.aiBlocklistDone:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // applyPersistedBasePath reads the server.base_path override from the settings
