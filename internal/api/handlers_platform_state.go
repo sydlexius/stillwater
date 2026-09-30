@@ -8,6 +8,8 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
+	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/provider/tagdict"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -85,8 +87,13 @@ func (r *Router) handleGetPlatformState(w http.ResponseWriter, req *http.Request
 	}
 }
 
-// handlePullMetadata pulls metadata from a platform connection and overwrites
-// the artist's biography, genres, and dates in Stillwater.
+// handlePullMetadata pulls metadata from a platform connection into Stillwater.
+// Biography and dates overwrite the stored values. Genres accumulate: the
+// platform's genres are unioned with the artist's existing ones (canonical,
+// locale-aware dedup, then the Tag Sources exclude patterns and caps), so a
+// pull does not replace the existing tags. An existing tag that matches an
+// exclude pattern, or falls past the genre cap, is still removed. The union is computed here,
+// not in UpdateField, so manual edits and history reverts still replace.
 // POST /api/v1/artists/{id}/pull?connection_id=X
 func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 	artistID := req.PathValue("id")
@@ -148,7 +155,10 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if len(state.Genres) > 0 {
-		changed, err := r.artistService.UpdateField(req.Context(), artistID, "genres", strings.Join(state.Genres, ", "))
+		ctx := r.injectMetadataLanguages(req.Context())
+		merged := tagdict.ApplyVocabFilter(tagdict.MetadataVocab(ctx), tagdict.VocabFieldGenres,
+			tagdict.MergeAndDeduplicateLocale(a.Genres, state.Genres, provider.FirstMetadataLang(ctx)))
+		changed, err := r.artistService.UpdateField(ctx, artistID, "genres", strings.Join(merged, ", "))
 		if err != nil {
 			r.logger.Warn("updating genres from platform", "error", err)
 		} else if changed {

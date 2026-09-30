@@ -6,8 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/sydlexius/stillwater/internal/api/middleware"
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
 )
 
@@ -148,5 +153,134 @@ func TestHandlePullMetadata_ChangedFieldInUpdated(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("biography not in updated=%v, want it present (field actually changed)", updated)
+	}
+}
+
+// pullGenres seeds an artist with stored genres, serves the given platform
+// genres from a stub Emby, runs the pull, and returns the artist's resulting
+// genres plus the response's updated list.
+func pullGenres(t *testing.T, r *Router, artistSvc *artist.Service, stored, platform []string, lang ...string) ([]string, []any) {
+	t.Helper()
+	ctx := context.Background()
+	a := addTestArtist(t, artistSvc, "Pull Genres Artist")
+	if _, err := artistSvc.UpdateField(ctx, a.ID, "genres", strings.Join(stored, ", ")); err != nil {
+		t.Fatalf("seeding genres: %v", err)
+	}
+	quoted, _ := json.Marshal(platform)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"Name":"x","Genres":%s,"Tags":[],"ProviderIds":{},"ImageTags":{},"BackdropImageTags":[],"LockedFields":[]}`, quoted)
+	}))
+	t.Cleanup(srv.Close)
+	conn := &connection.Connection{Name: "Emby", Type: connection.TypeEmby, URL: srv.URL, APIKey: "k",
+		Emby: &connection.EmbyConfig{PlatformUserID: "u"}, Enabled: true}
+	if err := r.connectionService.Create(ctx, conn); err != nil {
+		t.Fatalf("creating connection: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(ctx, a.ID, conn.ID, "emby-1"); err != nil {
+		t.Fatalf("setting platform id: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/pull?connection_id="+conn.ID, nil)
+	req.SetPathValue("id", a.ID)
+	if len(lang) > 0 {
+		// Real preference path: the handler reads metadata_languages for the
+		// authenticated user from user_preferences.
+		seedUserPref(t, r, "test-user", PrefMetadataLanguages, `["`+lang[0]+`"]`)
+		req = req.WithContext(middleware.WithTestUserID(req.Context(), "test-user"))
+	}
+	w := httptest.NewRecorder()
+	r.handlePullMetadata(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Updated []any `json:"updated"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	got, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	return got.Genres, resp.Updated
+}
+
+func TestHandlePullMetadata_GenresAccumulate(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		stored, pull []string
+		lang         []string
+		want         []string
+		wantUpdated  bool
+	}{
+		{"adds platform genre", []string{"Rock", "Blues"}, []string{"Folk"}, nil, []string{"Rock", "Blues", "Folk"}, true},
+		{"canonical dedup", []string{"Rock"}, []string{"rock", "Jazz"}, nil, []string{"Rock", "Jazz"}, true},
+		{"subset is a no-op", []string{"Rock", "Jazz"}, []string{"Rock"}, nil, []string{"Rock", "Jazz"}, false},
+		// Canonicalization side effect: stored tags are canonicalized too.
+		{"canonicalizes stored tags", []string{"rock", "hip hop"}, []string{"Rock"}, nil, []string{"Rock", "Hip-Hop"}, true},
+		// Japanese preference: stored Rock and pulled ロック collapse to one
+		// localized entry instead of two.
+		{"locale-aware dedup", []string{"Rock"}, []string{"ロック"}, []string{"ja"}, []string{"ロック"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r, artistSvc, _ := testRouterWithHistory(t)
+			got, updated := pullGenres(t, r, artistSvc, tt.stored, tt.pull, tt.lang...)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("genres = %v, want %v", got, tt.want)
+			}
+			if has := slices.Contains(updated, any("genres")); has != tt.wantUpdated {
+				t.Errorf("genres in updated=%v is %v, want %v", updated, has, tt.wantUpdated)
+			}
+		})
+	}
+}
+
+// TestHandlePullMetadata_GenresApplyExcludePatterns saves an exclude pattern
+// through the real settings handler and checks it strips a stored tag from the
+// pulled union, not just from the incoming platform list.
+func TestHandlePullMetadata_GenresApplyExcludePatterns(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, _ := testRouterWithHistory(t)
+	put := httptest.NewRequest(http.MethodPut, "/api/v1/settings/vocab", strings.NewReader(`{"exclude":["blues"]}`))
+	pw := httptest.NewRecorder()
+	r.handlePutVocab(pw, put)
+	if pw.Code != http.StatusOK {
+		t.Fatalf("saving vocab: %d %s", pw.Code, pw.Body.String())
+	}
+	got, _ := pullGenres(t, r, artistSvc, []string{"Rock", "Blues"}, []string{"Folk"})
+	if want := []string{"Rock", "Folk"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("genres = %v, want %v", got, want)
+	}
+}
+
+// TestHandleFieldUpdate_GenresStillReplace pins the precondition that the
+// shared UpdateField verb replaces: only the pull handler accumulates.
+func TestHandleFieldUpdate_GenresStillReplace(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, _ := testRouterWithHistory(t)
+	ctx := context.Background()
+	a := addTestArtist(t, artistSvc, "Manual Genres Artist")
+	if _, err := artistSvc.UpdateField(ctx, a.ID, "genres", "Rock, Blues"); err != nil {
+		t.Fatalf("seeding genres: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/artists/"+a.ID+"/fields/genres", strings.NewReader("value=Folk"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("field", "genres")
+	w := httptest.NewRecorder()
+	r.handleFieldUpdate(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", w.Code, w.Body.String())
+	}
+	got, err := artistSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("reloading artist: %v", err)
+	}
+	if want := []string{"Folk"}; !reflect.DeepEqual(got.Genres, want) {
+		t.Errorf("genres = %v, want %v", got.Genres, want)
 	}
 }
