@@ -300,45 +300,55 @@ func TestStoreDisabledIsReported(t *testing.T) {
 // refreshes them; a loaded status must never pair with the empty matcher (or
 // an unloaded one with a real matcher), and a loaded status's rule count must
 // be the matcher's. Bounded to ~1s; a correct Snapshot never fails it.
+//
+// Coverage of both states is deterministic: the writer itself takes a
+// Snapshot after each phase (not loaded right after installing a fresh store,
+// loaded right after its Refresh) and asserts it. The racing readers only add
+// the concurrent consistency check, so scheduling can neither let the test
+// pass without exercising both states nor fail it when Snapshot is correct.
 func TestSnapshotMatcherAndStatusAgree(t *testing.T) {
 	ls := newListServer(t, http.StatusOK, readSample(t))
 	t.Cleanup(func() { SetDefault(nil) })
+	consistent := func(m *Matcher, st Status) bool {
+		return st.Loaded != (m == emptyMatcher) && (!st.Loaded || m.ruleCount() == st.Rules)
+	}
 	var stop atomic.Bool
-	var bad, loaded, empty atomic.Int64
+	var bad atomic.Int64
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for !stop.Load() {
-				m, st := Snapshot()
-				if st.Loaded == (m == emptyMatcher) || (st.Loaded && m.ruleCount() != st.Rules) {
+				if m, st := Snapshot(); !consistent(m, st) {
 					bad.Add(1)
-				}
-				if st.Loaded {
-					loaded.Add(1)
-				} else {
-					empty.Add(1)
 				}
 			}
 		}()
 	}
-	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); {
+	halt := func() { stop.Store(true); wg.Wait() }
+	phases := 0
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); phases++ {
 		s := ls.store("", time.Hour)
 		SetDefault(s)
+		if m, st := Snapshot(); st.Loaded || m != emptyMatcher {
+			halt()
+			t.Fatalf("fresh store: Snapshot status %+v (empty matcher: %v), want not loaded with the empty matcher", st, m == emptyMatcher)
+		}
 		if err := s.Refresh(context.Background()); err != nil {
-			stop.Store(true)
-			wg.Wait()
+			halt()
 			t.Fatal(err)
 		}
+		if m, st := Snapshot(); !st.Loaded || !consistent(m, st) {
+			halt()
+			t.Fatalf("after Refresh: Snapshot status %+v with a %d-rule matcher, want loaded and matching", st, m.ruleCount())
+		}
 	}
-	stop.Store(true)
-	wg.Wait()
+	halt()
+	if phases == 0 {
+		t.Fatal("the writer ran no phases")
+	}
 	if n := bad.Load(); n != 0 {
 		t.Fatalf("%d snapshots paired a matcher with a status describing a different list", n)
-	}
-	// Precondition: both states were actually observed, or the check proved nothing.
-	if loaded.Load() == 0 || empty.Load() == 0 {
-		t.Fatalf("readers saw loaded=%d empty=%d; need both", loaded.Load(), empty.Load())
 	}
 }
