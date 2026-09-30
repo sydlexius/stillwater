@@ -28,6 +28,13 @@
     "covered": true
   },
   {
+    "operationId": "aiBlocklistStatus",
+    "method": "GET",
+    "path": "/images/ai-blocklist/status",
+    "handler": "handleAIBlocklistStatus",
+    "covered": true
+  },
+  {
     "operationId": "allowlistForeignFile",
     "method": "POST",
     "path": "/foreign-files/{id}/allowlist",

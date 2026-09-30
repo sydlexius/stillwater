@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,6 +89,9 @@ var canaryURLs = [...]string{
 // defaultStore backs Default(); see SetDefault.
 var defaultStore atomic.Pointer[Store]
 
+// DefaultStore returns the store installed with SetDefault, or nil.
+func DefaultStore() *Store { return defaultStore.Load() }
+
 // SetDefault installs s as the store Default() reads from.
 func SetDefault(s *Store) { defaultStore.Store(s) }
 
@@ -136,6 +140,9 @@ type Status struct {
 	// successful download, or the cache file's modification time when the
 	// list came from the cache. Zero when nothing is loaded.
 	LastFetch time.Time
+	// LastChecked is when the last refresh attempt finished, successful or
+	// not. Zero until one has run in this process.
+	LastChecked time.Time
 	// LastError is the most recent failure, cleared by a clean refresh.
 	LastError string
 	// Disabled is true when the operator turned the download off, so no list
@@ -161,8 +168,9 @@ type Store struct {
 
 	// mu guards status and is held across the matcher swap, so a Status
 	// snapshot always describes the matcher that was active when it was taken.
-	mu     sync.Mutex
-	status Status
+	mu      sync.Mutex
+	status  Status
+	checked time.Time
 }
 
 // NewStore returns a Store with an empty (block-nothing) matcher.
@@ -196,7 +204,9 @@ func NewStore(opts Options) *Store {
 func (s *Store) snapshot() (*Matcher, Status) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.active.Load(), s.status
+	st := s.status
+	st.LastChecked = s.checked
+	return s.active.Load(), st
 }
 
 // Matcher returns the active matcher. It is never nil.
@@ -204,9 +214,21 @@ func (s *Store) Matcher() *Matcher { return s.active.Load() }
 
 // Status returns a snapshot of the store's state.
 func (s *Store) Status() Status {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.status
+	_, st := s.snapshot()
+	return st
+}
+
+// SourceHost is the host (no path, no query) the list is fetched from, or ""
+// when the download is disabled or the URL does not parse. It is safe to show.
+func (s *Store) SourceHost() string {
+	if s.opts.Disabled {
+		return ""
+	}
+	u, err := url.Parse(s.opts.URL)
+	if err != nil {
+		return ""
+	}
+	return u.Host
 }
 
 // Start loads the cached list (a local read, so filtering works right after a
@@ -306,6 +328,40 @@ func (s *Store) loadCache() {
 func (s *Store) Refresh(ctx context.Context) error {
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()
+	return s.refreshLocked(ctx)
+}
+
+// RefreshIfDue runs Refresh unless an attempt finished less than minGap ago, in
+// which case it returns ran=false and how long until one is allowed. The check
+// happens under the refresh lock, so there is one fetch however many callers.
+// A caller that finds a refresh already running does not wait for it (that can
+// take the client timeout): it gets ran=false with minGap as the retry hint.
+func (s *Store) RefreshIfDue(ctx context.Context, minGap time.Duration) (ran bool, retryAfter time.Duration, err error) {
+	if !s.refreshMu.TryLock() {
+		return false, minGap, nil
+	}
+	defer s.refreshMu.Unlock()
+	s.mu.Lock()
+	last := s.checked
+	s.mu.Unlock()
+	if wait := minGap - time.Since(last); !last.IsZero() && wait > 0 {
+		return false, wait, nil
+	}
+	return true, 0, s.refreshLocked(ctx)
+}
+
+// refreshLocked is Refresh with refreshMu already held.
+func (s *Store) refreshLocked(ctx context.Context) error {
+	// NewStore swaps an empty URL for SourceURL, so a disabled store would
+	// otherwise download from upstream; refuse before touching the network.
+	if s.opts.Disabled {
+		return errors.New("list download is disabled")
+	}
+	defer func() {
+		s.mu.Lock()
+		s.checked = time.Now()
+		s.mu.Unlock()
+	}()
 	body, err := s.fetch(ctx)
 	if err != nil && !errors.Is(err, errOversize) {
 		err = fetchErr{err}
