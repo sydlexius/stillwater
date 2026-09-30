@@ -451,6 +451,93 @@ test('an unstamped search in flight across the FIRST toggle is repainted when it
   expect(logs.filter((l) => l.includes('re-running the web search failed')), 'no false failure message').toHaveLength(0);
 });
 
+// #3296 review: shared setup. A search A is rendered (filter on) and held; the
+// switch is saved off; the preference is then set back to true elsewhere and a
+// fresh search renders the switch on. Returns the pieces the specs release.
+async function saveOffThenChangeElsewhere(page, request) {
+  const toggle = await triggerWebSearch(page);
+  return { toggle, async finish() {
+    await toggle.click();
+    await expect(page.locator('#sw-ai-filter-toggle')).toHaveAttribute('aria-checked', 'false', { timeout: 10_000 });
+    await expect(page.locator('#sw-ai-filter-toggle')).toBeEnabled({ timeout: 10_000 });
+    const put = await apiFetch(request, 'PUT', '/api/v1/preferences/filter_ai_images', { value: 'true' });
+    expect(put.ok(), await put.text()).toBeTruthy();
+  } };
+}
+async function freshSearch(page, viaAjax = false) {
+  const fresh = page.waitForResponse((r) => r.url().includes('/images/websearch'));
+  if (viaAjax) {
+    // The Actions menu trigger is dropped while another search is in flight.
+    await page.evaluate((id) => {
+      window.htmx.ajax('GET', `/api/v1/artists/${id}/images/websearch?type=thumb`, { target: '#image-results', swap: 'innerHTML' });
+    }, artistId);
+  } else {
+    await page.locator('[aria-haspopup="true"]').first().click();
+    await page.getByRole('menuitem', { name: 'Web Search' }).click();
+  }
+  expect(await (await fresh).text(), 'fresh render reflects the server value').toContain('aria-checked="true"');
+  await expect(page.locator('#sw-ai-filter-toggle')).toHaveAttribute('aria-checked', 'true');
+}
+
+test('a pre-save swap into a different element does not repaint the switch (#3296)', async ({ page, request }) => {
+  const s = await saveOffThenChangeElsewhere(page, request);
+  await page.evaluate(() => {
+    const d = document.createElement('div');
+    d.id = 'unrelated-3296';
+    document.body.appendChild(d);
+  });
+  let release; const held = new Promise((r) => { release = r; });
+  let sent; const sentP = new Promise((r) => { sent = r; });
+  await page.route('**/api/v1/health', async (route) => { sent(); await held; return route.continue(); });
+  await page.evaluate(() => { window.htmx.ajax('GET', '/api/v1/health', { target: '#unrelated-3296', swap: 'innerHTML' }); });
+  await sentP;
+  await s.finish();
+  await freshSearch(page);
+  expect(await page.evaluate(() => document.getElementById('unrelated-3296').contains(document.getElementById('sw-ai-filter-toggle'))), 'swap target does not contain the switch').toBe(false);
+  release();
+  await expect(page.locator('#unrelated-3296')).not.toBeEmpty();
+  await expect(page.locator('#sw-ai-filter-toggle')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('[data-sw-ai-filter-refresh-failed]')).toHaveCount(0);
+});
+
+test('a held pre-save response landing after an authoritative fresh render is not repainted (#3296)', async ({ page, request }) => {
+  const toggle = await triggerWebSearch(page); // search 1
+  let releasePut; const putHeld = new Promise((r) => { releasePut = r; });
+  let releaseA; const heldA = new Promise((r) => { releaseA = r; });
+  let aReady; const aReadyP = new Promise((r) => { aReady = r; });
+  let n = 0;
+  await page.route('**/api/v1/preferences/filter_ai_images', async (route) => {
+    if (route.request().method() !== 'PUT') return route.continue();
+    await putHeld;
+    return route.continue();
+  });
+  await page.route('**/images/websearch**', async (route) => {
+    n += 1;
+    if (n !== 1) return route.continue(); // 2 = the switch's re-search, 3 = fresh
+    const resp = await route.fetch();
+    expect(await resp.text(), 'held body is the stale render').toContain('aria-checked="true"');
+    aReady();
+    await heldA;
+    return route.fulfill({ response: resp });
+  });
+  await toggle.click(); // save held
+  await page.locator('[aria-haspopup="true"]').first().click();
+  await page.getByRole('menuitem', { name: 'Web Search' }).click(); // A, held
+  await aReadyP;
+  releasePut();
+  await expect.poll(() => n).toBe(2);
+  await expect(page.locator('#sw-ai-filter-toggle')).toHaveAttribute('aria-checked', 'false', { timeout: 10_000 });
+  await expect(page.locator('#sw-ai-filter-toggle')).toBeEnabled({ timeout: 10_000 });
+  const put = await apiFetch(request, 'PUT', '/api/v1/preferences/filter_ai_images', { value: 'true' });
+  expect(put.ok(), await put.text()).toBeTruthy();
+  await freshSearch(page, true); // authoritative render: true
+  await page.evaluate(() => { window.__fresh = document.getElementById('sw-ai-filter-toggle'); });
+  releaseA();
+  await expect.poll(() => page.evaluate(() => window.__fresh.isConnected)).toBe(false);
+  await expect(page.locator('#sw-ai-filter-toggle')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('[data-sw-ai-filter-refresh-failed]')).toHaveCount(0);
+});
+
 test('the switch renders and toggles on the generic Manage artwork layout too (#web-search-results)', async ({ page }) => {
   // No ?type= selects the generic layout, whose web search results render into
   // #web-search-results instead of #image-results.

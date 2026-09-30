@@ -2940,8 +2940,8 @@ func webSearchAIFilterToggle(artistID string, f WebSearchAIFilter, activeSort st
 // the button). Every failure is logged with console.error.
 func toggleAIImageFilter(btnID string, searchURL string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_toggleAIImageFilter_3dbc`,
-		Function: `function __templ_toggleAIImageFilter_3dbc(btnID, searchURL){var btn = document.getElementById(btnID);
+		Name: `__templ_toggleAIImageFilter_14a0`,
+		Function: `function __templ_toggleAIImageFilter_14a0(btnID, searchURL){var btn = document.getElementById(btnID);
 	if (!btn || btn.disabled) { return; }
 	var target = btn.closest('#image-results, #web-search-results');
 	if (!target) {
@@ -2999,9 +2999,20 @@ func toggleAIImageFilter(btnID string, searchURL string) templ.ComponentScript {
 		});
 		document.addEventListener('htmx:afterSwap', function (evt) {
 			var b = document.getElementById(btnID);
-			var v = window.swAIFilterSaved;
+			// Act only when this swap replaced the switch. htmx fires afterSwap on
+			// each NEW element (evt.target) with detail.target = the swap target;
+			// after an outerHTML swap that target is detached, so check both.
+			var t = evt.detail && evt.detail.target;
+			if (!b || !((t && t.contains(b)) || (evt.target && evt.target.contains && evt.target.contains(b)))) { return; }
 			var x = evt.detail && evt.detail.xhr;
-			if (b && v !== undefined && x && (x.swSeq || 0) < (window.swAIFilterSaveSeq || 0) && b.getAttribute('aria-checked') !== v) {
+			if (!x) { return; }
+			if ((x.swSeq || 0) >= (window.swAIFilterSaveSeq || 0)) {
+				// Sent after the latest save: the server's render is the truth.
+				window.swAIFilterSaved = b.getAttribute('aria-checked');
+				return;
+			}
+			var v = window.swAIFilterSaved;
+			if (v !== undefined && b.getAttribute('aria-checked') !== v) {
 				paint(b, v);
 				showRefreshFailed('', 'toggleAIImageFilter: a search response sent before the AI filter save arrived late; the results shown are stale');
 			}
@@ -3054,8 +3065,8 @@ func toggleAIImageFilter(btnID string, searchURL string) templ.ComponentScript {
 		restoreFocus();
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_toggleAIImageFilter_3dbc`, btnID, searchURL),
-		CallInline: templ.SafeScriptInline(`__templ_toggleAIImageFilter_3dbc`, btnID, searchURL),
+		Call:       templ.SafeScript(`__templ_toggleAIImageFilter_14a0`, btnID, searchURL),
+		CallInline: templ.SafeScriptInline(`__templ_toggleAIImageFilter_14a0`, btnID, searchURL),
 	}
 }
 
