@@ -1,13 +1,17 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
+	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/provider/tagdict"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -85,8 +89,13 @@ func (r *Router) handleGetPlatformState(w http.ResponseWriter, req *http.Request
 	}
 }
 
-// handlePullMetadata pulls metadata from a platform connection and overwrites
-// the artist's biography, genres, and dates in Stillwater.
+// handlePullMetadata pulls metadata from a platform connection into Stillwater.
+// Biography and dates overwrite the stored values. Genres accumulate: the
+// platform's genres are unioned with the artist's existing ones (canonical,
+// locale-aware dedup, then the Tag Sources exclude patterns and caps), so a
+// pull does not replace the existing tags. An existing tag that matches an
+// exclude pattern, or falls past the genre cap, is still removed. The union is computed here,
+// not in UpdateField, so manual edits and history reverts still replace.
 // POST /api/v1/artists/{id}/pull?connection_id=X
 func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 	artistID := req.PathValue("id")
@@ -148,10 +157,7 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if len(state.Genres) > 0 {
-		changed, err := r.artistService.UpdateField(req.Context(), artistID, "genres", strings.Join(state.Genres, ", "))
-		if err != nil {
-			r.logger.Warn("updating genres from platform", "error", err)
-		} else if changed {
+		if r.pullGenres(req.Context(), artistID, state.Genres) {
 			updated = append(updated, "genres")
 		}
 	}
@@ -184,6 +190,38 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 		"status":  "pulled",
 		"updated": updated,
 	})
+}
+
+// pullGenres adds the platform's genres to the artist's existing ones and
+// reports whether the stored list changed. The read-merge-write is serialized
+// per artist (the platform call and the rest of the pull stay outside the
+// lock). This orders pull-vs-pull only; pull-vs-refresh/edit is the general
+// lost-update gap tracked by #2804.
+func (r *Router) pullGenres(reqCtx context.Context, artistID string, platform []string) bool {
+	lk, _ := r.pullGenresLocks.LoadOrStore(artistID, &sync.Mutex{})
+	mu := lk.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
+	// Re-read inside the lock: the caller's artist predates the network call.
+	// If the re-read fails, skip the genre update rather than merge into a
+	// stale snapshot.
+	cur, err := r.artistService.GetByID(reqCtx, artistID)
+	if err != nil {
+		r.logger.Warn("reloading artist for genre pull, skipping genres", "artist_id", artistID, "error", err)
+		return false
+	}
+	ctx := r.injectMetadataLanguages(reqCtx)
+	merged := tagdict.ApplyVocabFilter(tagdict.MetadataVocab(ctx), tagdict.VocabFieldGenres,
+		tagdict.MergeAndDeduplicateLocale(cur.Genres, platform, provider.FirstMetadataLang(ctx)))
+	if r.pullGenresReadHook != nil {
+		r.pullGenresReadHook()
+	}
+	changed, err := r.artistService.UpdateField(ctx, artistID, "genres", strings.Join(merged, ", "))
+	if err != nil {
+		r.logger.Warn("updating genres from platform", "error", err)
+		return false
+	}
+	return changed
 }
 
 // newStateGetter instantiates an ArtistStateGetter for the given connection type.

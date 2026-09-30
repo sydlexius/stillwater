@@ -117,6 +117,12 @@ type RouterDeps struct {
 
 // Router sets up all HTTP routes for the application.
 type Router struct {
+	// pullGenresLocks: per-artist *sync.Mutex for the pull genre read-merge-write
+	// (entries are never deleted; artist IDs are finite). pullGenresReadHook is
+	// a test-only pause between that read and the write.
+	pullGenresLocks    sync.Map
+	pullGenresReadHook func()
+
 	authService        *auth.Service
 	authRegistry       *auth.Registry
 	artistService      *artist.Service
