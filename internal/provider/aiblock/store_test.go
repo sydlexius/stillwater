@@ -2,6 +2,7 @@ package aiblock
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -101,7 +102,7 @@ func TestStoreRefreshSwapsMatcherAndWritesCache(t *testing.T) {
 		t.Error("fetched list must become the active matcher")
 	}
 	st := s.Status()
-	if !st.Loaded || st.Rules != strings.Count(sample, "\n")-3 || st.LastFetch.IsZero() || st.LastError != "" {
+	if !st.Loaded || st.Rules != Parse(sample).ruleCount() || st.LastFetch.IsZero() || st.LastError != "" {
 		t.Errorf("Status after fetch = %+v", st)
 	}
 	got, err := os.ReadFile(filepath.Join(dir, CacheFileName))
@@ -117,7 +118,8 @@ func TestStoreRefreshSwapsMatcherAndWritesCache(t *testing.T) {
 // Each bad body is otherwise a valid list, so only the named guard rejects it.
 func TestStoreFailedRefreshKeepsPrevious(t *testing.T) {
 	sample := readSample(t)
-	oversize := sample + "#" + strings.Repeat("x", maxListBytes) + "\n"
+	// A literal 1 MiB, not maxListBytes, so the test pins the documented cap.
+	oversize := sample + "#" + strings.Repeat("x", 1<<20) + "\n"
 	for _, c := range []struct {
 		name   string
 		status int
@@ -126,6 +128,13 @@ func TestStoreFailedRefreshKeepsPrevious(t *testing.T) {
 		{"non-200", http.StatusInternalServerError, sample},
 		{"oversize", http.StatusOK, oversize},
 		{"zero rules", http.StatusOK, "# comments only\nnot a rule\n"},
+		// Lists that would block every clean result (canary guard).
+		{"match-all regex", http.StatusOK, sample + "/./\n"},
+		{"scheme regex", http.StatusOK, sample + "/^https?:/\n"},
+		{"public suffix", http.StatusOK, sample + "*://*.co.uk/*\n"},
+		// Regex caps: over-count and over-length lists are rejected whole.
+		{"too many regexes", http.StatusOK, sample + manyRegexes(maxRegexes)},
+		{"long regex", http.StatusOK, sample + "/" + strings.Repeat("q", maxRegexBytes) + "/\n"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			first := "*://*.first.example/*\n"
@@ -151,6 +160,74 @@ func TestStoreFailedRefreshKeepsPrevious(t *testing.T) {
 				t.Errorf("Status after failure = %+v, want still loaded with an error", st)
 			}
 		})
+	}
+}
+
+// manyRegexes returns n harmless regex lines; with the fixture's own regexes
+// the total exceeds n.
+func manyRegexes(n int) string {
+	var b strings.Builder
+	for i := range n {
+		fmt.Fprintf(&b, "/zz%d\\.invalid\\//\n", i)
+	}
+	return b.String()
+}
+
+// A slow earlier refresh must not overwrite a newer one: refreshes serialize,
+// so the one that starts last installs and persists last.
+func TestStoreRefreshesSerialize(t *testing.T) {
+	release := make(chan struct{})
+	arrived := make(chan struct{})
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if hits.Add(1) == 1 {
+			close(arrived)
+			<-release
+			_, _ = w.Write([]byte("*://*.old.example/*\n"))
+			return
+		}
+		_, _ = w.Write([]byte("*://*.new.example/*\n"))
+	}))
+	t.Cleanup(srv.Close)
+	dir := t.TempDir()
+	s := NewStore(Options{CacheDir: dir, URL: srv.URL, Client: srv.Client()})
+
+	first, second := make(chan error, 1), make(chan error, 1)
+	go func() { first <- s.Refresh(context.Background()) }()
+	<-arrived
+	go func() { second <- s.Refresh(context.Background()) }()
+	// Unserialized, the second refresh completes while the first is held.
+	select {
+	case <-second:
+		second <- nil
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(release)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-second; err != nil {
+		t.Fatal(err)
+	}
+	if !s.Matcher().MatchURL("https://new.example/x") || s.Matcher().MatchURL("https://old.example/x") {
+		t.Error("the later refresh's list must be active")
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, CacheFileName)); string(got) != "*://*.new.example/*\n" {
+		t.Errorf("cache = %q, want the later refresh's list", got)
+	}
+}
+
+// An oversized cache file is ignored without being read.
+func TestStoreRejectsOversizedCache(t *testing.T) {
+	dir := t.TempDir()
+	big := readSample(t) + "#" + strings.Repeat("x", maxListBytes) + "\n"
+	if err := os.WriteFile(filepath.Join(dir, CacheFileName), []byte(big), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := NewStore(Options{CacheDir: dir})
+	s.loadCache()
+	if st := s.Status(); st.Loaded || st.LastError == "" {
+		t.Errorf("Status = %+v, want not loaded with an error", st)
 	}
 }
 

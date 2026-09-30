@@ -28,13 +28,27 @@ const (
 	DefaultRefreshInterval = 24 * time.Hour
 	// CacheFileName is the file the accepted list is persisted to in CacheDir.
 	CacheFileName = "ai_blocklist.txt"
-	// maxListBytes caps a fetched body; the real list is about 100 KiB.
-	maxListBytes = 4 << 20
-	fetchTimeout = 30 * time.Second
+	// Caps on an accepted list. The real list is about 100 KiB with about 90
+	// regexes; a list over any cap is rejected whole, never truncated, so a
+	// hostile upstream cannot make Parse retain gigabytes of compiled regexes.
+	maxListBytes  = 1 << 20
+	maxRegexes    = 1000
+	maxRegexBytes = 1024
+	fetchTimeout  = 30 * time.Second
 )
 
 // emptyMatcher is the matcher before any list has loaded: it blocks nothing.
 var emptyMatcher = &Matcher{}
+
+// canaryURLs are ordinary image URLs Stillwater relies on. A list that blocks
+// any of them is broken or hostile (e.g. "/./", or a public-suffix rule like
+// "*://*.co.uk/*") and is rejected rather than hiding every search result.
+var canaryURLs = [...]string{
+	"https://upload.wikimedia.org/wikipedia/commons/a/a9/Example.jpg",
+	"https://coverartarchive.org/release/76df3287-6cda-33eb-8e9a-044b5e15ffdd/829521842.jpg",
+	"https://i.discogs.com/R-1234-1600000000.jpeg",
+	"https://www.example.co.uk/images/artist.jpg",
+}
 
 // defaultStore backs Default(); see SetDefault.
 var defaultStore atomic.Pointer[Store]
@@ -79,6 +93,12 @@ type Store struct {
 	opts   Options
 	active atomic.Pointer[Matcher]
 
+	// refreshMu serializes loads (fetch through persist), so a slow earlier
+	// fetch can never overwrite a newer list in memory or in the cache.
+	refreshMu sync.Mutex
+
+	// mu guards status and is held across the matcher swap, so a Status
+	// snapshot always describes the matcher that was active when it was taken.
 	mu     sync.Mutex
 	status Status
 }
@@ -142,14 +162,20 @@ func (s *Store) loadCache() {
 	if s.opts.CacheDir == "" {
 		return
 	}
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
 	path := filepath.Join(s.opts.CacheDir, CacheFileName)
-	body, err := os.ReadFile(path) //nolint:gosec // G304: path is operator config plus a constant name
+	info, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return
 	}
-	var info os.FileInfo
-	if err == nil {
-		info, err = os.Stat(path)
+	var body []byte
+	switch {
+	case err != nil:
+	case info.Size() > maxListBytes:
+		err = fmt.Errorf("exceeds %d bytes", maxListBytes)
+	default:
+		body, err = os.ReadFile(path) //nolint:gosec // G304: path is operator config plus a constant name
 	}
 	if err == nil {
 		err = s.adopt(string(body), info.ModTime())
@@ -162,9 +188,11 @@ func (s *Store) loadCache() {
 }
 
 // Refresh fetches the list once. A list is adopted only if it downloads in
-// full with a 200 and parses to at least one rule; on any failure the current
-// matcher and the cache file are left untouched.
+// full with a 200 and passes adopt's checks; on any failure the current
+// matcher and the cache file are left untouched. Concurrent calls serialize.
 func (s *Store) Refresh(ctx context.Context) error {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
 	body, err := s.fetch(ctx)
 	if err == nil {
 		err = s.adopt(body, time.Now())
@@ -208,20 +236,50 @@ func (s *Store) fetch(ctx context.Context) (string, error) {
 	return strings.ReplaceAll(string(data), "\r\n", "\n"), nil
 }
 
-// adopt parses body and, if it has rules, makes it the active matcher.
+// adopt parses body and, if it passes validation, makes it the active matcher.
+// It rejects a list with no rules, over the regex caps, or blocking a canary.
 func (s *Store) adopt(body string, fetched time.Time) error {
+	if err := checkRegexCaps(body); err != nil {
+		return err
+	}
 	m := Parse(body)
 	n := m.ruleCount()
 	if n == 0 {
 		return errors.New("list has no usable rules")
 	}
+	for _, u := range canaryURLs {
+		if m.MatchURL(u) {
+			return fmt.Errorf("list blocks known-clean URL %s", u)
+		}
+	}
 	if m.Skipped > 0 {
 		s.opts.Logger.Warn("AI blocklist: skipped unparsable lines", slog.Int("skipped", m.Skipped))
 	}
-	s.active.Store(m)
 	s.mu.Lock()
+	s.active.Store(m)
 	s.status = Status{Loaded: true, Rules: n, LastFetch: fetched}
 	s.mu.Unlock()
+	return nil
+}
+
+// checkRegexCaps rejects a list with too many or too long regex lines. It
+// scans the source (the lines Parse treats as regexes) before anything is
+// compiled, so an oversized list never reaches regexp.Compile.
+func checkRegexCaps(body string) error {
+	count := 0
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "/") {
+			continue
+		}
+		if len(line) > maxRegexBytes {
+			return fmt.Errorf("list has a regex over %d bytes", maxRegexBytes)
+		}
+		count++
+		if count > maxRegexes {
+			return fmt.Errorf("list has over %d regexes", maxRegexes)
+		}
+	}
 	return nil
 }
 
