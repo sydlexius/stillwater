@@ -2940,8 +2940,8 @@ func webSearchAIFilterToggle(artistID string, f WebSearchAIFilter, activeSort st
 // the button). Every failure is logged with console.error.
 func toggleAIImageFilter(btnID string, searchURL string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_toggleAIImageFilter_3ece`,
-		Function: `function __templ_toggleAIImageFilter_3ece(btnID, searchURL){var btn = document.getElementById(btnID);
+		Name: `__templ_toggleAIImageFilter_3dbc`,
+		Function: `function __templ_toggleAIImageFilter_3dbc(btnID, searchURL){var btn = document.getElementById(btnID);
 	if (!btn || btn.disabled) { return; }
 	var target = btn.closest('#image-results, #web-search-results');
 	if (!target) {
@@ -2973,6 +2973,40 @@ func toggleAIImageFilter(btnID string, searchURL string) templ.ComponentScript {
 		if (b) { b.disabled = true; }
 	}
 	document.addEventListener('htmx:afterSwap', holdDisabled);
+	// showRefreshFailed marks the panel's results as stale and drops notices that
+	// describe them. Found via the live switch: the panel may have been swapped.
+	function showRefreshFailed(err, msg) {
+		console.error(msg || 'toggleAIImageFilter: re-running the web search failed; the results shown are stale', err || '');
+		var live = document.getElementById(btnID) || btn;
+		var wrap = live.closest('[data-sw-ai-filter]');
+		var box = live.closest('#image-results, #web-search-results') || target;
+		box.querySelectorAll('[data-sw-ai-filter-disabled], [data-sw-ai-filter-not-loaded], [data-sw-ai-filter-refresh-failed]').forEach(function (el) { el.remove(); });
+		var note = document.createElement('p');
+		note.className = 'text-xs text-amber-700 dark:text-amber-400 mb-3';
+		note.setAttribute('role', 'status');
+		note.setAttribute('data-sw-ai-filter-refresh-failed', '');
+		note.textContent = wrap ? wrap.getAttribute('data-sw-refresh-failed-msg') : '';
+		if (wrap) { wrap.insertAdjacentElement('afterend', note); }
+	}
+	// A search requested BEFORE a save can land AFTER this handler finished,
+	// rendering the switch from the pre-save value (#3296). Every request is
+	// stamped with the save count at send time; only a response sent before the
+	// latest save is repainted from it. Later responses are server truth.
+	if (!window.swAIFilterSyncBound) {
+		window.swAIFilterSyncBound = true;
+		document.addEventListener('htmx:beforeRequest', function (evt) {
+			if (evt.detail && evt.detail.xhr) { evt.detail.xhr.swSeq = window.swAIFilterSaveSeq || 0; }
+		});
+		document.addEventListener('htmx:afterSwap', function (evt) {
+			var b = document.getElementById(btnID);
+			var v = window.swAIFilterSaved;
+			var x = evt.detail && evt.detail.xhr;
+			if (b && v !== undefined && x && (x.swSeq || 0) < (window.swAIFilterSaveSeq || 0) && b.getAttribute('aria-checked') !== v) {
+				paint(b, v);
+				showRefreshFailed('', 'toggleAIImageFilter: a search response sent before the AI filter save arrived late; the results shown are stale');
+			}
+		});
+	}
 	function restoreFocus() {
 		var b = document.getElementById(btnID);
 		if (b && hadFocus) { b.focus(); }
@@ -2987,6 +3021,8 @@ func toggleAIImageFilter(btnID string, searchURL string) templ.ComponentScript {
 		// Show the saved value now, so a failed re-search still leaves the
 		// switch truthful.
 		shown = next;
+		window.swAIFilterSaved = next;
+		window.swAIFilterSaveSeq = (window.swAIFilterSaveSeq || 0) + 1;
 		var live = document.getElementById(btnID);
 		if (live) { paint(live, shown); holdDisabled(); }
 		// htmx.ajax resolves even when the request fails with an HTTP error, so
@@ -2999,17 +3035,6 @@ func toggleAIImageFilter(btnID string, searchURL string) templ.ComponentScript {
 		var ok = false;
 		function onAfter(evt) { ok = !!(evt.detail && evt.detail.successful); }
 		src.addEventListener('htmx:afterRequest', onAfter, { once: true });
-		function showRefreshFailed(err) {
-			console.error('toggleAIImageFilter: re-running the web search failed; the results shown are stale', err || '');
-			var wrap = (document.getElementById(btnID) || btn).closest('[data-sw-ai-filter]');
-			target.querySelectorAll('[data-sw-ai-filter-disabled], [data-sw-ai-filter-not-loaded], [data-sw-ai-filter-refresh-failed]').forEach(function (el) { el.remove(); });
-			var note = document.createElement('p');
-			note.className = 'text-xs text-amber-700 dark:text-amber-400 mb-3';
-			note.setAttribute('role', 'status');
-			note.setAttribute('data-sw-ai-filter-refresh-failed', '');
-			note.textContent = wrap ? wrap.getAttribute('data-sw-refresh-failed-msg') : '';
-			if (wrap) { wrap.insertAdjacentElement('afterend', note); }
-		}
 		// An HTTP error resolves (read from afterRequest); a transport failure rejects.
 		// htmx drops a request whose source is detached, so issue it from the
 		// live switch (target is the stable container and stays connected).
@@ -3029,8 +3054,8 @@ func toggleAIImageFilter(btnID string, searchURL string) templ.ComponentScript {
 		restoreFocus();
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_toggleAIImageFilter_3ece`, btnID, searchURL),
-		CallInline: templ.SafeScriptInline(`__templ_toggleAIImageFilter_3ece`, btnID, searchURL),
+		Call:       templ.SafeScript(`__templ_toggleAIImageFilter_3dbc`, btnID, searchURL),
+		CallInline: templ.SafeScriptInline(`__templ_toggleAIImageFilter_3dbc`, btnID, searchURL),
 	}
 }
 

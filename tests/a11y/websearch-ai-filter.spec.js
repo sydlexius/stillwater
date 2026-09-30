@@ -309,6 +309,7 @@ test(`a stale other-search response landing after the save, re-search ${reStatus
     n += 1;
     if (n === 1) {
       const resp = await route.fetch(); // rendered now: filter still on
+      expect(await resp.text(), 'held body is the stale render').toContain('aria-checked="true"');
       otherFetched();
       await otherHeld;
       return route.fulfill({ response: resp });
@@ -328,7 +329,9 @@ test(`a stale other-search response landing after the save, re-search ${reStatus
   await expect.poll(() => n).toBe(2); // the re-search is issued and held
   releaseOther(); // the stale swap lands after the save resolved
   await expect.poll(() => page.evaluate(() => window.__oldAIFilterSwitch.isConnected)).toBe(false);
-  await expect(page.locator('#sw-ai-filter-toggle')).toHaveAttribute('aria-checked', 'true');
+  // The stale render showed the old value; the swapped-in switch is repainted
+  // from the saved one at once (#3296) and held disabled while re-search runs.
+  await expect(page.locator('#sw-ai-filter-toggle')).toHaveAttribute('aria-checked', 'false');
   await expect(page.locator('#sw-ai-filter-toggle')).toBeDisabled(); // re-search still pending
   releaseRe();
   await expect(page.locator('#sw-ai-filter-toggle')).toBeEnabled({ timeout: 10_000 });
@@ -340,6 +343,113 @@ test(`a stale other-search response landing after the save, re-search ${reStatus
   await expect(page.locator('#sw-ai-filter-toggle')).toHaveAttribute('aria-checked', 'false');
 });
 }
+
+// #3296: same stale response, but it lands after the save AND the re-search
+// have both finished, when no handler is left running. The swapped-in switch
+// was rendered from the pre-save value and must still show the saved one.
+test('a stale other-search response landing after save and re-search keeps the saved value (#3296)', async ({ page, request }) => {
+  const toggle = await triggerWebSearch(page);
+  let releasePut; const putHeld = new Promise((r) => { releasePut = r; });
+  let releaseOther; const otherHeld = new Promise((r) => { releaseOther = r; });
+  let otherFetched; const otherReady = new Promise((r) => { otherFetched = r; });
+  let n = 0;
+  await page.route('**/api/v1/preferences/filter_ai_images', async (route) => {
+    if (route.request().method() !== 'PUT') return route.continue();
+    await putHeld;
+    return route.continue();
+  });
+  await page.route('**/images/websearch**', async (route) => {
+    n += 1;
+    if (n > 1) return route.continue(); // the switch's own re-search
+    const resp = await route.fetch(); // rendered now: filter still on
+    const body = await resp.text();
+    expect(body, 'held body is the stale render').toContain('aria-checked="true"');
+    expect(body, 'held body carries the filter-on notice').toContain('data-sw-ai-filter-disabled');
+    otherFetched();
+    await otherHeld;
+    return route.fulfill({ response: resp });
+  });
+  await toggle.click();
+  await page.locator('[aria-haspopup="true"]').first().click();
+  await page.getByRole('menuitem', { name: 'Web Search' }).click();
+  await otherReady;
+  releasePut(); // save + re-search (search 2) now run to completion
+  await expect.poll(() => n).toBe(2);
+  await expect(page.locator('#sw-ai-filter-toggle')).toHaveAttribute('aria-checked', 'false', { timeout: 10_000 });
+  await expect(page.locator('#sw-ai-filter-toggle')).toBeEnabled({ timeout: 10_000 });
+  await page.locator('#sw-ai-filter-toggle').evaluate((el) => { window.__settledSwitch = el; });
+  releaseOther(); // the stale swap lands with nothing in flight
+  await expect.poll(() => page.evaluate(() => window.__settledSwitch.isConnected)).toBe(false);
+  const saved = await apiFetch(request, 'GET', '/api/v1/preferences/filter_ai_images');
+  expect((await saved.json()).value).toBe('false');
+  await expect(page.locator('#sw-ai-filter-toggle')).toHaveAttribute('aria-checked', 'false');
+  await expect(page.locator('#sw-ai-filter-toggle')).toBeEnabled();
+  // The stale results and their filter-on notice must not sit beside a switch
+  // that now says off: the panel is marked stale instead.
+  await expect(page.locator('[data-sw-ai-filter-disabled]')).toHaveCount(0);
+  await expect(page.locator('[data-sw-ai-filter-refresh-failed]')).toHaveCount(1);
+});
+
+// #3296 review: the repaint must only correct a response sent BEFORE the save.
+// After the preference changes elsewhere, a fresh search's correct render wins.
+test('a fresh search after the preference changed elsewhere is not repainted from the old save (#3296)', async ({ page, request }) => {
+  const toggle = await triggerWebSearch(page);
+  await toggle.click();
+  await expect(page.locator('#sw-ai-filter-toggle')).toHaveAttribute('aria-checked', 'false', { timeout: 10_000 });
+  await expect(page.locator('#sw-ai-filter-toggle')).toBeEnabled();
+  const put = await apiFetch(request, 'PUT', '/api/v1/preferences/filter_ai_images', { value: 'true' });
+  expect(put.ok(), await put.text()).toBeTruthy();
+  const fresh = page.waitForResponse((r) => r.url().includes('/images/websearch'));
+  await page.locator('[aria-haspopup="true"]').first().click();
+  await page.getByRole('menuitem', { name: 'Web Search' }).click();
+  expect(await (await fresh).text(), 'fresh render reflects the server value').toContain('aria-checked="true"');
+  await expect(page.locator('#sw-ai-filter-toggle')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('[data-sw-ai-filter-refresh-failed]')).toHaveCount(0);
+});
+
+// #3296 review: on the generic layout two Extend searches overlap BEFORE the
+// page's first toggle, so neither was stamped when sent. The late one must
+// still be repainted from the save, with an accurate console message.
+test('an unstamped search in flight across the FIRST toggle is repainted when it lands late (#3296)', async ({ page, request }) => {
+  await page.goto(`/artists/${artistId}/images`);
+  await page.waitForLoadState('load');
+  const ext = page.getByRole('button', { name: /^Extend: / });
+  await ext.nth(0).click();
+  const t = page.locator('#web-search-results #sw-ai-filter-toggle');
+  await expect(t).toHaveAttribute('aria-checked', 'true', { timeout: 10_000 });
+  expect(await page.evaluate(() => window.swAIFilterSyncBound), 'this is the first toggle').toBeFalsy();
+  const logs = [];
+  page.on('console', (m) => { if (m.type() === 'error') logs.push(m.text()); });
+  const rel = [];
+  let n = 0;
+  await page.route('**/images/websearch**', async (route) => {
+    const i = n++;
+    if (i >= 2) return route.continue(); // the toggle's own re-search
+    const resp = await route.fetch();
+    expect(await resp.text(), 'held body is the stale render').toContain('aria-checked="true"');
+    await new Promise((r) => { rel[i] = r; });
+    return route.fulfill({ response: resp });
+  });
+  await ext.nth(0).click(); // A
+  await ext.nth(1).click(); // B
+  await expect.poll(() => !!rel[0] && !!rel[1], { timeout: 10_000 }).toBe(true);
+  await t.evaluate((el) => { window.__a = el; });
+  rel[0](); // A lands: a fresh enabled switch
+  await expect.poll(() => page.evaluate(() => window.__a.isConnected)).toBe(false);
+  await t.click(); // save false + re-search
+  await expect.poll(() => n, { timeout: 10_000 }).toBe(3);
+  await expect(t).toHaveAttribute('aria-checked', 'false', { timeout: 10_000 });
+  await expect(t).toBeEnabled({ timeout: 10_000 });
+  await t.evaluate((el) => { window.__s = el; });
+  rel[1](); // B lands late, rendered before the save
+  await expect.poll(() => page.evaluate(() => window.__s.isConnected)).toBe(false);
+  const saved = await apiFetch(request, 'GET', '/api/v1/preferences/filter_ai_images');
+  expect((await saved.json()).value).toBe('false');
+  await expect(t).toHaveAttribute('aria-checked', 'false');
+  await expect(page.locator('[data-sw-ai-filter-disabled]')).toHaveCount(0);
+  expect(logs.filter((l) => l.includes('arrived late')), 'late-arrival message').toHaveLength(1);
+  expect(logs.filter((l) => l.includes('re-running the web search failed')), 'no false failure message').toHaveLength(0);
+});
 
 test('the switch renders and toggles on the generic Manage artwork layout too (#web-search-results)', async ({ page }) => {
   // No ?type= selects the generic layout, whose web search results render into
