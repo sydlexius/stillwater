@@ -102,19 +102,21 @@ func aiWait[T any](t *testing.T, ch <-chan T, what string) T {
 // started closes when the first request arrives. Cleanup unblocks BEFORE
 // closing the server (cleanups run last-in first-out, and Close waits for
 // active requests), so a failed test cannot hang on teardown.
-func aiHeldServer(t *testing.T) (srv *httptest.Server, started <-chan struct{}, unblock func()) {
+func aiHeldServer(t *testing.T) (srv *httptest.Server, started <-chan struct{}, unblock func(), hits *atomic.Int32) {
 	t.Helper()
 	st, release := make(chan struct{}), make(chan struct{})
 	markStarted := sync.OnceFunc(func() { close(st) })
 	unblock = sync.OnceFunc(func() { close(release) })
+	hits = new(atomic.Int32)
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
 		markStarted()
 		<-release
 		_, _ = w.Write([]byte(aiListBody))
 	}))
 	t.Cleanup(srv.Close)
 	t.Cleanup(unblock)
-	return srv, st, unblock
+	return srv, st, unblock, hits
 }
 
 func TestAIBlocklistStatus(t *testing.T) {
@@ -255,7 +257,7 @@ func TestAIBlocklistRefresh(t *testing.T) {
 	})
 
 	t.Run("concurrent calls fetch once", func(t *testing.T) {
-		held, started, unblock := aiHeldServer(t)
+		held, started, unblock, hits := aiHeldServer(t)
 		installAIStore(t, aiblock.Options{URL: held.URL, Client: held.Client()})
 		do := aiMux(t, "administrator")
 		codes := make(chan int, 5)
@@ -272,6 +274,9 @@ func TestAIBlocklistRefresh(t *testing.T) {
 		unblock()
 		if c := aiWait(t, codes, "the winning refresh"); c != http.StatusOK {
 			t.Errorf("winning call: status = %d, want 200", c)
+		}
+		if n := hits.Load(); n != 1 {
+			t.Errorf("list server got %d requests, want exactly 1", n)
 		}
 	})
 }
@@ -362,7 +367,7 @@ func TestAIBlocklistRefresh_SessionPostNeedsCSRFToken(t *testing.T) {
 // finish: a disconnect must not record a false last_error or start the 429
 // lockout.
 func TestAIBlocklistRefresh_ClientDisconnectDoesNotCancelFetch(t *testing.T) {
-	srv, started, unblock := aiHeldServer(t)
+	srv, started, unblock, _ := aiHeldServer(t)
 	installAIStore(t, aiblock.Options{URL: srv.URL, Client: srv.Client()})
 	reqCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
