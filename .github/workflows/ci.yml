@@ -565,7 +565,7 @@ jobs:
       # packages Playwright would install, so a package version bump changes the
       # exact key (an exact hit is never re-saved, so without it a bump would be
       # re-downloaded every run until the image changes). The index refresh here
-      # is tolerant (`|| true`): the deps step repeats it strictly after the
+      # is tolerant (warns, never fails): the deps step repeats it strictly after the
       # Chrome source is disabled (#3219). The restore-key prefix (engine+os)
       # stays, so older entries still seed SHA-verified .debs.
       - name: Compute apt cache key (${{ matrix.engine }})
@@ -577,8 +577,11 @@ jobs:
           sudo apt-get update >/dev/null 2>&1 || echo "::warning::apt-get update failed while computing the cache key"
           dry=$(npx playwright install-deps --dry-run ${{ matrix.engine }} || true)
           pkgs=$(printf '%s\n' "$dry" | sed -nE 's/^  ([a-z0-9][a-z0-9.+:-]*)$/\1/p' | tr '\n' ' ')
+          inst=""
           # shellcheck disable=SC2086 # word-splitting the package list is intended
-          pk=$( { [ -n "$pkgs" ] && apt-get install -s --no-install-recommends $pkgs | grep '^Inst' | sort | sha256sum | cut -c1-12; } || echo none)
+          [ -z "$pkgs" ] || inst=$(apt-get install -s --no-install-recommends $pkgs | grep '^Inst' || true)
+          pk=none
+          [ -z "$inst" ] || pk=$(printf '%s\n' "$inst" | sort | sha256sum | cut -c1-12)
           echo "pk=$pk" >> "$GITHUB_OUTPUT"
           echo "apt cache key parts: os=$os image=${ImageVersion:-unknown} pk=$pk"
 
@@ -644,8 +647,8 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           set -eu
-          # Let apt absorb a flaky mirror itself: retried in-process, so no
-          # child is ever killed and no dpkg lock is ever orphaned.
+          # Intended to make apt retry in-process (no child killed, no lock
+          # orphaned); probably ineffective on the current image, see #3300.
           echo 'APT::Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/99-ci-retries >/dev/null
 
           # Disable the runner image's Google Chrome apt source (#3219). We do
