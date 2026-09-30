@@ -116,6 +116,13 @@ type FetchResult struct {
 	// search that ran everywhere and found little from one where most providers
 	// were never queried at all (issue #2457).
 	ImageProviderStatuses []ProviderImageStatus `json:"provider_statuses,omitempty"`
+	// MusicBrainzGenres is MusicBrainz's own genre list, never merged with
+	// other providers' tags: canonicalized, locale-translated into the metadata
+	// language, and vocab-filtered exactly as the merged list is. nil means MB
+	// supplied no genres (the contribution snapshot falls back to the merged
+	// Metadata.Genres); non-nil empty means MB supplied genres but the tag
+	// filter removed them all (the snapshot records []). See #2896.
+	MusicBrainzGenres []string `json:"-"`
 	// AttemptedFields lists fields the orchestrator queried a provider for,
 	// regardless of whether any provider returned data. Useful for telemetry
 	// and "we tried these" UI signals.
