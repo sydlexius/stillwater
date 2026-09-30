@@ -21,7 +21,8 @@
 # per-pref confirming hit).
 #
 # Non-visual preferences are OMITTED (no rendered surface to honor):
-# language, notification_enabled, auto_fetch_images, metadata_name_romanization,
+# language, notification_enabled, auto_fetch_images, filter_ai_images,
+# metadata_name_romanization,
 # metadata_languages, show_platform_debug, page_size,
 # artist_detail_section_order, artist_detail_hidden_sections,
 # artist_detail_collapsed_sections, suppress_confirm_*.
