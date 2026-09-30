@@ -2940,8 +2940,8 @@ func webSearchAIFilterToggle(artistID string, f WebSearchAIFilter, activeSort st
 // the button). Every failure is logged with console.error.
 func toggleAIImageFilter(btnID string, searchURL string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_toggleAIImageFilter_14a0`,
-		Function: `function __templ_toggleAIImageFilter_14a0(btnID, searchURL){var btn = document.getElementById(btnID);
+		Name: `__templ_toggleAIImageFilter_2408`,
+		Function: `function __templ_toggleAIImageFilter_2408(btnID, searchURL){var btn = document.getElementById(btnID);
 	if (!btn || btn.disabled) { return; }
 	var target = btn.closest('#image-results, #web-search-results');
 	if (!target) {
@@ -3003,7 +3003,7 @@ func toggleAIImageFilter(btnID string, searchURL string) templ.ComponentScript {
 			// each NEW element (evt.target) with detail.target = the swap target;
 			// after an outerHTML swap that target is detached, so check both.
 			var t = evt.detail && evt.detail.target;
-			if (!b || !((t && t.contains(b)) || (evt.target && evt.target.contains && evt.target.contains(b)))) { return; }
+			if (!b || !((t && t.contains(b)) || evt.target.contains(b))) { return; }
 			var x = evt.detail && evt.detail.xhr;
 			if (!x) { return; }
 			if ((x.swSeq || 0) >= (window.swAIFilterSaveSeq || 0)) {
@@ -3065,8 +3065,8 @@ func toggleAIImageFilter(btnID string, searchURL string) templ.ComponentScript {
 		restoreFocus();
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_toggleAIImageFilter_14a0`, btnID, searchURL),
-		CallInline: templ.SafeScriptInline(`__templ_toggleAIImageFilter_14a0`, btnID, searchURL),
+		Call:       templ.SafeScript(`__templ_toggleAIImageFilter_2408`, btnID, searchURL),
+		CallInline: templ.SafeScriptInline(`__templ_toggleAIImageFilter_2408`, btnID, searchURL),
 	}
 }
 

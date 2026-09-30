@@ -489,11 +489,14 @@ test('a pre-save swap into a different element does not repaint the switch (#329
   let release; const held = new Promise((r) => { release = r; });
   let sent; const sentP = new Promise((r) => { sent = r; });
   await page.route('**/api/v1/health', async (route) => { sent(); await held; return route.continue(); });
-  await page.evaluate(() => { window.htmx.ajax('GET', '/api/v1/health', { target: '#unrelated-3296', swap: 'innerHTML' }); });
+  await page.evaluate(() => { window.__seqBefore3296 = window.swAIFilterSaveSeq || 0; window.htmx.ajax('GET', '/api/v1/health', { target: '#unrelated-3296', swap: 'innerHTML' }); });
   await sentP;
   await s.finish();
   await freshSearch(page);
   expect(await page.evaluate(() => document.getElementById('unrelated-3296').contains(document.getElementById('sw-ai-filter-toggle'))), 'swap target does not contain the switch').toBe(false);
+  // Force the baseline to disagree with the switch, so an unscoped listener would repaint.
+  await page.evaluate(() => { window.swAIFilterSaved = 'false'; });
+  expect(await page.evaluate(() => (window.swAIFilterSaveSeq || 0) > window.__seqBefore3296), 'health request is stamped pre-save').toBe(true);
   release();
   await expect(page.locator('#unrelated-3296')).not.toBeEmpty();
   await expect(page.locator('#sw-ai-filter-toggle')).toHaveAttribute('aria-checked', 'true');

@@ -1747,7 +1747,7 @@ script toggleAIImageFilter(btnID string, searchURL string) {
 			// each NEW element (evt.target) with detail.target = the swap target;
 			// after an outerHTML swap that target is detached, so check both.
 			var t = evt.detail && evt.detail.target;
-			if (!b || !((t && t.contains(b)) || (evt.target && evt.target.contains && evt.target.contains(b)))) { return; }
+			if (!b || !((t && t.contains(b)) || evt.target.contains(b))) { return; }
 			var x = evt.detail && evt.detail.xhr;
 			if (!x) { return; }
 			if ((x.swSeq || 0) >= (window.swAIFilterSaveSeq || 0)) {
