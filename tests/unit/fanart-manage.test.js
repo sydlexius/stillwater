@@ -240,4 +240,30 @@ describe('fanart-manage: non-reorder tile buttons (#3233)', () => {
     assert.equal(fetchMock.calls.length, 0);
     assert.equal(errors.length, 1, 'guard must console.error');
   });
+
+  // Review fix: parseInt-lenient and out-of-range indexes must be refused too.
+  for (const [label, index, dir] of [
+    ['1junk', '1junk', 'up'],
+    ['1.5', '1.5', 'up'],
+    ['-1 down', '-1', 'down'],
+    ['index >= total', '3', 'up'],
+  ]) {
+    it(`rejects data-index "${label}": sends nothing and logs console.error`, async () => {
+      const fetchMock = makeFetchMock({ ok: true });
+      const dom = createDom({
+        html: html.replace('</div>\n</body>', `<button id="bad" class="fanart-move-btn" data-artist-id="artist123" data-index="${index}" data-direction="${dir}"></button></div></body>`),
+        modules: ['fanartManage'],
+        csrfToken: 'tok',
+      });
+      dom.window.fetch = fetchMock;
+      const errors = [];
+      dom.window.console.error = (...a) => errors.push(a);
+
+      dom.window.document.getElementById('bad').click();
+      await flush();
+
+      assert.equal(fetchMock.calls.length, 0);
+      assert.equal(errors.length, 1, 'rejected index must console.error');
+    });
+  }
 });

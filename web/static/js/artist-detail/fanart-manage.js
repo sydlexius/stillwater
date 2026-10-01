@@ -202,7 +202,10 @@
 
   // ---- Reorder via move up/down buttons -------------------------------------
   function reorder(gallery, btn) {
-    var idx = parseInt(btn.dataset.index, 10);
+    var rawIdx = btn.dataset.index;
+    // parseInt accepts "1junk" and "1.5" as 1, so require the WHOLE string to
+    // be a non-negative decimal integer before parsing.
+    var idx = /^\d+$/.test(rawIdx || "") ? parseInt(rawIdx, 10) : NaN;
     var dir = btn.dataset.direction;
     var id = btn.dataset.artistId;
     // #3233: refuse to send a malformed reorder (a non-reorder button that
@@ -217,6 +220,13 @@
       return;
     }
     var total = gallery.querySelectorAll(".fanart-cb").length;
+    if (!Number.isSafeInteger(idx) || idx >= total) {
+      console.error(
+        "fanart-manage: reorder refused, data-index out of range for the gallery",
+        btn,
+      );
+      return;
+    }
 
     var order = [];
     for (var i = 0; i < total; i++) order.push(i);
