@@ -161,8 +161,7 @@ func TestExecutorErrNotFoundMarksFieldAttempted(t *testing.T) {
 // recorded in AttemptedFields but NOT in PopulatedFields, so the merge layer
 // preserves any pre-existing user-curated value rather than wiping it.
 //
-// This is the scraper-path counterpart to TestOrchestratorPopulatedFieldsTracking.
-// Without coverage here, a future regression that wires the wrong condition
+// Without this coverage, a future regression that wires the wrong condition
 // (e.g. tracking on fr.Queried instead of fr.Provider != "") would silently
 // re-introduce the bio/tag-wipe bug for scraper-driven refreshes.
 func TestExecutorPopulatedFields_DistinguishesAttemptedFromPopulated(t *testing.T) {
@@ -277,7 +276,7 @@ func TestExecutorGetImagesTimeoutDoesNotMarkImageFieldAttempted(t *testing.T) {
 			return &provider.ArtistMetadata{Name: "Test Artist"}, nil
 		},
 		getImgFn: func(_ context.Context, _ string) ([]provider.ImageResult, error) {
-			return nil, fmt.Errorf("context deadline exceeded")
+			return nil, fmt.Errorf("get images: %w", context.DeadlineExceeded)
 		},
 	})
 
@@ -308,6 +307,10 @@ func TestExecutorGetImagesTimeoutDoesNotMarkImageFieldAttempted(t *testing.T) {
 			t.Errorf("expected 'thumb' NOT in AttemptedFields after GetImages timeout, got %v", result.AttemptedFields)
 			break
 		}
+	}
+	// A transient image error must not hide that GetArtist succeeded.
+	if !containsProvider(result.AttemptedProviders, provider.NameAudioDB) {
+		t.Errorf("expected AudioDB in AttemptedProviders after GetImages timeout, got %v", result.AttemptedProviders)
 	}
 }
 
@@ -1921,3 +1924,72 @@ func TestDefaultConfigCoversEveryField(t *testing.T) {
 // capabilities_reconcile_test.go: every DefaultConfig field must be offered
 // by at least one provider. This test is removed as a redundant,
 // easier-to-drift duplicate of that.
+
+// saveSingleFieldConfig stores a global scraper config with one enabled field
+// served by one provider, the minimal shape the attempted/populated tests need.
+func saveSingleFieldConfig(t *testing.T, svc *Service, field FieldName, cat FieldCategory, prov provider.ProviderName) {
+	t.Helper()
+	cfg := &ScraperConfig{
+		Scope:  ScopeGlobal,
+		Fields: []FieldConfig{{Field: field, Primary: prov, Enabled: true, Category: cat}},
+		FallbackChains: []FallbackChain{
+			{Category: cat, Providers: []provider.ProviderName{prov}},
+		},
+	}
+	if err := svc.SaveConfig(context.Background(), ScopeGlobal, cfg, nil); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+}
+
+// TestExecutorGetImagesNotCalledDoesNotMarkImageFieldAttempted verifies that an
+// image field is not marked attempted when GetImages was never invoked because
+// no MBID and no provider-specific ID is available.
+func TestExecutorGetImagesNotCalledDoesNotMarkImageFieldAttempted(t *testing.T) {
+	registry, settings, svc, logger := setupExecutorTest(t)
+
+	var getImagesCalled, getArtistCalled bool
+	registry.Register(&mockProvider{
+		name: provider.NameAudioDB,
+		getArtFn: func(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+			getArtistCalled = true
+			return &provider.ArtistMetadata{Name: "Test Artist"}, nil
+		},
+		getImgFn: func(_ context.Context, _ string) ([]provider.ImageResult, error) {
+			getImagesCalled = true
+			return []provider.ImageResult{{Type: provider.ImageThumb, URL: "https://example.com/thumb.jpg"}}, nil
+		},
+	})
+	saveSingleFieldConfig(t, svc, FieldThumb, CategoryImages, provider.NameAudioDB)
+
+	exec := NewExecutor(svc, registry, settings, logger, nil)
+	result, err := exec.ScrapeAll(context.Background(), "", "Test Artist", ScopeGlobal,
+		map[provider.ProviderName]string{provider.NameAudioDB: ""})
+	if err != nil {
+		t.Fatalf("ScrapeAll: %v", err)
+	}
+	if getImagesCalled {
+		t.Error("GetImages must not be called when no MBID and no provider-specific ID is available")
+	}
+	// Preconditions so the negative assertions below are not vacuous: GetArtist
+	// really ran, and AudioDB answered without error (so it is attempted).
+	if !getArtistCalled {
+		t.Error("precondition: GetArtist must have been called")
+	}
+	if !containsProvider(result.AttemptedProviders, provider.NameAudioDB) {
+		t.Errorf("expected AudioDB in AttemptedProviders (GetArtist ran), got %v", result.AttemptedProviders)
+	}
+	for _, f := range result.AttemptedFields {
+		if f == string(FieldThumb) {
+			t.Errorf("'thumb' must not be in AttemptedFields when GetImages never ran, got %v", result.AttemptedFields)
+		}
+	}
+}
+
+func containsProvider(list []provider.ProviderName, want provider.ProviderName) bool {
+	for _, p := range list {
+		if p == want {
+			return true
+		}
+	}
+	return false
+}
