@@ -689,12 +689,31 @@ func TestSourceDisplay_DisabledShowsNothing(t *testing.T) {
 // A list URL can carry a token or credentials. Neither the log lines nor the
 // stored error text may contain them, including the copy of the URL that
 // net/http embeds in a client error.
+// syncBuffer is a log sink safe for the Start goroutine to write while the test
+// reads (bytes.Buffer alone is not).
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 func TestStoreDoesNotLogOrStoreURLSecrets(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	secretURL := "http://user:SECRETPW@" + strings.TrimPrefix(srv.URL, "http://") + "/l.txt?token=SECRETTOK#SECRETFRAG"
 	client := srv.Client()
 	srv.Close() // connection refused: the client error embeds the URL
-	var logs bytes.Buffer
+	var logs syncBuffer
 	s := NewStore(Options{URL: secretURL, Client: client, RetryInitial: time.Hour,
 		Logger: slog.New(slog.NewTextHandler(&logs, nil))})
 	ctx, cancel := context.WithCancel(context.Background())
