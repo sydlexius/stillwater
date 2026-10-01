@@ -79,7 +79,15 @@ type liveHandlerHarness struct {
 func newLiveHandlerHarness(t *testing.T) *liveHandlerHarness {
 	t.Helper()
 	url, key := os.Getenv("SW_LIVE_JELLYFIN_URL"), os.Getenv("SW_LIVE_JELLYFIN_API_KEY")
-	userID, itemID := os.Getenv("SW_LIVE_JELLYFIN_USER_ID"), os.Getenv("SW_LIVE_JELLYFIN_ITEM_ID")
+	userID := os.Getenv("SW_LIVE_JELLYFIN_USER_ID")
+	// This suite takes its own scratch item, falling back to the shared one.
+	// The internal/publish live tests clear and rewrite SW_LIVE_JELLYFIN_ITEM_ID,
+	// and `go test -tags integration ./...` may run both package binaries at
+	// once, so running both packages together needs distinct items or `-p 1`.
+	itemID := os.Getenv("SW_LIVE_JELLYFIN_HANDLER_ITEM_ID")
+	if itemID == "" {
+		itemID = os.Getenv("SW_LIVE_JELLYFIN_ITEM_ID")
+	}
 	if url == "" || key == "" || userID == "" || itemID == "" {
 		t.Skip("SW_LIVE_JELLYFIN_URL / SW_LIVE_JELLYFIN_API_KEY / SW_LIVE_JELLYFIN_USER_ID / SW_LIVE_JELLYFIN_ITEM_ID not all set; skipping live Jellyfin handler test")
 	}
@@ -234,12 +242,48 @@ func (h *liveHandlerHarness) do(method, path, body string) {
 	if w.Code != http.StatusOK {
 		h.t.Fatalf("%s %s = %d, want 200; body: %s", method, path, w.Code, w.Body.String())
 	}
-	var resp struct {
-		SyncWarnings []string `json:"sync_warnings"`
+	// Decode into raw fields so an ABSENT sync_warnings key fails; a present
+	// key holding null (a nil slice, which batch delete emits) is "no warnings".
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &fields); err != nil {
+		h.t.Fatalf("%s %s: response is not a JSON object (%v); body: %s", method, path, err, w.Body.String())
 	}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if len(resp.SyncWarnings) != 0 {
-		h.t.Fatalf("%s %s returned sync warnings: %v", method, path, resp.SyncWarnings)
+	raw, ok := fields["sync_warnings"]
+	if !ok {
+		h.t.Fatalf("%s %s: response has no sync_warnings field; body: %s", method, path, w.Body.String())
+	}
+	var warnings []string
+	if err := json.Unmarshal(raw, &warnings); err != nil {
+		h.t.Fatalf("%s %s: sync_warnings is not a string array (%v); body: %s", method, path, err, w.Body.String())
+	}
+	if len(warnings) != 0 {
+		h.t.Fatalf("%s %s returned sync warnings: %v", method, path, warnings)
+	}
+}
+
+// waitForCount polls the platform until BackdropCount equals want on two
+// consecutive reads (Jellyfin's BackdropImageTags can lag a write), or a 10s
+// bound passes, and returns the last observed count. It never returns early on
+// a wrong number, so inflation still fails, with the observed count reported
+// by the caller. (The publish package's pollBackdropDetail is the same idea but
+// lives in another package's integration-tagged test file, so it cannot be
+// imported here.)
+func (h *liveHandlerHarness) waitForCount(want int) int {
+	h.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	last, stable := -1, 0
+	for {
+		got := h.platformCount()
+		if got == last {
+			stable++
+		} else {
+			stable = 0
+		}
+		last = got
+		if (got == want && stable >= 1) || time.Now().After(deadline) {
+			return got
+		}
+		time.Sleep(250 * time.Millisecond)
 	}
 }
 
@@ -261,10 +305,9 @@ func runThrice(t *testing.T, startLocal int, prep func(h *liveHandlerHarness, ru
 			h.seedStale(1, 0xE00+run)
 		}
 		call(h, run)
-		time.Sleep(500 * time.Millisecond)
 
 		local := h.localFiles()
-		got := h.platformCount()
+		got := h.waitForCount(len(local))
 		t.Logf("run %d: platform before=%d, local files=%d, platform after=%d", run, h.preCount, len(local), got)
 		if got != len(local) {
 			t.Fatalf("run %d: platform BackdropCount = %d, want %d (the local file count); a larger value means the #3145 append-inflation is back", run, got, len(local))
