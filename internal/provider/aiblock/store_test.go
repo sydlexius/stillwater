@@ -639,3 +639,40 @@ func TestStoreRefreshIfDueDoesNotWaitForRunningRefresh(t *testing.T) {
 	unblock()
 	<-done
 }
+
+func TestDescribeSource(t *testing.T) {
+	cases := []struct{ name, in, display, repo string }{
+		{"default list", SourceURL, "raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/main/list_uBlacklist.txt", "laylavish/uBlockOrigin-HUGE-AI-Blocklist"},
+		{"github.com", "https://github.com/own/rep/raw/main/l.txt", "github.com/own/rep/raw/main/l.txt", "own/rep"},
+		{"github one segment", "https://github.com/own", "github.com/own", ""},
+		{"non-github", "https://example.com:8443/lists/ai.txt", "example.com:8443/lists/ai.txt", ""},
+		{"userinfo query fragment", "https://u:SECRETPW@example.com/a.txt?token=SECRETQ#SECRETF", "example.com/a.txt", ""},
+		{"github with secrets", "https://tok:SECRETPW@raw.githubusercontent.com/o/r/main/l.txt?k=SECRETQ#SECRETF", "raw.githubusercontent.com/o/r/main/l.txt", "o/r"},
+		{"uppercase host", "https://GITHUB.COM/o/r", "GITHUB.COM/o/r", "o/r"},
+		{"github with port", "https://github.com:8443/o/r", "github.com:8443/o/r", "o/r"},
+		{"encoded slash kept escaped", "https://github.com/o%2Fx/r", "github.com/o%2Fx/r", ""},
+		{"leading empty segment", "https://github.com//r", "github.com//r", ""},
+		{"trailing empty segments", "https://github.com/o//", "github.com/o//", ""},
+		{"middle empty segment", "https://github.com/o//r", "github.com/o//r", ""},
+		{"unparsable", "http://[::1", "", ""},
+		{"no host", "/just/a/path", "", ""},
+	}
+	for _, c := range cases {
+		display, repo := DescribeSource(c.in)
+		if display != c.display || repo != c.repo {
+			t.Errorf("%s: got (%q, %q), want (%q, %q)", c.name, display, repo, c.display, c.repo)
+		}
+		for _, secret := range []string{"SECRET", "u:", "token="} {
+			if strings.Contains(display+repo, secret) {
+				t.Errorf("%s: output %q leaks %q", c.name, display+repo, secret)
+			}
+		}
+	}
+}
+
+func TestSourceDisplay_DisabledShowsNothing(t *testing.T) {
+	s := NewStore(Options{URL: SourceURL, Disabled: true})
+	if d, r := s.SourceDisplay(); d != "" || r != "" {
+		t.Errorf("disabled store: got (%q, %q), want empty", d, r)
+	}
+}

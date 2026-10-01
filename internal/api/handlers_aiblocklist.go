@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider/aiblock"
+	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // aiBlocklistRefreshGap is the least time between two refresh attempts, so the
@@ -19,8 +20,12 @@ const aiBlocklistRefreshGap = 60 * time.Second
 // It carries the source HOST only, never the full URL, and LastError is a
 // generic sentence: the raw error can hold a URL with a query or a data path.
 type aiBlocklistStatusResponse struct {
-	Enabled     bool       `json:"enabled"`
-	SourceHost  string     `json:"source_host,omitempty"`
+	Enabled    bool   `json:"enabled"`
+	SourceHost string `json:"source_host,omitempty"`
+	// Source is host plus path (no userinfo, query or fragment); SourceRepo is
+	// owner/repo for a GitHub-hosted list.
+	Source      string     `json:"source,omitempty"`
+	SourceRepo  string     `json:"source_repo,omitempty"`
 	Loaded      bool       `json:"loaded"`
 	Rules       int        `json:"rules"`
 	LastFetch   *time.Time `json:"last_fetch,omitempty"`
@@ -62,7 +67,10 @@ func sanitizeAIBlocklistError(raw string) string {
 
 func aiBlocklistStatusOf(s *aiblock.Store) aiBlocklistStatusResponse {
 	st := s.Status()
+	src, repo := s.SourceDisplay()
 	return aiBlocklistStatusResponse{
+		Source:      src,
+		SourceRepo:  repo,
 		Enabled:     !st.Disabled,
 		SourceHost:  s.SourceHost(),
 		Loaded:      st.Loaded,
@@ -71,6 +79,43 @@ func aiBlocklistStatusOf(s *aiblock.Store) aiBlocklistStatusResponse {
 		LastChecked: utcPtr(st.LastChecked),
 		LastError:   sanitizeAIBlocklistError(st.LastError),
 	}
+}
+
+// aiBlocklistView maps the store state to the Settings card's view. A nil
+// store (never installed) reads as "download off".
+func aiBlocklistView(s *aiblock.Store) templates.AIBlocklistView {
+	if s == nil {
+		return templates.AIBlocklistView{}
+	}
+	st := aiBlocklistStatusOf(s)
+	v := templates.AIBlocklistView{
+		Enabled:    st.Enabled,
+		Loaded:     st.Loaded,
+		Rules:      st.Rules,
+		Source:     st.Source,
+		SourceRepo: st.SourceRepo,
+		LastError:  st.LastError,
+	}
+	if st.LastFetch != nil {
+		v.LastFetch = *st.LastFetch
+	}
+	if st.LastChecked != nil {
+		v.LastChecked = *st.LastChecked
+	}
+	return v
+}
+
+// refreshRefused answers a refused manual refresh. The JSON API gets the real
+// 4xx; an HTMX click gets 200 with the card re-rendered plus the message,
+// because HTMX does not swap a 4xx body and the click must never fail silently.
+func (r *Router) refreshRefused(w http.ResponseWriter, req *http.Request, s *aiblock.Store, status int, msg, kind string, secs int) {
+	if !isHTMXRequest(req) {
+		writeError(w, req, status, msg)
+		return
+	}
+	v := aiBlocklistView(s)
+	v.NoticeKind, v.NoticeSecs, v.Refocus = kind, secs, true
+	renderTempl(w, req, templates.AIBlocklistBody(v))
 }
 
 // handleAIBlocklistStatus serves GET /api/v1/images/ai-blocklist/status.
@@ -89,7 +134,7 @@ func (r *Router) handleAIBlocklistStatus(w http.ResponseWriter, req *http.Reques
 func (r *Router) handleAIBlocklistRefresh(w http.ResponseWriter, req *http.Request) {
 	s := aiblock.DefaultStore()
 	if s == nil || s.Status().Disabled {
-		writeError(w, req, http.StatusConflict, "the AI image list download is turned off (SW_AI_BLOCKLIST_URL is empty)")
+		r.refreshRefused(w, req, s, http.StatusConflict, "the AI image list download is turned off (SW_AI_BLOCKLIST_URL is empty)", "disabled", 0)
 		return
 	}
 	// A client disconnect must not cancel the download: that would record a
@@ -99,11 +144,17 @@ func (r *Router) handleAIBlocklistRefresh(w http.ResponseWriter, req *http.Reque
 	if !ran {
 		secs := int(wait/time.Second) + 1
 		w.Header().Set("Retry-After", strconv.Itoa(secs))
-		writeError(w, req, http.StatusTooManyRequests, "the list was refreshed moments ago; try again in "+strconv.Itoa(secs)+" seconds")
+		r.refreshRefused(w, req, s, http.StatusTooManyRequests, "the list was refreshed moments ago; try again in "+strconv.Itoa(secs)+" seconds", "rate_limited", secs)
 		return
 	}
 	if err != nil {
 		r.logger.Warn("AI blocklist: manual refresh failed", slog.String("error", err.Error()))
+	}
+	if isHTMXRequest(req) {
+		v := aiBlocklistView(s)
+		v.Refocus = true
+		renderTempl(w, req, templates.AIBlocklistBody(v))
+		return
 	}
 	writeJSON(w, http.StatusOK, aiBlocklistStatusOf(s))
 }

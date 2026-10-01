@@ -127,7 +127,7 @@ func TestAIBlocklistStatus(t *testing.T) {
 		store func(t *testing.T)
 		check func(t *testing.T, got map[string]any, body string)
 	}{
-		{"loaded shows host only", func(t *testing.T) {
+		{"loaded shows host and path, never the query", func(t *testing.T) {
 			st := installAIStore(t, aiblock.Options{URL: good.URL + "/secret/path?token=abc", Client: good.Client()})
 			if err := st.Refresh(context.Background()); err != nil {
 				t.Fatalf("Refresh: %v", err)
@@ -140,8 +140,11 @@ func TestAIBlocklistStatus(t *testing.T) {
 			if want := strings.TrimPrefix(good.URL, "http://"); got["source_host"] != want {
 				t.Errorf("source_host = %v, want %q", got["source_host"], want)
 			}
-			if strings.Contains(body, "secret") || strings.Contains(body, "token") {
-				t.Errorf("body leaks the URL path or query: %s", body)
+			if want := strings.TrimPrefix(good.URL, "http://") + "/secret/path"; got["source"] != want {
+				t.Errorf("source = %v, want %q", got["source"], want)
+			}
+			if strings.Contains(body, "token") || strings.Contains(body, "abc") {
+				t.Errorf("body leaks the URL query: %s", body)
 			}
 		}},
 		{"failed download is sanitized", func(t *testing.T) {
@@ -151,14 +154,15 @@ func TestAIBlocklistStatus(t *testing.T) {
 			if got["loaded"] != false || got["last_error"] != "The list server answered with HTTP 500." {
 				t.Fatalf("unexpected status: %s", body)
 			}
-			if strings.Contains(body, "hunter2") || strings.Contains(body, "/list") {
+			if strings.Contains(body, "hunter2") || strings.Contains(body, "key=") {
 				t.Errorf("body leaks the raw error: %s", body)
 			}
 		}},
 		{"disabled reports off", func(t *testing.T) {
 			installAIStore(t, aiblock.Options{URL: good.URL, Disabled: true})
 		}, func(t *testing.T, got map[string]any, body string) {
-			if got["enabled"] != false || got["loaded"] != false || got["source_host"] != nil {
+			if got["enabled"] != false || got["loaded"] != false || got["source_host"] != nil ||
+				got["source"] != nil || got["source_repo"] != nil {
 				t.Fatalf("unexpected disabled status: %s", body)
 			}
 		}},
@@ -386,5 +390,48 @@ func TestAIBlocklistRefresh_ClientDisconnectDoesNotCancelFetch(t *testing.T) {
 	w := aiMux(t, "administrator")(http.MethodGet, aiStatusPath)
 	if body := w.Body.String(); !strings.Contains(body, `"loaded":true`) || strings.Contains(body, "last_error") {
 		t.Errorf("after a client disconnect the list must be loaded with no error; body %s", body)
+	}
+}
+
+// aiHTMX sends one request with the HX-Request header the way the Settings
+// button does, through the real mux.
+func aiHTMX(t *testing.T, r *Router, method, path string, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	req := httptest.NewRequest(method, path, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	r.Handler(ctx).ServeHTTP(w, req)
+	return w
+}
+
+// TestAIBlocklistRefresh_HTMXRendersTheCard checks that the Settings button
+// gets an HTML card in every outcome, with refusals as a readable 200 message
+// (HTMX does not swap a 4xx body).
+func TestAIBlocklistRefresh_HTMXRendersTheCard(t *testing.T) {
+	good, _ := aiListServer(t, http.StatusOK)
+	r, authSvc, userID := testRouterWithAuth(t)
+	token, _, err := authSvc.CreateAPIToken(context.Background(), userID, "ai-htmx", string(auth.ScopeAdmin))
+	if err != nil {
+		t.Fatalf("creating token: %v", err)
+	}
+
+	installAIStore(t, aiblock.Options{URL: good.URL, Client: good.Client()})
+	w := aiHTMX(t, r, http.MethodPost, aiRefreshPath, token)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `data-ai-list-state="loaded"`) || !strings.Contains(w.Body.String(), ">2<") {
+		t.Fatalf("refresh: status %d, body %s", w.Code, w.Body.String())
+	}
+
+	w = aiHTMX(t, r, http.MethodPost, aiRefreshPath, token)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "settings.ai_blocklist.rate_limited") || w.Header().Get("Retry-After") == "" {
+		t.Errorf("429 case: status %d, Retry-After %q, body %s", w.Code, w.Header().Get("Retry-After"), w.Body.String())
+	}
+
+	installAIStore(t, aiblock.Options{URL: good.URL, Client: good.Client(), Disabled: true})
+	w = aiHTMX(t, r, http.MethodPost, aiRefreshPath, token)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "settings.ai_blocklist.disabled_notice") || strings.Contains(w.Body.String(), "ai-image-list-refresh") {
+		t.Errorf("409 case: status %d, body %s", w.Code, w.Body.String())
 	}
 }

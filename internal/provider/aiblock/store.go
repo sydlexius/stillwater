@@ -231,6 +231,38 @@ func (s *Store) SourceHost() string {
 	return u.Host
 }
 
+// SourceDisplay returns a form of the list URL that is safe to show an
+// administrator: display is host plus path (no scheme, userinfo, query or
+// fragment), and repo is "owner/repo" when the URL points into GitHub
+// (raw.githubusercontent.com or github.com with at least two path segments),
+// else "". Both are "" when the download is disabled or the URL does not parse.
+func (s *Store) SourceDisplay() (display, repo string) {
+	if s.opts.Disabled {
+		return "", ""
+	}
+	return DescribeSource(s.opts.URL)
+}
+
+// DescribeSource is the pure form of SourceDisplay.
+func DescribeSource(raw string) (display, repo string) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "", ""
+	}
+	display = u.Host + u.EscapedPath()
+	switch strings.ToLower(u.Hostname()) {
+	case "raw.githubusercontent.com", "github.com":
+		// Segment the ESCAPED path so an encoded slash (%2F) stays inside one
+		// segment; a segment with any escape is not a GitHub owner or repo name.
+		segs := strings.Split(strings.Trim(u.EscapedPath(), "/"), "/")
+		if len(segs) >= 2 && segs[0] != "" && segs[1] != "" &&
+			!strings.Contains(segs[0]+segs[1], "%") {
+			return display, segs[0] + "/" + segs[1]
+		}
+	}
+	return display, ""
+}
+
 // Start loads the cached list (a local read, so filtering works right after a
 // restart), then fetches and refreshes in a background goroutine until ctx is
 // canceled. The returned channel closes when that goroutine has exited.
