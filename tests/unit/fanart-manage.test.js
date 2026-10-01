@@ -3,6 +3,9 @@
 // the empty-CSRF guards that gate every mutating call.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createDom, makeFetchMock, flush } from './helpers/dom-harness.js';
 
 // Minimal gallery HTML: 3 fanart slots + move/primary buttons.
@@ -173,5 +176,68 @@ describe('fanart-manage: CSRF guards', () => {
 
     assert.equal(fetchMock.calls.length, 0, 'fetch must not be called with empty CSRF');
     assert.equal(alerts.length, 1, 'an alert must be shown when CSRF is missing');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #3233: per-tile Crop/Fetch buttons must not be treated as reorder buttons
+// ---------------------------------------------------------------------------
+// The Crop/Fetch class is read from the real template so reintroducing
+// fanart-move-btn on them turns this red.
+function slotActionClass(fn) {
+  const src = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '../../web/templates/backdrop_management.templ'),
+    'utf-8',
+  );
+  const m = src.match(new RegExp(`class="([^"]*)"[^>]*?onclick=\\{ templ\\.JSFuncCall\\("${fn}"`, 's'));
+  if (!m) throw new Error(`no button wired to ${fn} in backdrop_management.templ`);
+  return m[1];
+}
+
+describe('fanart-manage: non-reorder tile buttons (#3233)', () => {
+  const html = GALLERY_HTML.replace('</div>\n</body>', `
+  <button id="crop" class="${slotActionClass('window.swOpenCropForSlot')}"></button>
+  <button id="fetch" class="${slotActionClass('window.swOpenFetchUrlForSlot')}"></button>
+</div>
+</body>`);
+
+  it('Crop and Fetch send no reorder request; a move button still does', async () => {
+    const fetchMock = makeFetchMock({ ok: true });
+    const dom = createDom({ html, modules: ['fanartManage'], csrfToken: 'tok' });
+    dom.window.fetch = fetchMock;
+    const errors = [];
+    dom.window.console.error = (...a) => errors.push(a);
+    const doc = dom.window.document;
+
+    doc.getElementById('crop').click();
+    doc.getElementById('fetch').click();
+    await flush();
+    assert.equal(fetchMock.calls.length, 0, 'Crop/Fetch must not POST a reorder');
+    // The reorder() guard also swallows these clicks, so assert the class is
+    // gone and the guard never even fired, or a regression would hide behind it.
+    assert.equal(doc.querySelectorAll('#crop.fanart-move-btn, #fetch.fanart-move-btn').length, 0);
+    assert.equal(errors.length, 0, 'Crop/Fetch must not reach reorder() at all');
+
+    doc.getElementById('btn-up-1').click();
+    await flush();
+    assert.equal(fetchMock.calls.length, 1, 'a real move button must still reorder');
+  });
+
+  it('a .fanart-move-btn missing data-artist-id sends nothing and logs console.error', async () => {
+    const fetchMock = makeFetchMock({ ok: true });
+    const dom = createDom({
+      html: html.replace('</div>\n</body>', '<button id="bad" class="fanart-move-btn" data-index="1" data-direction="up"></button></div></body>'),
+      modules: ['fanartManage'],
+      csrfToken: 'tok',
+    });
+    dom.window.fetch = fetchMock;
+    const errors = [];
+    dom.window.console.error = (...a) => errors.push(a);
+
+    dom.window.document.getElementById('bad').click();
+    await flush();
+
+    assert.equal(fetchMock.calls.length, 0);
+    assert.equal(errors.length, 1, 'guard must console.error');
   });
 });

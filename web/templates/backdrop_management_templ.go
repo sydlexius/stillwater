@@ -389,14 +389,14 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<button type=\"button\" class=\"fanart-move-btn text-xs p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200\" title=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<button type=\"button\" class=\"fanart-slot-action-btn text-xs p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200\" title=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var27 string
 				templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.crop_this_fanart"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 86, Col: 49}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 88, Col: 49}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
 				if templ_7745c5c3_Err != nil {
@@ -409,7 +409,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 				var templ_7745c5c3_Var28 string
 				templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.crop_this_fanart"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 87, Col: 54}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 89, Col: 54}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var28)
 				if templ_7745c5c3_Err != nil {
@@ -431,7 +431,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 				var templ_7745c5c3_Var30 string
 				templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.crop"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 90, Col: 32}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 92, Col: 32}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 				if templ_7745c5c3_Err != nil {
@@ -445,14 +445,14 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<button type=\"button\" class=\"fanart-move-btn text-xs p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200\" title=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<button type=\"button\" class=\"fanart-slot-action-btn text-xs p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200\" title=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var31 string
 				templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.fetch_replace_fanart"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 95, Col: 53}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 97, Col: 53}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
 				if templ_7745c5c3_Err != nil {
@@ -465,7 +465,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 				var templ_7745c5c3_Var32 string
 				templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.fetch_replace_fanart"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 96, Col: 58}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 98, Col: 58}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var32)
 				if templ_7745c5c3_Err != nil {
@@ -487,7 +487,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 				var templ_7745c5c3_Var34 string
 				templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.fetch"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 99, Col: 32}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 101, Col: 32}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 				if templ_7745c5c3_Err != nil {
@@ -505,7 +505,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 					var templ_7745c5c3_Var35 string
 					templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.move_up"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 105, Col: 41}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 107, Col: 41}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var35)
 					if templ_7745c5c3_Err != nil {
@@ -518,7 +518,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 					var templ_7745c5c3_Var36 string
 					templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.move_up"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 106, Col: 46}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 108, Col: 46}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var36)
 					if templ_7745c5c3_Err != nil {
@@ -531,7 +531,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 					var templ_7745c5c3_Var37 string
 					templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.ResolveAttributeValue(artistID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 107, Col: 35}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 109, Col: 35}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var37)
 					if templ_7745c5c3_Err != nil {
@@ -544,7 +544,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 					var templ_7745c5c3_Var38 string
 					templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(item.Index))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 108, Col: 47}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 110, Col: 47}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var38)
 					if templ_7745c5c3_Err != nil {
@@ -563,7 +563,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 					var templ_7745c5c3_Var39 string
 					templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.move_down"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 118, Col: 43}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 120, Col: 43}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var39)
 					if templ_7745c5c3_Err != nil {
@@ -576,7 +576,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 					var templ_7745c5c3_Var40 string
 					templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.move_down"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 119, Col: 48}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 121, Col: 48}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var40)
 					if templ_7745c5c3_Err != nil {
@@ -589,7 +589,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 					var templ_7745c5c3_Var41 string
 					templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.ResolveAttributeValue(artistID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 120, Col: 35}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 122, Col: 35}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var41)
 					if templ_7745c5c3_Err != nil {
@@ -602,7 +602,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 					var templ_7745c5c3_Var42 string
 					templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(item.Index))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 121, Col: 47}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 123, Col: 47}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var42)
 					if templ_7745c5c3_Err != nil {
@@ -620,7 +620,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 				var templ_7745c5c3_Var43 string
 				templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.delete_this_fanart"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 130, Col: 51}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 132, Col: 51}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var43)
 				if templ_7745c5c3_Err != nil {
@@ -633,7 +633,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 				var templ_7745c5c3_Var44 string
 				templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.delete_this_fanart"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 131, Col: 56}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 133, Col: 56}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var44)
 				if templ_7745c5c3_Err != nil {
@@ -646,7 +646,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 				var templ_7745c5c3_Var45 string
 				templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d", artistID, item.Index))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 132, Col: 93}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 134, Col: 93}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var45)
 				if templ_7745c5c3_Err != nil {
@@ -659,7 +659,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 				var templ_7745c5c3_Var46 string
 				templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.confirm_delete_fanart"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 133, Col: 59}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 135, Col: 59}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var46)
 				if templ_7745c5c3_Err != nil {
@@ -682,7 +682,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 			var templ_7745c5c3_Var47 string
 			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.no_fanart_images"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 144, Col: 77}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 146, Col: 77}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 			if templ_7745c5c3_Err != nil {
@@ -736,7 +736,7 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 			var templ_7745c5c3_Var49 string
 			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.no_platform_backdrops"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 154, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 156, Col: 82}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 			if templ_7745c5c3_Err != nil {
@@ -755,7 +755,7 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 				var templ_7745c5c3_Var50 string
 				templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(conn.ConnectionName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 159, Col: 27}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 161, Col: 27}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 				if templ_7745c5c3_Err != nil {
@@ -768,7 +768,7 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 				var templ_7745c5c3_Var51 string
 				templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(conn.ConnectionType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 160, Col: 64}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 162, Col: 64}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 				if templ_7745c5c3_Err != nil {
@@ -786,7 +786,7 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 					var templ_7745c5c3_Var52 string
 					templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.ResolveAttributeValue(bd.ThumbnailURL)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 167, Col: 31}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 169, Col: 31}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var52)
 					if templ_7745c5c3_Err != nil {
@@ -799,7 +799,7 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 					var templ_7745c5c3_Var53 string
 					templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "image.backdrop_index", strconv.Itoa(bd.Index)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 168, Col: 71}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 170, Col: 71}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var53)
 					if templ_7745c5c3_Err != nil {
@@ -812,7 +812,7 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 					var templ_7745c5c3_Var54 string
 					templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.backdrop_index", strconv.Itoa(bd.Index)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 174, Col: 121}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 176, Col: 121}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 					if templ_7745c5c3_Err != nil {
@@ -825,7 +825,7 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 					var templ_7745c5c3_Var55 string
 					templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/assign", artistID, bd.NextSlot))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 179, Col: 99}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 181, Col: 99}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var55)
 					if templ_7745c5c3_Err != nil {
@@ -841,7 +841,7 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 						"platform_index": bd.Index,
 					}))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 183, Col: 10}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 185, Col: 10}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var56)
 					if templ_7745c5c3_Err != nil {
@@ -854,7 +854,7 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 					var templ_7745c5c3_Var57 string
 					templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.confirm_assign_backdrop"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 184, Col: 61}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 186, Col: 61}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var57)
 					if templ_7745c5c3_Err != nil {
@@ -867,7 +867,7 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 					var templ_7745c5c3_Var58 string
 					templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.disabled_during_conflict"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 187, Col: 57}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 189, Col: 57}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var58)
 					if templ_7745c5c3_Err != nil {
@@ -880,7 +880,7 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 					var templ_7745c5c3_Var59 string
 					templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.assign"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 189, Col: 33}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 191, Col: 33}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 					if templ_7745c5c3_Err != nil {

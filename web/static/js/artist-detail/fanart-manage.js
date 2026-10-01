@@ -205,6 +205,17 @@
     var idx = parseInt(btn.dataset.index, 10);
     var dir = btn.dataset.direction;
     var id = btn.dataset.artistId;
+    // #3233: refuse to send a malformed reorder (a non-reorder button that
+    // picked up .fanart-move-btn, or a template that dropped a data-attr)
+    // rather than POSTing to /artists/undefined/... and alerting a confusing
+    // "artist not found".
+    if (!id || (dir !== "up" && dir !== "down") || isNaN(idx)) {
+      console.error(
+        "fanart-manage: reorder refused, button missing/invalid data-artist-id, data-index or data-direction",
+        btn,
+      );
+      return;
+    }
     var total = gallery.querySelectorAll(".fanart-cb").length;
 
     var order = [];
