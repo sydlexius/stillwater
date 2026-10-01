@@ -1807,13 +1807,14 @@ type AIBlocklistView struct {
 	LastFetch   time.Time
 	LastChecked time.Time
 	LastError   string
-	// NoticeKind is "rate_limited" or "disabled" after a refused Refresh now
+	// NoticeKind is "rate_limited", "in_progress" or "disabled" after a refused Refresh now
 	// click; NoticeSecs is the wait for rate_limited.
 	NoticeKind string
 	NoticeSecs int
-	// Refocus puts keyboard focus back on the button after an HTMX swap (the
-	// swap replaces the focused, disabled-while-loading button).
-	Refocus bool
+	// Refreshed marks a Refresh now response (not the page load). It puts
+	// keyboard focus back on the button (the swap replaces the focused,
+	// disabled-while-loading button) and makes a new last error announce itself.
+	Refreshed bool
 }
 
 // aiListTime renders a timestamp in UTC, or the "never" label for the zero time.
@@ -1873,7 +1874,13 @@ templ AIBlocklistBody(v AIBlocklistView) {
 				<dd class="sm:col-span-2 text-gray-900 dark:text-gray-100" data-ai-list="last-checked">{ aiListTime(ctx, v.LastChecked) }</dd>
 				if v.LastError != "" {
 					<dt class="text-gray-500 dark:text-gray-400">{ t(ctx, "settings.ai_blocklist.last_error") }</dt>
-					<dd class="sm:col-span-2 text-red-700 dark:text-red-300" data-ai-list="last-error">{ v.LastError }</dd>
+					<dd
+						class="sm:col-span-2 text-red-700 dark:text-red-300"
+						data-ai-list="last-error"
+						if v.Refreshed && v.NoticeKind == "" {
+							role="alert"
+						}
+					>{ v.LastError }</dd>
 				}
 			</dl>
 			<div>
@@ -1885,7 +1892,7 @@ templ AIBlocklistBody(v AIBlocklistView) {
 					hx-target="#ai-image-list-body"
 					hx-swap="outerHTML"
 					hx-disabled-elt="this"
-					autofocus?={ v.Refocus }
+					autofocus?={ v.Refreshed }
 				>
 					{ t(ctx, "settings.ai_blocklist.refresh") }
 				</button>
@@ -1898,8 +1905,11 @@ templ AIBlocklistBody(v AIBlocklistView) {
 }
 
 func aiListNotice(ctx context.Context, v AIBlocklistView) string {
-	if v.NoticeKind == "rate_limited" {
+	switch v.NoticeKind {
+	case "rate_limited":
 		return tf(ctx, "settings.ai_blocklist.rate_limited", strconv.Itoa(v.NoticeSecs))
+	case "in_progress":
+		return t(ctx, "settings.ai_blocklist.in_progress")
 	}
 	return t(ctx, "settings.ai_blocklist.disabled_notice")
 }

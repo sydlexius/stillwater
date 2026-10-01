@@ -395,11 +395,11 @@ func TestAIBlocklistRefresh_ClientDisconnectDoesNotCancelFetch(t *testing.T) {
 
 // aiHTMX sends one request with the HX-Request header the way the Settings
 // button does, through the real mux.
-func aiHTMX(t *testing.T, r *Router, method, path string, token string) *httptest.ResponseRecorder {
+func aiHTMX(t *testing.T, r *Router, token string) *httptest.ResponseRecorder {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	req := httptest.NewRequest(method, path, nil)
+	req := httptest.NewRequest(http.MethodPost, aiRefreshPath, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("HX-Request", "true")
 	w := httptest.NewRecorder()
@@ -419,19 +419,49 @@ func TestAIBlocklistRefresh_HTMXRendersTheCard(t *testing.T) {
 	}
 
 	installAIStore(t, aiblock.Options{URL: good.URL, Client: good.Client()})
-	w := aiHTMX(t, r, http.MethodPost, aiRefreshPath, token)
+	w := aiHTMX(t, r, token)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `data-ai-list-state="loaded"`) || !strings.Contains(w.Body.String(), ">2<") {
 		t.Fatalf("refresh: status %d, body %s", w.Code, w.Body.String())
 	}
 
-	w = aiHTMX(t, r, http.MethodPost, aiRefreshPath, token)
+	w = aiHTMX(t, r, token)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "settings.ai_blocklist.rate_limited") || w.Header().Get("Retry-After") == "" {
 		t.Errorf("429 case: status %d, Retry-After %q, body %s", w.Code, w.Header().Get("Retry-After"), w.Body.String())
 	}
 
 	installAIStore(t, aiblock.Options{URL: good.URL, Client: good.Client(), Disabled: true})
-	w = aiHTMX(t, r, http.MethodPost, aiRefreshPath, token)
+	w = aiHTMX(t, r, token)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "settings.ai_blocklist.disabled_notice") || strings.Contains(w.Body.String(), "ai-image-list-refresh") {
 		t.Errorf("409 case: status %d, body %s", w.Code, w.Body.String())
 	}
+}
+
+// A refresh refused because another is RUNNING says so, in both the JSON 429
+// and the HTMX notice, and still sends Retry-After. The recent-refresh wording
+// is covered by TestAIBlocklistRefresh.
+func TestAIBlocklistRefresh_InFlightHasItsOwnMessage(t *testing.T) {
+	held, started, unblock, _ := aiHeldServer(t)
+	r, authSvc, userID := testRouterWithAuth(t)
+	token, _, err := authSvc.CreateAPIToken(context.Background(), userID, "ai-inflight", string(auth.ScopeAdmin))
+	if err != nil {
+		t.Fatalf("creating token: %v", err)
+	}
+	installAIStore(t, aiblock.Options{URL: held.URL, Client: held.Client()})
+	first := make(chan int, 1)
+	go func() { first <- aiHTMX(t, r, token).Code }()
+	aiWait(t, started, "the first refresh to reach the list server")
+
+	w := aiHTMX(t, r, token)
+	if !strings.Contains(w.Body.String(), "settings.ai_blocklist.in_progress") || w.Header().Get("Retry-After") == "" {
+		t.Errorf("HTMX in-flight: Retry-After %q, body %s", w.Header().Get("Retry-After"), w.Body.String())
+	}
+	req := httptest.NewRequest(http.MethodPost, aiRefreshPath, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	jw := httptest.NewRecorder()
+	r.Handler(context.Background()).ServeHTTP(jw, req)
+	if jw.Code != http.StatusTooManyRequests || !strings.Contains(jw.Body.String(), "already in progress") || jw.Header().Get("Retry-After") == "" {
+		t.Errorf("JSON in-flight: status %d, Retry-After %q, body %s", jw.Code, jw.Header().Get("Retry-After"), jw.Body.String())
+	}
+	unblock()
+	aiWait(t, first, "the first refresh to finish")
 }

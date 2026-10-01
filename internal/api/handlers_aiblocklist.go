@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -17,8 +18,10 @@ import (
 const aiBlocklistRefreshGap = 60 * time.Second
 
 // aiBlocklistStatusResponse is the JSON shape of both AI-blocklist endpoints.
-// It carries the source HOST only, never the full URL, and LastError is a
-// generic sentence: the raw error can hold a URL with a query or a data path.
+// It never carries the full URL: source_host is the host, source is host plus
+// path and source_repo is owner/repo for a GitHub list (none holds userinfo, a
+// query or a fragment). LastError is a generic sentence: the raw error can hold
+// a URL with a query or a data path.
 type aiBlocklistStatusResponse struct {
 	Enabled    bool   `json:"enabled"`
 	SourceHost string `json:"source_host,omitempty"`
@@ -114,7 +117,7 @@ func (r *Router) refreshRefused(w http.ResponseWriter, req *http.Request, s *aib
 		return
 	}
 	v := aiBlocklistView(s)
-	v.NoticeKind, v.NoticeSecs, v.Refocus = kind, secs, true
+	v.NoticeKind, v.NoticeSecs, v.Refreshed = kind, secs, true
 	renderTempl(w, req, templates.AIBlocklistBody(v))
 }
 
@@ -144,6 +147,10 @@ func (r *Router) handleAIBlocklistRefresh(w http.ResponseWriter, req *http.Reque
 	if !ran {
 		secs := int(wait/time.Second) + 1
 		w.Header().Set("Retry-After", strconv.Itoa(secs))
+		if errors.Is(err, aiblock.ErrRefreshInFlight) {
+			r.refreshRefused(w, req, s, http.StatusTooManyRequests, "a refresh is already in progress; try again in a moment", "in_progress", secs)
+			return
+		}
 		r.refreshRefused(w, req, s, http.StatusTooManyRequests, "the list was refreshed moments ago; try again in "+strconv.Itoa(secs)+" seconds", "rate_limited", secs)
 		return
 	}
@@ -152,7 +159,7 @@ func (r *Router) handleAIBlocklistRefresh(w http.ResponseWriter, req *http.Reque
 	}
 	if isHTMXRequest(req) {
 		v := aiBlocklistView(s)
-		v.Refocus = true
+		v.Refreshed = true
 		renderTempl(w, req, templates.AIBlocklistBody(v))
 		return
 	}

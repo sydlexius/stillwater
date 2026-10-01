@@ -6031,13 +6031,14 @@ type AIBlocklistView struct {
 	LastFetch   time.Time
 	LastChecked time.Time
 	LastError   string
-	// NoticeKind is "rate_limited" or "disabled" after a refused Refresh now
+	// NoticeKind is "rate_limited", "in_progress" or "disabled" after a refused Refresh now
 	// click; NoticeSecs is the wait for rate_limited.
 	NoticeKind string
 	NoticeSecs int
-	// Refocus puts keyboard focus back on the button after an HTMX swap (the
-	// swap replaces the focused, disabled-while-loading button).
-	Refocus bool
+	// Refreshed marks a Refresh now response (not the page load). It puts
+	// keyboard focus back on the button (the swap replaces the focused,
+	// disabled-while-loading button) and makes a new last error announce itself.
+	Refreshed bool
 }
 
 // aiListTime renders a timestamp in UTC, or the "never" label for the zero time.
@@ -6086,7 +6087,7 @@ func SectionAIBlocklist(data SettingsData) templ.Component {
 		var templ_7745c5c3_Var319 string
 		templ_7745c5c3_Var319, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.ai_blocklist.description"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1834, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1835, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var319))
 		if templ_7745c5c3_Err != nil {
@@ -6142,7 +6143,7 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 			var templ_7745c5c3_Var321 string
 			templ_7745c5c3_Var321, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.ai_blocklist.off"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1847, Col: 117}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1848, Col: 117}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var321))
 			if templ_7745c5c3_Err != nil {
@@ -6160,7 +6161,7 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 			var templ_7745c5c3_Var322 string
 			templ_7745c5c3_Var322, templ_7745c5c3_Err = templ.ResolveAttributeValue(aiListState(v))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1849, Col: 106}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1850, Col: 106}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var322)
 			if templ_7745c5c3_Err != nil {
@@ -6173,7 +6174,7 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 			var templ_7745c5c3_Var323 string
 			templ_7745c5c3_Var323, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.ai_blocklist.source"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1850, Col: 89}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1851, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var323))
 			if templ_7745c5c3_Err != nil {
@@ -6191,7 +6192,7 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 				var templ_7745c5c3_Var324 templ.SafeURL
 				templ_7745c5c3_Var324, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(aiListRepoURL(v.SourceRepo)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1853, Col: 58}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1854, Col: 58}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var324))
 				if templ_7745c5c3_Err != nil {
@@ -6204,7 +6205,7 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 				var templ_7745c5c3_Var325 string
 				templ_7745c5c3_Var325, templ_7745c5c3_Err = templ.JoinStringErrs(v.SourceRepo)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1853, Col: 135}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1854, Col: 135}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var325))
 				if templ_7745c5c3_Err != nil {
@@ -6218,7 +6219,7 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 				var templ_7745c5c3_Var326 string
 				templ_7745c5c3_Var326, templ_7745c5c3_Err = templ.JoinStringErrs(v.Source)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1855, Col: 16}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1856, Col: 16}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var326))
 				if templ_7745c5c3_Err != nil {
@@ -6232,7 +6233,7 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 			var templ_7745c5c3_Var327 string
 			templ_7745c5c3_Var327, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.ai_blocklist.status"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1858, Col: 89}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1859, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var327))
 			if templ_7745c5c3_Err != nil {
@@ -6246,7 +6247,7 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 				var templ_7745c5c3_Var328 string
 				templ_7745c5c3_Var328, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.ai_blocklist.loaded"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1861, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1862, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var328))
 				if templ_7745c5c3_Err != nil {
@@ -6256,7 +6257,7 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 				var templ_7745c5c3_Var329 string
 				templ_7745c5c3_Var329, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.ai_blocklist.not_loaded"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1863, Col: 50}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1864, Col: 50}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var329))
 				if templ_7745c5c3_Err != nil {
@@ -6275,7 +6276,7 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 				var templ_7745c5c3_Var330 string
 				templ_7745c5c3_Var330, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.ai_blocklist.rules"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1867, Col: 89}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1868, Col: 89}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var330))
 				if templ_7745c5c3_Err != nil {
@@ -6288,7 +6289,7 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 				var templ_7745c5c3_Var331 string
 				templ_7745c5c3_Var331, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(v.Rules))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1868, Col: 108}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1869, Col: 108}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var331))
 				if templ_7745c5c3_Err != nil {
@@ -6306,7 +6307,7 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 			var templ_7745c5c3_Var332 string
 			templ_7745c5c3_Var332, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.ai_blocklist.last_updated"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1870, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1871, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var332))
 			if templ_7745c5c3_Err != nil {
@@ -6319,7 +6320,7 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 			var templ_7745c5c3_Var333 string
 			templ_7745c5c3_Var333, templ_7745c5c3_Err = templ.JoinStringErrs(aiListTime(ctx, v.LastFetch))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1871, Col: 121}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1872, Col: 121}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var333))
 			if templ_7745c5c3_Err != nil {
@@ -6332,7 +6333,7 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 			var templ_7745c5c3_Var334 string
 			templ_7745c5c3_Var334, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.ai_blocklist.last_checked"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1872, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1873, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var334))
 			if templ_7745c5c3_Err != nil {
@@ -6345,7 +6346,7 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 			var templ_7745c5c3_Var335 string
 			templ_7745c5c3_Var335, templ_7745c5c3_Err = templ.JoinStringErrs(aiListTime(ctx, v.LastChecked))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1873, Col: 123}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1874, Col: 123}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var335))
 			if templ_7745c5c3_Err != nil {
@@ -6363,54 +6364,64 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 				var templ_7745c5c3_Var336 string
 				templ_7745c5c3_Var336, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.ai_blocklist.last_error"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1875, Col: 94}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1876, Col: 94}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var336))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 522, "</dt><dd class=\"sm:col-span-2 text-red-700 dark:text-red-300\" data-ai-list=\"last-error\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 522, "</dt><dd class=\"sm:col-span-2 text-red-700 dark:text-red-300\" data-ai-list=\"last-error\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				if v.Refreshed && v.NoticeKind == "" {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 523, " role=\"alert\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 524, ">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var337 string
 				templ_7745c5c3_Var337, templ_7745c5c3_Err = templ.JoinStringErrs(v.LastError)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1876, Col: 101}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1883, Col: 19}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var337))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 523, "</dd>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 525, "</dd>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 524, "</dl><div><button type=\"button\" id=\"ai-image-list-refresh\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" hx-post=\"/api/v1/images/ai-blocklist/refresh\" hx-target=\"#ai-image-list-body\" hx-swap=\"outerHTML\" hx-disabled-elt=\"this\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 526, "</dl><div><button type=\"button\" id=\"ai-image-list-refresh\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" hx-post=\"/api/v1/images/ai-blocklist/refresh\" hx-target=\"#ai-image-list-body\" hx-swap=\"outerHTML\" hx-disabled-elt=\"this\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if v.Refocus {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 525, " autofocus")
+			if v.Refreshed {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 527, " autofocus")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 526, ">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 528, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var338 string
 			templ_7745c5c3_Var338, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "settings.ai_blocklist.refresh"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1890, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_sections.templ`, Line: 1897, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var338))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 527, "</button></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 529, "</button></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -6421,7 +6432,7 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 528, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 530, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -6430,8 +6441,11 @@ func AIBlocklistBody(v AIBlocklistView) templ.Component {
 }
 
 func aiListNotice(ctx context.Context, v AIBlocklistView) string {
-	if v.NoticeKind == "rate_limited" {
+	switch v.NoticeKind {
+	case "rate_limited":
 		return tf(ctx, "settings.ai_blocklist.rate_limited", strconv.Itoa(v.NoticeSecs))
+	case "in_progress":
+		return t(ctx, "settings.ai_blocklist.in_progress")
 	}
 	return t(ctx, "settings.ai_blocklist.disabled_notice")
 }

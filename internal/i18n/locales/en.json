@@ -2955,6 +2955,7 @@
   "prefs.search.no_match": "No preferences match \"%s\"",
   "settings.ai_blocklist.description": "The community list Stillwater uses to hide AI-generated results in web image search.",
   "settings.ai_blocklist.disabled_notice": "The AI image list download is turned off, so there is nothing to refresh.",
+  "settings.ai_blocklist.in_progress": "A refresh is already in progress. Try again in a moment.",
   "settings.ai_blocklist.last_checked": "Last checked",
   "settings.ai_blocklist.last_error": "Last error",
   "settings.ai_blocklist.last_updated": "Last updated",

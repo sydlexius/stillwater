@@ -85,3 +85,24 @@ func TestSectionAIBlocklist_SourceRow(t *testing.T) {
 		t.Errorf("custom render must be plain text with no link:\n%s", plain)
 	}
 }
+
+// A last error that arrives with a Refresh now response must be announced;
+// one rendered with the page, or beside a refusal notice (which is itself an
+// alert), must not be.
+func TestSectionAIBlocklist_LastErrorAnnounce(t *testing.T) {
+	const alertDD = `data-ai-list="last-error" role="alert"`
+	base := AIBlocklistView{Enabled: true, Source: "lists.example/l.txt", LastError: "The list could not be downloaded."}
+	if out := renderAIBlocklist(t, base); strings.Contains(out, alertDD) {
+		t.Error("last error on page load must not be an alert")
+	}
+	refreshed := base
+	refreshed.Refreshed = true
+	if out := renderAIBlocklist(t, refreshed); !strings.Contains(out, alertDD) {
+		t.Errorf("last error on a refresh response must be role=alert:\n%s", out)
+	}
+	refused := refreshed
+	refused.NoticeKind, refused.NoticeSecs = "rate_limited", 5
+	if out := renderAIBlocklist(t, refused); strings.Contains(out, alertDD) || strings.Count(out, `role="alert"`) != 1 {
+		t.Errorf("a refusal must leave exactly one alert (the notice):\n%s", out)
+	}
+}

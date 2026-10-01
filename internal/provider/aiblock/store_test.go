@@ -1,9 +1,11 @@
 package aiblock
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -627,7 +629,13 @@ func TestStoreRefreshIfDueDoesNotWaitForRunningRefresh(t *testing.T) {
 	go func() { defer close(done); _ = s.Refresh(context.Background()) }()
 	<-started
 	res := make(chan bool, 1)
-	go func() { ran, _, _ := s.RefreshIfDue(context.Background(), time.Minute); res <- ran }()
+	go func() {
+		ran, _, err := s.RefreshIfDue(context.Background(), time.Minute)
+		if !errors.Is(err, ErrRefreshInFlight) {
+			t.Errorf("in-flight refusal err = %v, want ErrRefreshInFlight", err)
+		}
+		res <- ran
+	}()
 	select {
 	case ran := <-res:
 		if ran {
@@ -654,6 +662,7 @@ func TestDescribeSource(t *testing.T) {
 		{"leading empty segment", "https://github.com//r", "github.com//r", ""},
 		{"trailing empty segments", "https://github.com/o//", "github.com/o//", ""},
 		{"middle empty segment", "https://github.com/o//r", "github.com/o//r", ""},
+		{"double leading slash", "https://github.com//o/r", "github.com//o/r", ""},
 		{"unparsable", "http://[::1", "", ""},
 		{"no host", "/just/a/path", "", ""},
 	}
@@ -674,5 +683,35 @@ func TestSourceDisplay_DisabledShowsNothing(t *testing.T) {
 	s := NewStore(Options{URL: SourceURL, Disabled: true})
 	if d, r := s.SourceDisplay(); d != "" || r != "" {
 		t.Errorf("disabled store: got (%q, %q), want empty", d, r)
+	}
+}
+
+// A list URL can carry a token or credentials. Neither the log lines nor the
+// stored error text may contain them, including the copy of the URL that
+// net/http embeds in a client error.
+func TestStoreDoesNotLogOrStoreURLSecrets(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	secretURL := "http://user:SECRETPW@" + strings.TrimPrefix(srv.URL, "http://") + "/l.txt?token=SECRETTOK#SECRETFRAG"
+	client := srv.Client()
+	srv.Close() // connection refused: the client error embeds the URL
+	var logs bytes.Buffer
+	s := NewStore(Options{URL: secretURL, Client: client, RetryInitial: time.Hour,
+		Logger: slog.New(slog.NewTextHandler(&logs, nil))})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := s.Start(ctx)
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(logs.String(), "refresh failed") && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	out := logs.String() + "\n" + s.Status().LastError
+	if !strings.Contains(logs.String(), "refresh failed") {
+		t.Fatalf("no failure was logged: %q", out)
+	}
+	for _, secret := range []string{"SECRETPW", "SECRETTOK", "SECRETFRAG", "user:"} {
+		if strings.Contains(out, secret) {
+			t.Errorf("log or status leaks %q:\n%s", secret, out)
+		}
 	}
 }
