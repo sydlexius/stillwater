@@ -118,7 +118,10 @@ func (p *Publisher) accumulateNeeds(
 				slog.String("artist_id", artistID),
 				slog.String("dir", dir),
 				slog.Any("error", discoverErr))
-		} else if len(fanartPaths) > 0 && state.BackdropCount < len(fanartPaths) {
+		} else if len(fanartPaths) > 0 && state.BackdropCount < len(fanartPaths) &&
+			state.BackdropCount < p.distinctLocalFanart(ctx, fanartPaths) {
+			// The file-count check is a cheap pre-filter; only an artist that
+			// passes it pays for reading its local set. See distinctLocalFanart.
 			needs.fanart = true
 		}
 	}
@@ -139,6 +142,42 @@ func (p *Publisher) accumulateNeeds(
 			needs.banner = true
 		}
 	}
+}
+
+// distinctLocalFanart returns how many DISTINCT images (by sha256) the local
+// fanart set holds, which is the most backdrops a platform needs to carry
+// every local image (#3144).
+//
+// The reconciler's deficit check used to compare the platform's count against
+// the local FILE count. The platform backdrop prune (backdrop_prune.go) leaves
+// one copy of each byte-identical image, so on an artist whose local set holds
+// a duplicate the prune necessarily ends below the file count -- and the next
+// reconciler pass read that as damage and re-pushed the whole set, restoring
+// the copies the prune had just removed. Comparing against distinct content
+// makes the two agree: a pruned platform holding every distinct local image is
+// not a deficit, while a platform genuinely missing a local image still is.
+//
+// A file that cannot be hashed (read error, over the size bound, canceled ctx)
+// counts as DISTINCT. It cannot be proven a duplicate, and overcounting only
+// errs toward the reconciler's historical behavior (repair), never toward
+// leaving a real deficit unrepaired.
+func (p *Publisher) distinctLocalFanart(ctx context.Context, fanartPaths []string) int {
+	seen := make(map[string]bool, len(fanartPaths))
+	distinct := 0
+	for _, fp := range fanartPaths {
+		h, err := img.HashFile(ctx, fp, false)
+		if err != nil {
+			p.logger.Warn("artwork reconciler: hashing local fanart; counting it as distinct",
+				slog.String("path", fp), slog.Any("error", err))
+			distinct++
+			continue
+		}
+		if !seen[h.Content] {
+			seen[h.Content] = true
+			distinct++
+		}
+	}
+	return distinct
 }
 
 // syncMissingArtwork calls the existing sync methods for each image type
@@ -175,8 +214,28 @@ func (p *Publisher) syncMissingArtwork(ctx context.Context, a *artist.Artist, ne
 
 // ReconcileArtworkToPlatforms iterates all artists that have at least one
 // platform mapping and pushes any locally-present artwork that is missing on
-// the connected mirror. It is intentionally idempotent: uploading an image
-// that already exists on the platform is a no-op on the Emby/Jellyfin side.
+// the connected mirror.
+//
+// IDEMPOTENT AT THE PASS LEVEL, NOT THE UPLOAD LEVEL (#3144). An individual
+// upload is not a no-op on either peer: Jellyfin appends whatever the index
+// (#3135), and Emby appends at any index past its current count. What makes a
+// repeated pass harmless is the trigger plus the full-set push it runs:
+//
+//   - fanart fires only while the platform holds FEWER backdrops than the
+//     local set has DISTINCT images (distinctLocalFanart), so a platform the
+//     backdrop prune reduced to one copy per image is left alone;
+//   - when it fires, Emby replaces in place below its count and appends the
+//     rest, and Jellyfin clears and rebuilds the whole list (#3145), so a push
+//     that lands in full ends at or above the distinct count and the next
+//     pass writes nothing. A push that does NOT land in full (an unreadable
+//     local file, a failed upload) leaves the deficit open, and every pass
+//     retries it, as before #3144;
+//   - thumb/logo/banner fire only when the platform lacks the image outright.
+//
+// Two limits, stated so nobody reads more into it. The check is count-based: a
+// platform holding enough backdrops but the WRONG ones is not detected. And
+// every Emby push leaves a copy in Emby's own metadata store (#3151), so a
+// pass that does fire is not free on Emby even though it converges.
 //
 // Per-artist errors are logged and skipped; the run continues to remaining
 // artists. The conflict gate (AllowImageWrite) is checked once per artist

@@ -205,7 +205,7 @@ If remediation has never run, or no report has ever measured perceptual redundan
 
 ## Platform backdrop duplicates
 
-<!-- code: web/templates/platform_backdrop_duplicates.templ, internal/api/handlers_platform_backdrop_prune.go, internal/publish/backdrop_prune.go -->
+<!-- code: web/templates/platform_backdrop_duplicates.templ, internal/api/handlers_platform_backdrop_prune.go, internal/publish/backdrop_prune.go, internal/publish/reconcile.go (distinctLocalFanart) -->
 
 On Emby, platform sync is additive: pushing fanart never deletes a surplus copy on the server, so a redundant slot that the local Backdrop Duplicates report already cleaned up on disk can still linger there. (Jellyfin is different: a fanart push replaces that artist's whole backdrop list with your local set, so surplus copies, including ones added directly in Jellyfin, are removed by the next push.) The **Platform Backdrop Duplicates** report finds those leftover copies directly on your connected platforms. It is an admin-only page at `/reports/platform-backdrop-duplicates`.
 
@@ -228,6 +228,8 @@ There is deliberately no way to run the prune without saying which of the two yo
 You can also rehearse a run before committing to it. Through the [API](../api/index.md), a dry run that succeeds returns the complete plan -- for every copy it would delete, which copy would survive it -- and deletes nothing at all. A dry run that fails partway through your library returns the plan it had built up to that point rather than the whole one, so treat a failed rehearsal's plan as a partial picture. Every entry in that plan says what became of it: deleted, skipped, failed, or (in a dry run) merely planned. Read those rather than working it out from the total, because they are written as the work happens and cannot disagree with it.
 
 Because the prune only ever removes copies that are byte-identical to a kept survivor, no distinct artwork is ever lost. If a platform's copy is later needed again, re-running fanart sync from the local library re-pushes it from the local survivor.
+
+A prune stays in effect across Stillwater's background reconciliation pass. That pass only re-pushes an artist's fanart when the platform holds fewer backdrops than the artist has *distinct* local images, so a platform reduced to one copy of each image is left alone even when the artist's local folder still holds identical copies of its own. A platform that is genuinely missing one of your local images is still repaired. A fanart push you trigger yourself, such as a reorder or delete on the Backdrops tab, still sends the whole local set, identical copies included. To stop a pruned copy coming back that way, remove the local copy too (the "No byte-identical images" rule in the [rules catalog](../reference/rules-catalogue.md) does this).
 
 If a prune fails partway through -- a platform connection drops midway, for example -- you are told how much it actually removed before it stopped, not just that it failed. The prune works through your library page by page, deleting as it goes, so a failure on a later page does not undo the deletions a completed earlier page already made. Being told "failed after removing 40 backdrops" instead of a plain "failed" is what lets you tell a run that changed nothing from one that partly succeeded, and decide whether trying again is even necessary.
 
