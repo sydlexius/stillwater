@@ -207,7 +207,7 @@ If remediation has never run, or no report has ever measured perceptual redundan
 
 <!-- code: web/templates/platform_backdrop_duplicates.templ, internal/api/handlers_platform_backdrop_prune.go, internal/publish/backdrop_prune.go -->
 
-Platform sync is additive: pushing fanart to a connected media server never deletes a surplus copy on that server, so a redundant slot that the local Backdrop Duplicates report already cleaned up on disk can still linger on Emby or Jellyfin. The **Platform Backdrop Duplicates** report finds those leftover copies directly on your connected platforms. It is an admin-only page at `/reports/platform-backdrop-duplicates`.
+On Emby, platform sync is additive: pushing fanart never deletes a surplus copy on the server, so a redundant slot that the local Backdrop Duplicates report already cleaned up on disk can still linger there. (Jellyfin is different: a fanart push replaces that artist's whole backdrop list with your local set, so surplus copies, including ones added directly in Jellyfin, are removed by the next push.) The **Platform Backdrop Duplicates** report finds those leftover copies directly on your connected platforms. It is an admin-only page at `/reports/platform-backdrop-duplicates`.
 
 The report re-reads every artist's backdrops from each connected platform and finds **exact duplicates**: byte-for-byte identical files, matched by a content hash, the same standard the local report uses. It is a dry-run: nothing is deleted until you choose to prune.
 

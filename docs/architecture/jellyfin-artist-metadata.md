@@ -73,9 +73,12 @@ convention as the Emby client):
 > `connection.SupportsIndexedBackdropReplace` reporting false for Jellyfin): that path no longer
 > relies on the indexed endpoint honoring its index at all, instead performing the
 > delete-then-reupload sequence above itself. The full-set sync
-> (`uploadFanartSet`/`SyncAllFanartToPlatforms`, used by reorder, per-slot delete, batch delete,
-> and platform-backdrop-assign) still calls this same indexed endpoint with no delete step first,
-> so it still appends on Jellyfin; that gap is tracked separately (#3145 follow-up).
+> (`SyncAllFanartToPlatforms`, used by reorder, per-slot delete, batch delete, and
+> platform-backdrop-assign, and by the background reconciler) takes the same path since #3145:
+> `pushFanartSetToPeer` routes a connection for which `SupportsIndexedBackdropReplace` is false
+> through `resyncFanartFromSnapshot` (delete every backdrop, re-upload the snapshot in order),
+> so repeated syncs converge on the local file count instead of growing. Emby keeps the
+> per-file indexed upload in `uploadFanartSet`.
 
 ### Library Management
 

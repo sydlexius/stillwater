@@ -1,8 +1,10 @@
 // Package publish -- backdrop_prune.go
 // Platform-side backdrop de-duplication (#2540 remote prune). The local rule
-// engine collapses byte-identical fanart on disk, but platform sync is
-// additive (SyncAllFanartToPlatforms never deletes surplus indices), so the
-// copies already pushed to Emby/Jellyfin persist. This prunes them: content-
+// engine collapses byte-identical fanart on disk, but on Emby platform sync is
+// additive (the per-file indexed upload never deletes surplus indices), so the
+// copies already pushed there persist. A Jellyfin full-set sync replaces the
+// artist's whole backdrop list with the local set (#3145), including any
+// backdrop that exists only on the platform. This prunes them: content-
 // matched (sha256), exact-only, admin-triggered.
 //
 // SCOPED and PREVIEWABLE (#3139). Every run names exactly one of a single

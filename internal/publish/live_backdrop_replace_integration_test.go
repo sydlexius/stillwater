@@ -973,53 +973,23 @@ func TestLiveEmby_IndexedReplace_FindsPrimaryShiftedByLowerBystanderDelete(t *te
 	}
 }
 
-// TestLiveJellyfin_SyncAllFanartToPlatforms_RepeatedRunsInflate_KnownGap is a
-// NEW, WIDER finding surfaced during #3135's hostile review, deliberately
-// OUT OF SCOPE for this branch's fix: uploadFanartSet (the per-file upload
-// SyncAllFanartToPlatforms/syncAllFanartToPlatforms uses) issues
-// UploadImageAtIndex for each local file with NO preceding platform-state
-// read and NO delete step -- unlike this branch's uploadFanartFullResyncForSync
-// contribution, which added the missing delete step for the SINGLE-image
-// replace path only. Since Jellyfin's indexed endpoint ignores the index and
-// always appends (established elsewhere in this file), a REPEATED full-set
-// resync through SyncAllFanartToPlatforms against Jellyfin grows the
-// backdrop count WITHOUT BOUND: measured live, 0 -> 3 -> 6 -> 9 across three
-// runs of the same 3-file local set (see the PR report for the exact
-// numbers). TestLiveEmby_SyncAllFanartToPlatforms_RepeatedRunsDoNotInflate
-// below proves Emby, by contrast, stays flat at 3 across the same sequence
-// -- the SAME uploadFanartSet code issues the SAME UploadImageAtIndex calls
-// to both platforms, so this is a platform-behavior gap, not a client
-// request-shape defect.
+// TestLiveJellyfin_SyncAllFanartToPlatforms_RepeatedRunsConverge is the #3145
+// regression against a REAL Jellyfin. Before the fix, uploadFanartSet issued
+// one UploadImageAtIndex per local file with no delete step, and Jellyfin's
+// indexed endpoint ignores the index and appends, so three consecutive
+// SyncAllFanartToPlatforms runs measured 0 -> 3 -> 6 -> 9. Now a Jellyfin
+// peer is synced by clear-then-reupload (pushFanartSetToPeer), so the count
+// must be exactly the local file count after EVERY run, and the bytes must
+// land in local order. Three runs, not two: two cannot tell "adds once" from
+// "adds every time".
 //
-// THIS AFFECTS THE ENTIRE BACKDROPS TAB, NOT JUST THE SINGLE-IMAGE REPLACE
-// #3135's issue describes: handleFanartSlotDelete, handleFanartReorder,
-// handleFanartBatchDelete, and handleFanartSlotAssign
-// (internal/api/handlers_backdrop.go) all route through
-// SyncAllFanartToPlatforms -> syncAllFanartToPlatforms -> uploadFanartSet,
-// so every one of those operator actions against a Jellyfin connection
-// inflates the backdrop count on repetition. #3125's "zero duplicates on
-// both platforms" full-indexed-sync measurement did not separately verify
-// Jellyfin through this exact call (no live Jellyfin test in this file
-// exercised SyncAllFanartToPlatforms before this one), so that claim reads
-// as Emby-verified and Jellyfin-assumed, not Jellyfin-measured.
+// The platform is deliberately SEEDED with two stale backdrops (bytes that
+// are not in the local set) so the test also proves the resync clears an
+// existing set rather than only handling the empty-platform case.
 //
-// NOT FIXED HERE: fixing uploadFanartSet for Jellyfin needs the SAME
-// delete-every-backdrop-then-reupload shape this branch's
-// uploadFanartFullResyncForSync already implements for the single-image
-// path, but applying it to the full-set sync is a materially different
-// change (a different call site, a different warning contract, and its own
-// review) than this branch's stated scope. Tracked as #3145; this
-// test PINS the gap with a hard assertion so a future fix (or accidental
-// regression) is caught by a red/green flip rather than silently
-// rediscovered. A RED failure here is GOOD NEWS: it means the count no
-// longer grows and #3145 landed (or Jellyfin itself changed).
-//
-// Seeds THREE distinct local fanart files, then calls
-// SyncAllFanartToPlatforms three times in a row against the SAME clean
-// starting platform state and asserts the count strictly INCREASES each
-// run -- not merely "differs", since a bounded/flat count would be the
-// fixed behavior this test exists to flag as still-missing.
-func TestLiveJellyfin_SyncAllFanartToPlatforms_RepeatedRunsInflate_KnownGap(t *testing.T) {
+// The sibling Emby contrast, TestLiveEmby_SyncAllFanartToPlatforms_RepeatedRunsDoNotInflate,
+// is unchanged: Emby keeps the per-file indexed upload.
+func TestLiveJellyfin_SyncAllFanartToPlatforms_RepeatedRunsConverge(t *testing.T) {
 	env := loadLiveJellyfinEnv(t)
 	ctx, cancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
 	defer cancel()
@@ -1056,16 +1026,24 @@ func TestLiveJellyfin_SyncAllFanartToPlatforms_RepeatedRunsInflate_KnownGap(t *t
 	})
 	art := &artist.Artist{ID: "live-jf-inflate", Name: "Live UAT Artist", Path: dir}
 
-	// PRECONDITION: exactly zero backdrops before the first run.
+	// Seed two STALE backdrops (not part of the local set) so the first run
+	// has something to clear. UploadImage appends on both platforms.
+	for _, tag := range []int{0xE1, 0xE2} {
+		if err := client.UploadImage(ctx, env.itemID, "fanart", bandJPEG(t, tag), "image/jpeg"); err != nil {
+			t.Fatalf("seeding stale backdrop: %v", err)
+		}
+	}
+	time.Sleep(500 * time.Millisecond)
+	// PRECONDITION: the seed really landed, so run 1 genuinely has a set to clear.
 	before, err := client.GetArtistDetail(ctx, env.itemID)
 	if err != nil {
 		t.Fatalf("reading state before any sync: %v", err)
 	}
-	if before.BackdropCount != 0 {
-		t.Fatalf("precondition failed: BackdropCount before run 1 = %d, want 0", before.BackdropCount)
+	if before.BackdropCount != 2 {
+		t.Fatalf("precondition failed: BackdropCount before run 1 = %d, want 2", before.BackdropCount)
 	}
 
-	prevCount := before.BackdropCount
+	const localCount = 3
 	for run := 1; run <= 3; run++ {
 		warnings := p.SyncAllFanartToPlatforms(ctx, art)
 		if len(warnings) != 0 {
@@ -1076,17 +1054,25 @@ func TestLiveJellyfin_SyncAllFanartToPlatforms_RepeatedRunsInflate_KnownGap(t *t
 		if err != nil {
 			t.Fatalf("run %d: reading state: %v", run, err)
 		}
-		t.Logf("KNOWN GAP: BackdropCount after run %d = %d", run, after.BackdropCount)
-		wantMin := prevCount + 3 // each run uploads 3 local files
-		if after.BackdropCount < wantMin {
-			t.Errorf("run %d: BackdropCount = %d, want >= %d -- the known-gap growth did not reproduce; if this is because the count is now STABLE instead, #3145 may have landed (or Jellyfin itself changed) -- update this test accordingly and close #3145", run, after.BackdropCount, wantMin)
+		t.Logf("BackdropCount after run %d = %d", run, after.BackdropCount)
+		if after.BackdropCount != localCount {
+			t.Fatalf("run %d: BackdropCount = %d, want exactly %d (the local file count); a larger value means the append-inflation of #3145 is back", run, after.BackdropCount, localCount)
 		}
-		prevCount = after.BackdropCount
+		// Content and order: slot i must hold local file i's exact bytes.
+		for i, want := range [][]byte{bandJPEG(t, 0xF1), bandJPEG(t, 0xF2), bandJPEG(t, 0xF3)} {
+			got, _, gerr := client.GetArtistBackdrop(ctx, env.itemID, i)
+			if gerr != nil {
+				t.Fatalf("run %d: reading backdrop %d: %v", run, i, gerr)
+			}
+			if hashOf(got) != hashOf(want) {
+				t.Errorf("run %d: backdrop %d does not hold local fanart %d's bytes", run, i, i)
+			}
+		}
 	}
 }
 
 // TestLiveEmby_SyncAllFanartToPlatforms_RepeatedRunsDoNotInflate is the Emby CONTRAST
-// case for TestLiveJellyfin_SyncAllFanartToPlatforms_RepeatedRunsInflate_KnownGap: proves
+// case for TestLiveJellyfin_SyncAllFanartToPlatforms_RepeatedRunsConverge: proves
 // the same repeated-SyncAllFanartToPlatforms sequence does NOT inflate
 // Emby's backdrop count, because Emby's indexed endpoint genuinely replaces
 // in place (unlike Jellyfin's, which appends regardless of index -- see the
