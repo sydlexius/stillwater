@@ -97,33 +97,28 @@ func (p *Publisher) detectMissingArtwork(
 			continue
 		}
 
-		p.accumulateNeeds(ctx, artistID, dir, state, &needs)
+		// The jellyfin/emby clients both read backdrop bytes; a getter that
+		// cannot leaves fanartDeficit on its count-only check.
+		reader, _ := stateGetter.(connection.BackdropReader)
+		p.accumulateNeeds(ctx, artistID, dir, state, &needs, reader, pid.PlatformArtistID)
 	}
 	return needs
 }
 
 // accumulateNeeds merges per-connection platform state into the shared needs
 // struct, checking local file presence for each image type not yet flagged.
+// reader (nil allowed) and platformArtistID let the fanart check read the
+// platform's backdrop bytes; see fanartDeficit.
 func (p *Publisher) accumulateNeeds(
 	ctx context.Context,
 	artistID, dir string,
 	state *connection.ArtistPlatformState,
 	needs *artworkNeeds,
+	reader connection.BackdropReader,
+	platformArtistID string,
 ) {
 	if !needs.fanart {
-		primary := p.getActiveFanartPrimary(ctx)
-		fanartPaths, discoverErr := img.DiscoverFanart(ctx, dir, primary)
-		if discoverErr != nil {
-			p.logger.Warn("artwork reconciler: discovering fanart",
-				slog.String("artist_id", artistID),
-				slog.String("dir", dir),
-				slog.Any("error", discoverErr))
-		} else if len(fanartPaths) > 0 && state.BackdropCount < len(fanartPaths) &&
-			state.BackdropCount < p.distinctLocalFanart(ctx, fanartPaths) {
-			// The file-count check is a cheap pre-filter; only an artist that
-			// passes it pays for reading its local set. See distinctLocalFanart.
-			needs.fanart = true
-		}
+		needs.fanart = p.fanartDeficit(ctx, artistID, dir, state, reader, platformArtistID)
 	}
 	for _, imageType := range []string{"thumb", "logo", "banner"} {
 		if platformHasImageType(state, imageType) {
@@ -144,43 +139,99 @@ func (p *Publisher) accumulateNeeds(
 	}
 }
 
-// distinctLocalFanart returns how many DISTINCT images (by sha256) the local
-// fanart set holds, which is the most backdrops a platform needs to carry
-// every local image (#3144).
+// fanartDeficit reports whether the platform is missing local fanart.
 //
-// The reconciler's deficit check used to compare the platform's count against
-// the local FILE count. The platform backdrop prune (backdrop_prune.go) leaves
-// one copy of each byte-identical image, so on an artist whose local set holds
-// a duplicate the prune necessarily ends below the file count -- and the next
-// reconciler pass read that as damage and re-pushed the whole set, restoring
-// the copies the prune had just removed. Comparing against distinct content
-// makes the two agree: a pruned platform holding every distinct local image is
-// not a deficit, while a platform holding FEWER backdrops than there are
-// distinct local images still is. It is a COUNT, not an identity check: a
-// platform holding enough backdrops but a different image in place of a local
-// one is not detected (see ReconcileArtworkToPlatforms).
+// THREE TIERS, cheapest first, each run only when the one before cannot decide:
 //
-// A file that cannot be hashed (read error, over the size bound, canceled ctx)
-// counts as DISTINCT. It cannot be proven a duplicate, and overcounting only
-// errs toward the reconciler's historical behavior (repair), never toward
-// leaving a real deficit unrepaired.
-func (p *Publisher) distinctLocalFanart(ctx context.Context, fanartPaths []string) int {
-	seen := make(map[string]bool, len(fanartPaths))
-	distinct := 0
+//  1. FILE COUNT. A platform holding at least as many backdrops as there are
+//     local files is not short. No read at all, the common case.
+//  2. DISTINCT COUNT (#3144). A platform holding fewer backdrops than the local
+//     set has DISTINCT images is short. Reads the local files only.
+//  3. IDENTITY (#3147). Left over is a platform whose count sits between the
+//     distinct count and the file count, which only a local set with
+//     byte-identical duplicates can produce. A count cannot tell its two causes
+//     apart: the backdrop prune leaves one copy of EVERY distinct image (local
+//     A,B,A, platform A,B: converged), while a Jellyfin resync interrupted after
+//     its deletes and some uploads leaves a PREFIX of the local set that can
+//     repeat one image and lack another (local A,A,B, platform A,A: short a
+//     B). So this tier reads the platform's backdrop bytes and flags a deficit
+//     when any readable distinct local image is absent. It is the only state a
+//     crash mid-resync leaves that tiers 1 and 2 cannot see: every other prefix
+//     is shorter than the distinct count, and the repair (syncAllFanartToPlatforms,
+//     which on Jellyfin clears and rebuilds) restores the full ordered set.
+//
+// Tier 3 is a MEMBERSHIP check, not an order or substitution check: a platform
+// holding enough backdrops but a different image in place of a local one is
+// still not detected (see ReconcileArtworkToPlatforms).
+//
+// FAIL DIRECTION. A local file that cannot be hashed counts as distinct (tier
+// 2), erring toward repair, never toward leaving a real deficit. A failure to
+// read the PLATFORM's bytes in tier 3 goes the other way: no deficit this pass,
+// logged, retried next pass. Repairing on that error would rebuild a platform
+// the prune had reduced and restore the copies it removed (#3144) every time a
+// peer read failed, while declining costs one reconciler interval.
+func (p *Publisher) fanartDeficit(
+	ctx context.Context,
+	artistID, dir string,
+	state *connection.ArtistPlatformState,
+	reader connection.BackdropReader,
+	platformArtistID string,
+) bool {
+	fanartPaths, discoverErr := img.DiscoverFanart(ctx, dir, p.getActiveFanartPrimary(ctx))
+	if discoverErr != nil {
+		p.logger.Warn("artwork reconciler: discovering fanart",
+			slog.String("artist_id", artistID),
+			slog.String("dir", dir),
+			slog.Any("error", discoverErr))
+		return false
+	}
+	if len(fanartPaths) == 0 || state.BackdropCount >= len(fanartPaths) {
+		return false
+	}
+	local, unreadable := p.localFanartHashes(ctx, fanartPaths)
+	if state.BackdropCount < len(local)+unreadable {
+		return true
+	}
+	if reader == nil {
+		return false
+	}
+	platform, readErr := backdropContentHashes(ctx, reader, platformArtistID, state.BackdropCount)
+	if readErr != nil {
+		p.logger.Warn("artwork reconciler: reading platform backdrops to check for missing fanart; retrying next pass",
+			slog.String("artist_id", artistID),
+			slog.Any("error", readErr))
+		return false
+	}
+	held := make(map[string]bool, len(platform))
+	for _, h := range platform {
+		held[h] = true
+	}
+	for h := range local {
+		if !held[h] {
+			return true
+		}
+	}
+	return false
+}
+
+// localFanartHashes returns the set of DISTINCT content hashes (sha256) in the
+// local fanart set, plus how many files could not be hashed (read error, over
+// the size bound, canceled ctx). len(distinct)+unreadable is the most
+// backdrops a platform needs to carry every local image (#3144): an unhashable
+// file cannot be proven a duplicate, so it counts as distinct.
+func (p *Publisher) localFanartHashes(ctx context.Context, fanartPaths []string) (distinct map[string]bool, unreadable int) {
+	distinct = make(map[string]bool, len(fanartPaths))
 	for _, fp := range fanartPaths {
 		h, err := img.HashFile(ctx, fp, false)
 		if err != nil {
 			p.logger.Warn("artwork reconciler: hashing local fanart; counting it as distinct",
 				slog.String("path", fp), slog.Any("error", err))
-			distinct++
+			unreadable++
 			continue
 		}
-		if !seen[h.Content] {
-			seen[h.Content] = true
-			distinct++
-		}
+		distinct[h.Content] = true
 	}
-	return distinct
+	return distinct, unreadable
 }
 
 // syncMissingArtwork calls the existing sync methods for each image type
@@ -224,9 +275,11 @@ func (p *Publisher) syncMissingArtwork(ctx context.Context, a *artist.Artist, ne
 // (#3135), and Emby appends at any index past its current count. What makes a
 // repeated pass harmless is the trigger plus the full-set push it runs:
 //
-//   - fanart fires only while the platform holds FEWER backdrops than the
-//     local set has DISTINCT images (distinctLocalFanart), so a platform the
-//     backdrop prune reduced to one copy per image is left alone;
+//   - fanart fires only while the platform is missing a DISTINCT local image
+//     (fanartDeficit: fewer backdrops than distinct images, or, when the
+//     local set holds duplicates, a distinct image absent from the platform's
+//     bytes), so a platform the backdrop prune reduced to one copy per image
+//     is left alone;
 //   - when it fires, Emby replaces in place below its count and appends the
 //     rest, and Jellyfin clears and rebuilds the whole list (#3145), so a push
 //     that lands in full ends at or above the distinct count and the next
@@ -235,13 +288,11 @@ func (p *Publisher) syncMissingArtwork(ctx context.Context, a *artist.Artist, ne
 //     retries it, as before #3144;
 //   - thumb/logo/banner fire only when the platform lacks the image outright.
 //
-// Two limits, stated so nobody reads more into it. The deficit check is
-// count-based and does not detect a substituted image: it reads only the
-// platform's BackdropCount, never its bytes, so a platform holding as many
-// backdrops as the local set has distinct images, but a different image in
-// place of a local one (local A,B,A against platform A,C), is not repaired.
-// That was equally true of the file-count check before #3144 (local A,B
-// against platform A,C). And
+// Two limits, stated so nobody reads more into it. The deficit check does not
+// detect a substituted image on a platform holding at least as many backdrops
+// as there are local FILES (local A,B against platform A,C): it reads the
+// platform's bytes only when the count alone cannot decide (fanartDeficit).
+// And
 // every Emby push leaves a copy in Emby's own metadata store (#3151), so a
 // pass that does fire is not free on Emby even though it converges.
 //

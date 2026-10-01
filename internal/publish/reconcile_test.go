@@ -536,7 +536,7 @@ func TestAccumulateNeeds_DiscoverFanartError(t *testing.T) {
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 		ArtistService: &reconcilePlatformLister{},
 	})
-	p.accumulateNeeds(context.Background(), "a1", dir, state, needs)
+	p.accumulateNeeds(context.Background(), "a1", dir, state, needs, nil, "")
 
 	if needs.fanart {
 		t.Error("expected fanart flag false when DiscoverFanart fails; got true")
