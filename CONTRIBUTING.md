@@ -31,6 +31,26 @@ Integration tests use real SQLite via `modernc.org/sqlite`. The race detector
 is required when changing concurrent code (goroutines, shared state,
 background workers).
 
+### Test expectations
+
+New or changed functionality is expected to arrive with tests covering it, in
+the same pull request. CI checks this two ways. Codecov's patch check
+(`codecov.yml`) flags a pull request whose new lines are less than 78%
+covered; it is advisory, not a required check. The required `Coverage Floor`
+check fails if any `internal/` package listed in
+`testdata/coverage-floor.json` drops below its floor. See
+`.github/instructions/go-tests.instructions.md` for the repo's test-quality
+conventions.
+
+Two habits worth keeping, beyond hitting the percentage:
+
+- A test that guards a bug fix should be shown to fail without the fix
+  (revert the fix, confirm red, restore it, confirm green). A test that
+  passes either way guards nothing.
+- A test should assert its own preconditions, so that if the fixture stops
+  exercising the path it's meant to test, the test fails instead of passing
+  vacuously.
+
 ## Code style
 
 - No emoji in code, commits, comments, or documentation
@@ -38,7 +58,7 @@ background workers).
 - Run `make fmt` before committing (Go and templ formatters)
 - Run `make lint` (`golangci-lint`) before opening a PR
 - Follow the patterns documented in [.golangci.yml](https://github.com/sydlexius/stillwater/blob/main/.golangci.yml) and the
-  per-package guidance in `.github/instructions/`
+  area-specific guidance in `.github/instructions/`
 
 Style and conventions live in [CLAUDE.md](https://github.com/sydlexius/stillwater/blob/main/CLAUDE.md), which doubles as
 project-wide guidance for both human contributors and AI tools.
