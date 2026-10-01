@@ -2,6 +2,7 @@ package publish
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -54,17 +55,17 @@ func pollStableCount(ctx context.Context, reader connection.ArtistStateGetter, p
 	}
 }
 
-// peerContentHashes returns the exact content hash of each of the peer's first
-// count backdrops. Each fetch gets its own indexedUploadLagTolerance budget (a
-// peer with many backdrops must not exhaust one shared budget and read as
+// peerContentHashes returns the exact content hash of the peer's backdrops at
+// indices [from, to). Each fetch gets its own indexedUploadLagTolerance budget
+// (a peer with many backdrops must not exhaust one shared budget and read as
 // "absent"), and the whole scan is bounded at ten budgets. A fetch error is
 // returned, never read as absence: a blind spot could hide the very slot being
 // looked for.
-func peerContentHashes(ctx context.Context, reader connection.BackdropReader, platformArtistID string, count int) ([]string, error) {
+func peerContentHashes(ctx context.Context, reader connection.BackdropReader, platformArtistID string, from, to int) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*indexedUploadLagTolerance)
 	defer cancel()
-	hashes := make([]string, 0, count)
-	for i := 0; i < count; i++ {
+	hashes := make([]string, 0, to-from)
+	for i := from; i < to; i++ {
 		fctx, fcancel := context.WithTimeout(ctx, indexedUploadLagTolerance)
 		got, _, err := reader.GetArtistBackdrop(fctx, platformArtistID, i)
 		fcancel()
@@ -76,25 +77,57 @@ func peerContentHashes(ctx context.Context, reader connection.BackdropReader, pl
 	return hashes, nil
 }
 
-// verifyIndexedUploadLanded decides, after an indexed upload returned an HTTP
-// error, whether the peer accepted the write anyway (#3126: Emby 500s on an
-// out-of-range upload yet appends). The verdict is by CONTENT: the count must
-// first settle at wantAtLeast or more (cheap filter, lag-tolerant), then the
-// uploaded bytes must be present among the peer's backdrops. A count alone
-// cannot say whether THIS upload landed (a stale baseline or a concurrent
-// append moves it), so it never decides by itself.
-//
-// landed=false is a definite "not there" and the caller reports the original
-// error. Any read failure returns err, which the caller treats the same way:
-// a transient read failure never suppresses a real upload failure.
-func verifyIndexedUploadLanded(ctx context.Context, reader connection.BackdropReader, platformArtistID string, wantAtLeast int, data []byte) (landed bool, count int, err error) {
-	count, ok, err := pollStableCount(ctx, reader, platformArtistID, wantAtLeast)
-	if err != nil || !ok {
-		return false, count, err
+// peerCache is ONE per-push picture of the peer's backdrop content, shared by
+// the duplicate guard and the landed-upload check so the peer is read once per
+// push, not once per upload (#3126). It is loaded lazily from a SETTLED count
+// (a stale first read must not shorten it), and afterwards extended only by
+// what the push itself appends.
+type peerCache struct {
+	reader connection.BackdropReader
+	id     string
+	hashes []string
+	loaded bool
+}
+
+// load reads the settled count, then hashes every backdrop. An error leaves
+// the cache unloaded; the caller disables everything that depends on it.
+func (c *peerCache) load(ctx context.Context) error {
+	count, ok, err := pollStableCount(ctx, c.reader, c.id, 0)
+	if err == nil && !ok {
+		err = errors.New("backdrop count never settled")
 	}
-	hashes, err := peerContentHashes(ctx, reader, platformArtistID, count)
 	if err != nil {
-		return false, count, err
+		return err
 	}
-	return slices.Contains(hashes, img.ContentHash(data)), count, nil
+	if c.hashes, err = peerContentHashes(ctx, c.reader, c.id, 0, count); err != nil {
+		return err
+	}
+	c.loaded = true
+	return nil
+}
+
+func (c *peerCache) holds(data []byte) bool {
+	return slices.Contains(c.hashes, img.ContentHash(data))
+}
+
+// landedSince decides, after an indexed upload returned an HTTP error, whether
+// the peer accepted the write anyway (#3126: Emby 500s on an out-of-range
+// upload yet appends). It is by CONTENT and by NEWNESS: the settled count must
+// grow past the cached baseline, and the bytes must appear at an index at or
+// past it. Bytes already in the baseline (a stale seed, an earlier identical
+// slot) therefore never confirm a genuine failure. The new entries are added to
+// the cache. A read failure returns err, which the caller treats as "report the
+// original error". (A concurrent append of byte-identical content during the
+// window cannot be told apart from our own write; that is accepted.)
+func (c *peerCache) landedSince(ctx context.Context) (hashes []string, count int, err error) {
+	count, ok, err := pollStableCount(ctx, c.reader, c.id, len(c.hashes)+1)
+	if err != nil || !ok {
+		return nil, count, err
+	}
+	hashes, err = peerContentHashes(ctx, c.reader, c.id, len(c.hashes), count)
+	if err != nil {
+		return nil, count, err
+	}
+	c.hashes = append(c.hashes, hashes...)
+	return hashes, count, nil
 }

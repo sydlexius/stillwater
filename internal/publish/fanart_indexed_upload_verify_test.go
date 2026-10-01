@@ -249,11 +249,12 @@ func TestUploadFanartSet_InRangeFailureIsNotPolled(t *testing.T) {
 
 // M8/M11b: a verify read that errors cannot confirm anything, so the original
 // failure is reported even though the write did land, and recovery is then
-// disarmed (no second verify read for the next slot): reads = seed + 1.
+// disarmed (no second verify read for the next slot): reads = seed + cache load
+// (2) + the one failed verify read.
 func TestUploadFanartSet_VerifyReadErrorReportsFailureAndDisarms(t *testing.T) {
 	peer := newFakeEmbyPeer()
 	peer.detailErr = func(call int) error {
-		if call >= 1 {
+		if call >= 3 {
 			return errors.New("peer unreachable")
 		}
 		return nil
@@ -262,23 +263,23 @@ func TestUploadFanartSet_VerifyReadErrorReportsFailureAndDisarms(t *testing.T) {
 	if w := p.uploadFanartSet(context.Background(), u); len(w) != 2 {
 		t.Fatalf("warnings = %v, want 2", w)
 	}
-	if peer.reads() != 2 {
-		t.Fatalf("reads = %d, want 2 (seed + the one failed verify read)", peer.reads())
+	if peer.reads() != 4 {
+		t.Fatalf("reads = %d, want 4 (seed + cache load + the one failed verify read)", peer.reads())
 	}
 }
 
-// M6: after a RECOVERED 500 the tracked count re-baselines to what the peer
-// reports (4). The following in-range genuine failure (idx 3) must then not
-// poll: reads = the seed + the 2-read recovery poll.
+// M6: after a RECOVERED 500 (idx 5 lands at 3, count 4) the tracked count
+// re-baselines to 4, so the following genuine failure at idx 4 is NOT past the
+// count and must not poll. Reads: seed 1 + cache load 2 + verify poll 2.
 func TestUploadFanartSet_TrackedCountRebaselinesAfterRecovery(t *testing.T) {
 	peer := newFakeEmbyPeer()
 	peer.dropCalls = map[int]bool{1: true}
-	p, u := harness(peer, connection.TypeEmby, slot{4, 1}, slot{3, 2})
+	p, u := harness(peer, connection.TypeEmby, slot{5, 1}, slot{4, 2})
 	if w := p.uploadFanartSet(context.Background(), u); len(w) != 1 {
-		t.Fatalf("warnings = %v, want exactly 1 (idx 3)", w)
+		t.Fatalf("warnings = %v, want exactly 1 (idx 4)", w)
 	}
-	if peer.reads() != 3 {
-		t.Fatalf("reads = %d, want 3 (seed + 2-read recovery poll, none for the in-range failure)", peer.reads())
+	if peer.reads() != 5 {
+		t.Fatalf("reads = %d, want 5 (seed + cache load + one verify poll)", peer.reads())
 	}
 }
 
@@ -421,7 +422,7 @@ func TestUploadFanartSet_SeedReadErrorDisarmsRecovery(t *testing.T) {
 // R2/R3: every backdrop is hashed, the one at index 0 included.
 func TestPeerContentHashes_CoversEveryIndex(t *testing.T) {
 	peer := newFakeEmbyPeer()
-	hashes, err := peerContentHashes(context.Background(), peer, "p1", 3)
+	hashes, err := peerContentHashes(context.Background(), peer, "p1", 0, 3)
 	if err != nil || len(hashes) != 3 {
 		t.Fatalf("hashes = %v, err = %v, want 3 hashes", hashes, err)
 	}
@@ -489,8 +490,98 @@ func (s slowReader) GetArtistBackdrop(ctx context.Context, id string, i int) ([]
 func TestPeerContentHashes_HangingFetchCutAtPerFetchBudget(t *testing.T) {
 	setBudget(t, 50*time.Millisecond)
 	start := time.Now()
-	_, err := peerContentHashes(context.Background(), slowReader{newFakeEmbyPeer(), time.Hour}, "p1", 3)
+	_, err := peerContentHashes(context.Background(), slowReader{newFakeEmbyPeer(), time.Hour}, "p1", 0, 3)
 	if err == nil || time.Since(start) > 250*time.Millisecond {
 		t.Fatalf("err = %v after %v, want an error within ~one 50ms budget", err, time.Since(start))
+	}
+}
+
+// F1: the peer already holds X (beyond a stale-low seed); an upload of X at an
+// out-of-range index fails GENUINELY. The bytes exist, but THIS upload added
+// nothing, so the failure must be reported.
+func TestUploadFanartSet_ExistingBytesDoNotConfirmGenuineFailure(t *testing.T) {
+	peer := newFakeEmbyPeer() // [0 1 2]
+	peer.data = append(peer.data, []byte{0x41})
+	peer.seedStale = 3
+	peer.dropCalls = map[int]bool{0: true}
+	p, u := harness(peer, connection.TypeEmby, slot{4, 1})
+	if w := p.uploadFanartSet(context.Background(), u); len(w) != 1 {
+		t.Fatalf("warnings = %v, want 1: the bytes were already on the peer, nothing new landed", w)
+	}
+}
+
+// F2: the peer holds 4 (X at index 3) but the seed reads 2; a genuine failure at
+// idx 2 disarms recovery, a nil slot at 3 enables the guard, and idx 4 carries
+// X. The guard must see X at index 3 (fresh count), not a 2-entry prefix.
+func TestUploadFanartSet_GuardHashesTheSettledCountNotTheStaleSeed(t *testing.T) {
+	peer := newFakeEmbyPeer()
+	peer.data = append(peer.data, []byte{0x41})
+	peer.seedStale = 2
+	peer.dropCalls = map[int]bool{0: true}
+	p, u := harness(peer, connection.TypeEmby, slot{2, 2}, slot{3, 0}, slot{4, 1})
+	p.uploadFanartSet(context.Background(), u)
+	if peer.count() != 4 {
+		t.Fatalf("count = %d, want 4: the guard missed X at index 3 and appended a duplicate", peer.count())
+	}
+}
+
+// F3: N trailing slots after a nil slot each land with a 500. The peer is read
+// once, not once per upload: total backdrop fetches <= the final count.
+func TestUploadFanartSet_PeerReadOncePerPush(t *testing.T) {
+	peer := newFakeEmbyPeer()
+	p, u := harness(peer, connection.TypeEmby, slot{3, 0}, slot{4, 1}, slot{5, 2}, slot{6, 3}, slot{7, 4})
+	if w := p.uploadFanartSet(context.Background(), u); len(w) != 0 {
+		t.Fatalf("warnings = %v, want none", w)
+	}
+	if peer.count() != 7 {
+		t.Fatalf("count = %d, want 7", peer.count())
+	}
+	t.Logf("fetches = %d for a final count of %d", peer.fetches, peer.count())
+	if peer.fetches > peer.count() {
+		t.Fatalf("fetches = %d, want <= final count %d (one read of the peer, not one per upload)", peer.fetches, peer.count())
+	}
+}
+
+// F3b: a clean append is added to the cache, so a later genuine failure of the
+// SAME bytes is not mistaken for "newly landed" (the earlier copy sits below the
+// cached length). Y lands via a 500 and loads the cache; X appends cleanly at
+// idx 4; X at idx 6 then fails for real.
+func TestUploadFanartSet_CleanAppendIsCached(t *testing.T) {
+	peer := newFakeEmbyPeer()
+	peer.dropCalls = map[int]bool{2: true}
+	p, u := harness(peer, connection.TypeEmby, slot{4, 2}, slot{4, 1}, slot{6, 1})
+	if w := p.uploadFanartSet(context.Background(), u); len(w) != 1 {
+		t.Fatalf("warnings = %v, want 1 for the genuinely failed idx 6", w)
+	}
+}
+
+// An in-range replace is recorded in the cache: a later slot with the replaced
+// bytes is skipped by the guard instead of appended.
+func TestUploadFanartSet_ReplaceIsCached(t *testing.T) {
+	peer := newFakeEmbyPeer() // [0 1 2]
+	p, u := harness(peer, connection.TypeEmby, slot{3, 0}, slot{1, 1}, slot{4, 1})
+	p.uploadFanartSet(context.Background(), u)
+	if peer.count() != 3 {
+		t.Fatalf("count = %d, want 3: the replaced bytes were not in the cache, so slot 4 appended a copy", peer.count())
+	}
+}
+
+// C2: the count grew past the baseline but with DIFFERENT bytes (something else
+// appended while our upload genuinely failed), so the failure is reported.
+type appendsOther struct{ *fakeEmbyPeer }
+
+func (a appendsOther) UploadImageAtIndex(_ context.Context, _, _ string, _ int, _ []byte, _ string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.data = append(a.data, []byte{0xEE})
+	return errEmby500
+}
+
+func TestUploadFanartSet_DifferentBytesAppendedDoNotConfirm(t *testing.T) {
+	peer := newFakeEmbyPeer()
+	p, u := harness(peer, connection.TypeEmby, slot{4, 1})
+	u.uploader = appendsOther{peer}
+	if w := p.uploadFanartSet(context.Background(), u); len(w) != 1 {
+		t.Fatalf("warnings = %v, want 1: the new entry is not our bytes", w)
 	}
 }
