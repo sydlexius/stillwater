@@ -154,6 +154,25 @@ Most metadata providers (Fanart.tv, Discogs, TheAudioDB, and others) require a f
 
 Authoritative sources like Fanart.tv and TheAudioDB curate a fixed catalog of images per artist; for obscure or local artists they often have nothing. Web image search (DuckDuckGo) crawls the open web for matches, giving Stillwater far more candidates at the cost of mixed quality. No API key required.
 
+### AI Image List  {#settings-providers-ai-blocklist}
+
+The community list Stillwater uses to hide AI-generated results in web image search.
+
+- **The AI image list download is turned off, so web search results are not filtered. Set SW_AI_BLOCKLIST_URL to a list address and restart Stillwater to turn it on.**
+{: #settings-providers-ai-blocklist-off }
+- **Source**
+{: #settings-providers-ai-blocklist-source }
+- **Loaded**
+{: #settings-providers-ai-blocklist-loaded }
+- **Not loaded yet**
+{: #settings-providers-ai-blocklist-not-loaded }
+- **Rules**
+{: #settings-providers-ai-blocklist-rules }
+- **Last updated**
+{: #settings-providers-ai-blocklist-last-updated }
+- **Refresh now**
+{: #settings-providers-ai-blocklist-refresh }
+
 ### Provider Priorities  {#settings-providers-priorities}
 
 For each metadata field (biography, genres, image URLs, and so on) Stillwater queries providers in a specific order and uses the first non-empty answer. This list is that order: drag to rearrange, click the checkmark or X to include or skip a provider for a given field. Only providers you have configured appear here.

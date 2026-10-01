@@ -13,6 +13,8 @@ package main
 // SW_AI_BLOCKLIST_URL. A block is the command the assignment belongs to:
 // backslash-continued lines for Makefile and shell, and the run of lines at
 // the same or deeper indentation for YAML env maps and JS object literals.
+// A harness may override it with a loopback-only URL (a spec's own fixture);
+// base-path-server.js throws on any other non-empty value.
 // Operator and developer paths (the Makefile run and uat targets) are
 // exempt: fetching the list is correct there.
 

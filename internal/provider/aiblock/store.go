@@ -231,6 +231,58 @@ func (s *Store) SourceHost() string {
 	return u.Host
 }
 
+// ErrRefreshInFlight is RefreshIfDue's error when another refresh is running.
+var ErrRefreshInFlight = errors.New("a refresh is already in progress")
+
+// sourceForLog is the list URL in its log-safe form (host and path only).
+func (s *Store) sourceForLog() string {
+	d, _ := DescribeSource(s.opts.URL)
+	return d
+}
+
+// redactURLErr drops the full request URL that net/url and net/http embed in a
+// *url.Error (it may carry credentials or a token), keeping the operation and
+// the underlying cause.
+func redactURLErr(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return fmt.Errorf("%s: %w", urlErr.Op, urlErr.Err)
+	}
+	return err
+}
+
+// SourceDisplay returns a form of the list URL that is safe to show an
+// administrator: display is host plus path (no scheme, userinfo, query or
+// fragment), and repo is "owner/repo" when the URL points into GitHub
+// (raw.githubusercontent.com or github.com with at least two path segments),
+// else "". Both are "" when the download is disabled or the URL does not parse.
+func (s *Store) SourceDisplay() (display, repo string) {
+	if s.opts.Disabled {
+		return "", ""
+	}
+	return DescribeSource(s.opts.URL)
+}
+
+// DescribeSource is the pure form of SourceDisplay.
+func DescribeSource(raw string) (display, repo string) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "", ""
+	}
+	display = u.Host + u.EscapedPath()
+	switch strings.ToLower(u.Hostname()) {
+	case "raw.githubusercontent.com", "github.com":
+		// Segment the ESCAPED path so an encoded slash (%2F) stays inside one
+		// segment; a segment with any escape is not a GitHub owner or repo name.
+		segs := strings.Split(strings.TrimPrefix(u.EscapedPath(), "/"), "/")
+		if len(segs) >= 2 && segs[0] != "" && segs[1] != "" &&
+			!strings.Contains(segs[0]+segs[1], "%") {
+			return display, segs[0] + "/" + segs[1]
+		}
+	}
+	return display, ""
+}
+
 // Start loads the cached list (a local read, so filtering works right after a
 // restart), then fetches and refreshes in a background goroutine until ctx is
 // canceled. The returned channel closes when that goroutine has exited.
@@ -252,7 +304,7 @@ func (s *Store) Start(ctx context.Context) <-chan struct{} {
 				if errors.Is(err, errCacheWrite) {
 					msg = "AI blocklist: list is active in memory but could not be cached"
 				}
-				s.opts.Logger.Warn(msg, slog.String("url", s.opts.URL),
+				s.opts.Logger.Warn(msg, slog.String("url", s.sourceForLog()),
 					slog.String("error", err.Error()), slog.Duration("next_attempt_in", wait))
 			}
 			timer := time.NewTimer(wait)
@@ -335,10 +387,12 @@ func (s *Store) Refresh(ctx context.Context) error {
 // which case it returns ran=false and how long until one is allowed. The check
 // happens under the refresh lock, so there is one fetch however many callers.
 // A caller that finds a refresh already running does not wait for it (that can
-// take the client timeout): it gets ran=false with minGap as the retry hint.
+// take the client timeout): it gets ran=false, minGap as the retry hint, and
+// ErrRefreshInFlight, so a caller can tell it from the recent-refresh gap
+// (ran=false, nil error).
 func (s *Store) RefreshIfDue(ctx context.Context, minGap time.Duration) (ran bool, retryAfter time.Duration, err error) {
 	if !s.refreshMu.TryLock() {
-		return false, minGap, nil
+		return false, minGap, ErrRefreshInFlight
 	}
 	defer s.refreshMu.Unlock()
 	s.mu.Lock()
@@ -392,12 +446,12 @@ func (s *Store) refreshLocked(ctx context.Context) error {
 func (s *Store) fetch(ctx context.Context) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.opts.URL, http.NoBody)
 	if err != nil {
-		return "", fmt.Errorf("building request: %w", err)
+		return "", fmt.Errorf("building request: %w", redactURLErr(err))
 	}
 	req.Header.Set("User-Agent", version.UserAgent("Stillwater", "https://github.com/sydlexius/stillwater"))
 	resp, err := s.opts.Client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("fetching list: %w", err)
+		return "", fmt.Errorf("fetching list: %w", redactURLErr(err))
 	}
 	defer resp.Body.Close() //nolint:errcheck // read-only body
 	if resp.StatusCode != http.StatusOK {

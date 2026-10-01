@@ -279,6 +279,12 @@ components:
         source_host:
           type: string
           description: Host the list is downloaded from. Omitted when disabled.
+        source:
+          type: string
+          description: Host plus path the list is downloaded from, without credentials, query or fragment. Omitted when disabled.
+        source_repo:
+          type: string
+          description: owner/repo when the list is hosted on GitHub. Omitted otherwise.
         loaded:
           type: boolean
         rules:
@@ -16441,11 +16447,14 @@ paths:
         Concurrent calls result in a single download; rejected calls return 429.
       responses:
         "200":
-          description: Status after the refresh attempt
+          description: Status after the refresh attempt. HTMX callers (the Settings button) get the re-rendered card as text/html, with any refusal shown inline as a notice rather than a 4xx.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AIBlocklistStatus"
+            text/html:
+              schema:
+                type: string
         "401":
           description: Not authenticated
           content:

@@ -2952,5 +2952,21 @@
   "prefs.section.providers": "Providers",
   "prefs.section.discography": "Discography",
   "prefs.section.identifiers": "Identifiers",
-  "prefs.search.no_match": "No preferences match \"%s\""
+  "prefs.search.no_match": "No preferences match \"%s\"",
+  "settings.ai_blocklist.description": "The community list Stillwater uses to hide AI-generated results in web image search.",
+  "settings.ai_blocklist.disabled_notice": "The AI image list download is turned off, so there is nothing to refresh.",
+  "settings.ai_blocklist.in_progress": "A refresh is already in progress. Try again in a moment.",
+  "settings.ai_blocklist.last_checked": "Last checked",
+  "settings.ai_blocklist.last_error": "Last error",
+  "settings.ai_blocklist.last_updated": "Last updated",
+  "settings.ai_blocklist.loaded": "Loaded",
+  "settings.ai_blocklist.never": "Never",
+  "settings.ai_blocklist.not_loaded": "Not loaded yet",
+  "settings.ai_blocklist.off": "The AI image list download is turned off, so web search results are not filtered. Set SW_AI_BLOCKLIST_URL to a list address and restart Stillwater to turn it on.",
+  "settings.ai_blocklist.rate_limited": "The list was refreshed a moment ago. Try again in %s seconds.",
+  "settings.ai_blocklist.refresh": "Refresh now",
+  "settings.ai_blocklist.rules": "Rules",
+  "settings.ai_blocklist.source": "Source",
+  "settings.ai_blocklist.status": "Status",
+  "settings.ai_blocklist.title": "AI Image List"
 }

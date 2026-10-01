@@ -73,13 +73,29 @@ async function waitForHealth(baseURL, deadlineMs) {
  * baseURL already includes the base path prefix (e.g.
  * "http://127.0.0.1:54321/sw-basepath-test"), so callers can navigate/fetch
  * against `${baseURL}/reports` etc. without re-deriving the prefix.
+ *
+ * opts.env is merged over the server's environment (after the harness defaults,
+ * so a spec can set SW_AI_BLOCKLIST_URL for its own server only). opts.seed, if
+ * given, is called with the server's temp dir BEFORE the process starts: the
+ * SQLite file and the cache dir (<tmpDir>/cache) live there.
  */
-export async function startBasePathServer(basePath) {
+export async function startBasePathServer(basePath, opts = {}) {
   if (!fs.existsSync(BINARY)) {
     throw new Error(
       `base-path-server: binary not found at ${BINARY}. Run \`make build\` (or the harness's `
       + 'equivalent build step) before this spec runs.',
     );
+  }
+
+  // A harness server must never download the real AI blocklist (#2310); only a
+  // loopback list URL (a spec's own fixture) may override the empty default.
+  const aiURL = opts.env?.SW_AI_BLOCKLIST_URL;
+  if (aiURL) {
+    let host = '';
+    try { host = new URL(aiURL).hostname; } catch { /* rejected below */ }
+    if (host !== '127.0.0.1' && host !== 'localhost') {
+      throw new Error(`base-path-server: SW_AI_BLOCKLIST_URL must be loopback in a test server, got ${aiURL}`);
+    }
   }
 
   const port = await freePort();
@@ -107,6 +123,7 @@ export async function startBasePathServer(basePath) {
     fs.mkdirSync(musicDir, { recursive: true });
     const logPath = path.join(tmpDir, 'server.log');
     const logFd = fs.openSync(logPath, 'w');
+    if (opts.seed) opts.seed(tmpDir);
 
     child = spawn(BINARY, [], {
       cwd: REPO_ROOT,
@@ -122,6 +139,7 @@ export async function startBasePathServer(basePath) {
         // Empty = no AI-image blocklist download (#2310): a test server must
         // never reach GitHub. Guarded by TestHarnessServersSkipAIBlocklist.
         SW_AI_BLOCKLIST_URL: '',
+        ...opts.env,
       },
       stdio: ['ignore', logFd, logFd],
     });

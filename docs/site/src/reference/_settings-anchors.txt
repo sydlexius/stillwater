@@ -128,6 +128,14 @@ settings-platform-platform-profile
 settings-platform-profile-naming
 settings-platform-profile-naming-prompt-filename
 settings-platform-symlinks
+settings-providers-ai-blocklist
+settings-providers-ai-blocklist-last-updated
+settings-providers-ai-blocklist-loaded
+settings-providers-ai-blocklist-not-loaded
+settings-providers-ai-blocklist-off
+settings-providers-ai-blocklist-refresh
+settings-providers-ai-blocklist-rules
+settings-providers-ai-blocklist-source
 settings-providers-priorities
 settings-providers-priorities-disable-provider
 settings-providers-priorities-enable-provider

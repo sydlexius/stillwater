@@ -10,9 +10,12 @@ package templates
 // the byte-identical diff in settings_s1_golden_test.go.
 
 import (
+	"context"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/auth"
 	img "github.com/sydlexius/stillwater/internal/image"
@@ -1786,4 +1789,141 @@ templ SectionBackupSchedule(data SettingsData) {
 			</div>
 		}
 	}
+}
+
+// ---- AI Image List card (#3277) ----
+// The state of the downloaded AI-image blocklist behind the "Filter AI images"
+// switch, plus a "Refresh now" button.
+
+// AIBlocklistView is the display state of the AI image list. NoticeKind is a
+// one-off message from the last Refresh now click (rate limit, download off).
+type AIBlocklistView struct {
+	Enabled     bool
+	Loaded      bool
+	Rules       int
+	// Source is host+path; SourceRepo is owner/repo for a GitHub list (linked).
+	Source     string
+	SourceRepo string
+	LastFetch   time.Time
+	LastChecked time.Time
+	LastError   string
+	// NoticeKind is "rate_limited", "in_progress" or "disabled" after a refused Refresh now
+	// click; NoticeSecs is the wait for rate_limited.
+	NoticeKind string
+	NoticeSecs int
+	// Refreshed marks a Refresh now response (not the page load). It puts
+	// keyboard focus back on the button (the swap replaces the focused,
+	// disabled-while-loading button) and makes a new last error announce itself.
+	Refreshed bool
+}
+
+// aiListTime renders a timestamp in UTC, or the "never" label for the zero time.
+func aiListTime(ctx context.Context, ts time.Time) string {
+	if ts.IsZero() {
+		return t(ctx, "settings.ai_blocklist.never")
+	}
+	return ts.UTC().Format("2006-01-02 15:04 UTC")
+}
+
+// SectionAIBlocklist renders the card. It is admin-only because the whole
+// settings page is.
+templ SectionAIBlocklist(data SettingsData) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg" id="ai-image-list-card">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			@components.SettingCardHeading("text-lg font-semibold", t(ctx, "settings.ai_blocklist.title"))
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				{ t(ctx, "settings.ai_blocklist.description") }
+			</p>
+		</div>
+		<div class="px-6 py-4">
+			@AIBlocklistBody(data.AIBlocklist)
+		</div>
+	</div>
+}
+
+// AIBlocklistBody is the swap target of the Refresh now button.
+templ AIBlocklistBody(v AIBlocklistView) {
+	<div id="ai-image-list-body" class="space-y-4">
+		if !v.Enabled {
+			<p class="text-sm text-gray-700 dark:text-gray-300" data-ai-list-state="off">{ t(ctx, "settings.ai_blocklist.off") }</p>
+		} else {
+			<dl class="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-3" data-ai-list-state={ aiListState(v) }>
+				<dt class="text-gray-500 dark:text-gray-400">{ t(ctx, "settings.ai_blocklist.source") }</dt>
+				<dd class="sm:col-span-2 text-gray-900 dark:text-gray-100" data-ai-list="source">
+					if v.SourceRepo != "" {
+						<a href={ templ.SafeURL(aiListRepoURL(v.SourceRepo)) } target="_blank" rel="noopener noreferrer" class="underline">{ v.SourceRepo }</a>
+					} else {
+						{ v.Source }
+					}
+				</dd>
+				<dt class="text-gray-500 dark:text-gray-400">{ t(ctx, "settings.ai_blocklist.status") }</dt>
+				<dd class="sm:col-span-2 text-gray-900 dark:text-gray-100" data-ai-list="status">
+					if v.Loaded {
+						{ t(ctx, "settings.ai_blocklist.loaded") }
+					} else {
+						{ t(ctx, "settings.ai_blocklist.not_loaded") }
+					}
+				</dd>
+				if v.Loaded {
+					<dt class="text-gray-500 dark:text-gray-400">{ t(ctx, "settings.ai_blocklist.rules") }</dt>
+					<dd class="sm:col-span-2 text-gray-900 dark:text-gray-100" data-ai-list="rules">{ strconv.Itoa(v.Rules) }</dd>
+				}
+				<dt class="text-gray-500 dark:text-gray-400">{ t(ctx, "settings.ai_blocklist.last_updated") }</dt>
+				<dd class="sm:col-span-2 text-gray-900 dark:text-gray-100" data-ai-list="last-updated">{ aiListTime(ctx, v.LastFetch) }</dd>
+				<dt class="text-gray-500 dark:text-gray-400">{ t(ctx, "settings.ai_blocklist.last_checked") }</dt>
+				<dd class="sm:col-span-2 text-gray-900 dark:text-gray-100" data-ai-list="last-checked">{ aiListTime(ctx, v.LastChecked) }</dd>
+				if v.LastError != "" {
+					<dt class="text-gray-500 dark:text-gray-400">{ t(ctx, "settings.ai_blocklist.last_error") }</dt>
+					<dd
+						class="sm:col-span-2 text-red-700 dark:text-red-300"
+						data-ai-list="last-error"
+						if v.Refreshed && v.NoticeKind == "" {
+							role="alert"
+						}
+					>{ v.LastError }</dd>
+				}
+			</dl>
+			<div>
+				<button
+					type="button"
+					id="ai-image-list-refresh"
+					class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					hx-post="/api/v1/images/ai-blocklist/refresh"
+					hx-target="#ai-image-list-body"
+					hx-swap="outerHTML"
+					hx-disabled-elt="this"
+					autofocus?={ v.Refreshed }
+				>
+					{ t(ctx, "settings.ai_blocklist.refresh") }
+				</button>
+			</div>
+		}
+		if v.NoticeKind != "" {
+			@components.InlineMessage("warning", aiListNotice(ctx, v))
+		}
+	</div>
+}
+
+func aiListNotice(ctx context.Context, v AIBlocklistView) string {
+	switch v.NoticeKind {
+	case "rate_limited":
+		return tf(ctx, "settings.ai_blocklist.rate_limited", strconv.Itoa(v.NoticeSecs))
+	case "in_progress":
+		return t(ctx, "settings.ai_blocklist.in_progress")
+	}
+	return t(ctx, "settings.ai_blocklist.disabled_notice")
+}
+
+// aiListRepoURL builds the GitHub link from the two parsed owner/repo segments
+// only, each path-escaped, never from the operator's raw URL.
+func aiListRepoURL(repo string) string {
+	owner, name, _ := strings.Cut(repo, "/")
+	return "https://github.com/" + url.PathEscape(owner) + "/" + url.PathEscape(name)
+}
+
+func aiListState(v AIBlocklistView) string {
+	if v.Loaded {
+		return "loaded"
+	}
+	return "not-loaded"
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/provider/aiblock"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/updater"
 	"github.com/sydlexius/stillwater/internal/version"
@@ -498,6 +499,7 @@ func (r *Router) buildSettingsData(req *http.Request, userID string, loadUsers b
 	}
 	// Inject the romanization-fallback preference separately so that adding this
 	// field does not force gofmt to realign the entire struct literal above.
+	data.AIBlocklist = aiBlocklistView(aiblock.DefaultStore())
 	data.NameRomanizationFallback = r.getUserBoolPreference(req.Context(), PrefMetadataNameRomanization, true)
 	// Operational settings (#1746, #1753). Display the EFFECTIVE value, not the
 	// persisted settings-table value. The scanner + rule-pipeline services
