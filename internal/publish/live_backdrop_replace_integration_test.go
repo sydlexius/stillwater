@@ -6,7 +6,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1353,4 +1355,164 @@ func TestLiveEmby_SyncAllFanartToPlatforms_LocalSetExceedsPlatformCount_Measures
 	if hashOf(slotLast) != hashOf(localContent[lastIdx]) {
 		t.Errorf("slot %d does not hold %s's bytes after the final sync -- count reads right but content is wrong", lastIdx, localFanart[lastIdx])
 	}
+}
+
+// TestLiveEmby_UploadFanartSet_OOBUploadRecoversFromFalseFailure is the
+// #3126 AC's own required proof: "a fake client returning 500 cannot
+// reproduce '500 but the write landed'". Every assertion in this test runs
+// against the REAL Emby UAT server, not a fake -- proving the measured
+// defect (an out-of-range indexed upload returns HTTP 500 but the image is
+// appended anyway) and this branch's fix (uploadFanartSet's #3126 recovery
+// path, internal/publish/publisher.go) actually interoperate with Emby's
+// real behavior, not merely with a test double modeling it.
+//
+// SETUP MIRRORS THE MEASURED REPRO IN THE ISSUE EXACTLY: seed the item with
+// 3 backdrops, then drive uploadFanartSet with a 5-entry snapshot whose
+// SLOT 3 IS DELIBERATELY NIL (uploadFanartSet skips a nil-data slot but
+// still spends its index -- see the sf.data nil-check in its own doc
+// comment), so slot 4's real write lands on the platform while it still
+// only holds 3 backdrops: exactly the out-of-range condition that produced
+// the issue's measured 500. A snapshot built this way, rather than simply
+// syncing 5 present files against a 3-backdrop platform (which climbs the
+// platform's count in lockstep and never goes out of range -- see the
+// neighboring TestLiveEmby_SyncAllFanartToPlatforms_LocalSetExceedsPlatformCount_Measures's
+// own "what this test does not drive" note), is what actually reaches the
+// OOB write this fix targets.
+//
+// PINNED TO the Emby 4.9.5.0 UAT on :8096, item 300, where the 500 was
+// measured (2026-09-02). Another item or server may append cleanly with no
+// error, which fails the precondition below by design (the failure message
+// names the server version); a skip would report green while verifying nothing.
+func TestLiveEmby_UploadFanartSet_OOBUploadRecoversFromFalseFailure(t *testing.T) {
+	liveOOBRetryScenario(t, 1)
+}
+
+// TestLiveEmby_UploadFanartSet_OOBTwoTrailingSlotsRetry is the common shape:
+// nil slot 3, then data at 4 AND 5. Without the duplicate guard a retry
+// overwrote slot 4's image with 3's bytes and appended a copy.
+func TestLiveEmby_UploadFanartSet_OOBTwoTrailingSlotsRetry(t *testing.T) {
+	liveOOBRetryScenario(t, 2)
+}
+
+// liveOOBRetryScenario seeds 3 backdrops, pushes a snapshot whose slot 3 is nil
+// and whose slots 4..3+trailing carry data, then retries it. Each run must
+// report no warning; the settled count must be 3+trailing and must not change
+// on the retry.
+func liveOOBRetryScenario(t *testing.T, trailing int) {
+	t.Helper()
+	env := loadLiveEmbyEnv(t)
+	ctx, cancel := context.WithTimeout(context.Background(), liveBackdropTestTimeout)
+	defer cancel()
+
+	logger := silentLogger()
+	client := emby.New(env.url, env.apiKey, env.userID, logger)
+	clearAllBackdrops(ctx, t, env.itemID, client)
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), liveBackdropCleanupTimeout)
+		defer cleanupCancel()
+		clearAllBackdrops(cleanupCtx, t, env.itemID, client)
+	})
+
+	// Seed 3 backdrops, matching the issue's own repro ("count=3").
+	for i := 0; i < 3; i++ {
+		if err := client.UploadImageAtIndex(ctx, env.itemID, "fanart", i, bandJPEG(t, 0x71+i), "image/jpeg"); err != nil {
+			t.Fatalf("seeding backdrop %d: %v", i, err)
+		}
+	}
+	// BackdropImageTags lag a write, so poll the seed to its settled count.
+	if seeded := pollBackdropDetail(ctx, t, client, env.itemID, 3); seeded.BackdropCount != 3 {
+		t.Fatalf("precondition failed: BackdropCount after seed = %d, want 3", seeded.BackdropCount)
+	}
+
+	// Slots 0-2 are already on the platform; slot 3 is DELIBERATELY NIL (spends
+	// index 3 with no write); each later slot is a real write past the count.
+	snapshot := make([]fanartSnapshot, 4, 4+trailing)
+	for i := range snapshot {
+		snapshot[i] = fanartSnapshot{path: fmt.Sprintf("fanart%d.jpg", i), index: i}
+	}
+	contents := make([][]byte, trailing)
+	for k := range contents {
+		contents[k] = bandJPEG(t, 0x74+k)
+		snapshot = append(snapshot, fanartSnapshot{path: fmt.Sprintf("fanart%d.jpg", 4+k), index: 4 + k, data: contents[k]})
+	}
+	want := 3 + trailing
+
+	p := New(Deps{Logger: logger})
+	rec := &recordingUploader{IndexedImageUploader: client}
+	u := fanartUpload{
+		artist:      &artist.Artist{ID: "live-emby-oob", Name: "Live UAT OOB Artist"},
+		conn:        &connection.Connection{ID: "c-emby", Name: "live-emby-uat", Type: connection.TypeEmby},
+		pid:         artist.PlatformID{ConnectionID: "c-emby", PlatformArtistID: env.itemID},
+		uploader:    rec,
+		snapshot:    snapshot,
+		identityIdx: nil,
+		notified:    map[string]bool{},
+		reader:      client,
+	}
+	warnings := p.uploadFanartSet(ctx, u)
+
+	// Only meaningful if Emby really returned its error for a landed write.
+	if rec.err == nil {
+		t.Fatalf("precondition failed: Emby %s at %s returned no error on %d upload call(s), so the #3126 recovery was never exercised (warnings=%v)",
+			liveEmbyVersion(ctx, env.url), env.url, rec.calls, warnings)
+	}
+	// THE #3126 AC: the out-of-range uploads must not be reported as failures.
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %v, want none: the uploads landed despite an error response", warnings)
+	}
+	// Verify against the peer's OWN state: settled count and content.
+	if final := pollBackdropDetail(ctx, t, client, env.itemID, want); final.BackdropCount != want {
+		t.Fatalf("final BackdropCount = %d, want %d", final.BackdropCount, want)
+	}
+	for k, c := range contents {
+		got, _, err := client.GetArtistBackdrop(ctx, env.itemID, 3+k)
+		if err != nil {
+			t.Fatalf("reading slot %d: %v", 3+k, err)
+		}
+		if hashOf(got) != hashOf(c) {
+			t.Errorf("slot %d does not hold local slot %d's bytes", 3+k, 4+k)
+		}
+	}
+
+	// RETRY: the peer already holds every slot's bytes, so nothing is appended
+	// or overwritten.
+	if w := p.uploadFanartSet(ctx, u); len(w) != 0 {
+		t.Fatalf("retry warnings = %v, want none", w)
+	}
+	if again := pollBackdropDetail(ctx, t, client, env.itemID, want); again.BackdropCount != want {
+		t.Fatalf("after retry BackdropCount = %d, want %d: a retry must not append a duplicate", again.BackdropCount, want)
+	}
+	if got, _, err := client.GetArtistBackdrop(ctx, env.itemID, 3); err != nil || hashOf(got) != hashOf(contents[0]) {
+		t.Errorf("after retry slot 3 changed (err=%v)", err)
+	}
+}
+
+// liveEmbyVersion reads the unauthenticated /System/Info/Public Version for the
+// precondition message; a failure is reported in its place.
+func liveEmbyVersion(ctx context.Context, base string) string {
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, base+"/System/Info/Public", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "(version unknown: " + err.Error() + ")"
+	}
+	defer resp.Body.Close()
+	var info struct{ Version string }
+	_ = json.NewDecoder(resp.Body).Decode(&info)
+	return info.Version
+}
+
+// recordingUploader remembers the last non-nil raw error of an indexed upload.
+type recordingUploader struct {
+	connection.IndexedImageUploader
+	err   error
+	calls int
+}
+
+func (r *recordingUploader) UploadImageAtIndex(ctx context.Context, id, typ string, idx int, data []byte, ct string) error {
+	r.calls++
+	err := r.IndexedImageUploader.UploadImageAtIndex(ctx, id, typ, idx, data, ct)
+	if err != nil {
+		r.err = err // keep the last NON-nil error; later clean uploads must not erase it
+	}
+	return err
 }

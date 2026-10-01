@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -2696,6 +2697,7 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 			snapshot:    snapshot,
 			identityIdx: fanartIdentityIdx,
 			notified:    collisionNotified,
+			reader:      embyBackdropReader(conn, p.logger),
 		})...)
 	}
 
@@ -2836,17 +2838,78 @@ type fanartUpload struct {
 	snapshot    []fanartSnapshot
 	identityIdx []img.FanartIdentityEntry
 	notified    map[string]bool
+	// reader reads the peer's backdrop count and bytes so an indexed upload
+	// error (#3126) can be told apart from a genuine failure BY CONTENT.
+	// Recovery is armed only for Emby (see uploadFanartSet); nil disables it.
+	reader connection.BackdropReader
+}
+
+// embyBackdropReader returns the connection's backdrop reader, or nil when it
+// does not support one. Whether recovery is armed is uploadFanartSet's call.
+func embyBackdropReader(conn *connection.Connection, logger *slog.Logger) connection.BackdropReader {
+	r, _ := newArtistStateGetter(conn, logger).(connection.BackdropReader)
+	return r
 }
 
 // uploadFanartSet pushes every captured backdrop to ONE peer, at its TRUE slot
 // index, and returns the per-file warnings.
+//
+// #3126: AN INDEXED UPLOAD ERROR IS NOT PROOF THE WRITE FAILED, ON EMBY. A
+// real Emby 4.9.5.0 answers an upload to an index PAST its backdrop count (idx
+// > count; idx == count is a clean 204) with HTTP 500 "Object reference not
+// set" but appends the image anyway. This loop reaches that routinely: a slot
+// whose bytes could not be captured is skipped yet spends its index. Reporting
+// the 500 invites a retry, and a retry appends a duplicate.
+//
+// RECOVERY IS EMBY-ONLY AND CONTENT-VERIFIED. Jellyfin appends at every index
+// regardless, so its count runs ahead of the loop and a count could never tell
+// a genuine failure from a landed write. Even on Emby a count is only a cheap
+// first filter (verifyIndexedUploadLanded): the verdict is whether the
+// uploaded BYTES are present on the peer, so a stale seed read or a concurrent
+// append cannot mask a genuine failure.
+//
+// trackedCount is this call's running belief about the peer's count (one seed
+// read, then advanced as uploads land). Only an index at or past it is out of
+// range, so only that gets the recovery check and the duplicate guard below.
+//
+// DUPLICATE GUARD (a retry after a recovered upload): once a nil slot has been
+// passed, Stillwater's positional indices run ahead of Emby's compacted ones
+// ("index 4" landed at Emby's index 3), so no count can say whether a later
+// slot is already there. From then on every later data slot is skipped, in-range
+// replaces included, when the peer already holds those exact bytes. With no nil
+// slot the guard is off (indices align, and two identical files at two slots
+// are both uploaded). The peer's backdrops are fetched and hashed ONCE per
+// call, lazily, the first time the guard is needed. EXACT match only: a
+// perceptual match could skip a distinct near-duplicate and lose artwork.
+//
+// The first read error or confirmed not-landed result disarms recovery for the
+// rest of the call, so a failing peer costs one poll budget, not one per slot.
+// Disarming re-exposes the original false failure for LATER slots in the same
+// call (a landed 500 is reported); a retry then recovers it through the guard.
 func (p *Publisher) uploadFanartSet(ctx context.Context, u fanartUpload) []string {
 	var warnings []string
+
+	armed := u.reader != nil && u.conn.Type == connection.TypeEmby
+	trackedCount := -1
+	canRead := false // the seed read worked, so the duplicate guard may read the peer
+	if armed {
+		if state, err := u.reader.GetArtistDetail(ctx, u.pid.PlatformArtistID); err != nil {
+			p.logger.Warn("reading platform backdrop count before fanart sync; out-of-range upload recovery disabled for this push",
+				slog.String("artist", u.artist.Name), slog.String("connection", u.conn.Name), slog.String("error", err.Error()))
+			armed = false
+		} else {
+			trackedCount, canRead = state.BackdropCount, true
+		}
+	}
+
+	guard := &dupGuard{p: p, u: u}
+	sawNil := false
 	for _, sf := range u.snapshot {
 		// A slot whose bytes could not be captured is skipped, but its index is
 		// still spent, so the surviving files keep their true slot numbers on the
 		// platform. Compacting here would shift the whole gallery down one.
 		if sf.data == nil {
+			sawNil = true
 			continue
 		}
 		fp, data, idx := sf.path, sf.data, sf.index
@@ -2860,17 +2923,79 @@ func (p *Publisher) uploadFanartSet(ctx context.Context, u fanartUpload) []strin
 		// blocks; the upload below ALWAYS proceeds.
 		p.notifyFanartCollision(ctx, u.artist, fp, data, u.identityIdx, u.notified)
 
-		if uploadErr := u.uploader.UploadImageAtIndex(ctx, u.pid.PlatformArtistID, "fanart", idx, data, ct); uploadErr != nil {
-			p.logger.Error("syncing fanart to platform",
-				slog.String("artist", u.artist.Name),
-				slog.String("connection", u.conn.Name),
-				slog.Int("index", idx),
-				slog.String("error", uploadErr.Error()))
-			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): fanart %d upload failed", u.conn.Name, u.conn.Type, idx)))
-			p.notifyPushFailure(u.pid.ConnectionID, u.conn.Name, classifyPushErr(uploadErr), u.artist.ID, artistDisplayName(u.artist), pushOpImageUpload, uploadErr)
+		if canRead && sawNil && guard.holds(ctx, data, trackedCount, idx) {
+			continue
 		}
+
+		uploadErr := u.uploader.UploadImageAtIndex(ctx, u.pid.PlatformArtistID, "fanart", idx, data, ct)
+		if uploadErr == nil {
+			// At or past the known count is an append; inside it is a replace.
+			if armed && idx >= trackedCount {
+				trackedCount = idx + 1
+			}
+			continue
+		}
+
+		if armed && idx >= trackedCount {
+			landed, count, verifyErr := verifyIndexedUploadLanded(ctx, u.reader, u.pid.PlatformArtistID, trackedCount+1, data)
+			switch {
+			case verifyErr != nil:
+				// Cannot confirm either way: report the ORIGINAL failure.
+				p.logger.Warn("verifying out-of-range indexed upload after an error; reporting the original failure",
+					slog.String("artist", u.artist.Name), slog.String("connection", u.conn.Name),
+					slog.Int("index", idx), slog.String("error", verifyErr.Error()))
+				armed = false
+			case landed:
+				// The peer's own content confirms the image is present despite
+				// the error: the measured Emby defect, a peer bug.
+				p.logger.Warn("indexed fanart upload returned an error but the peer holds the uploaded bytes; not reporting as a failure",
+					slog.String("artist", u.artist.Name), slog.String("connection", u.conn.Name),
+					slog.Int("index", idx), slog.Int("backdrop_count", count), slog.String("peer_error", uploadErr.Error()))
+				trackedCount = count
+				continue
+			default:
+				armed = false
+			}
+		}
+
+		p.logger.Error("syncing fanart to platform",
+			slog.String("artist", u.artist.Name),
+			slog.String("connection", u.conn.Name),
+			slog.Int("index", idx),
+			slog.String("error", uploadErr.Error()))
+		warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): fanart %d upload failed", u.conn.Name, u.conn.Type, idx)))
+		p.notifyPushFailure(u.pid.ConnectionID, u.conn.Name, classifyPushErr(uploadErr), u.artist.ID, artistDisplayName(u.artist), pushOpImageUpload, uploadErr)
 	}
 	return warnings
+}
+
+// dupGuard is uploadFanartSet's duplicate guard: it loads the peer's backdrop
+// hashes once, lazily, and reports whether the peer already holds given bytes.
+type dupGuard struct {
+	p      *Publisher
+	u      fanartUpload
+	hashes []string
+	loaded bool
+}
+
+// holds reports whether the peer's first count backdrops include data, so the
+// caller can skip the upload. A read failure disables the guard (logged), never
+// blocks the push.
+func (g *dupGuard) holds(ctx context.Context, data []byte, count, idx int) bool {
+	if !g.loaded {
+		var err error
+		if g.hashes, err = peerContentHashes(ctx, g.u.reader, g.u.pid.PlatformArtistID, count); err != nil {
+			g.p.logger.Warn("reading peer backdrops for the duplicate guard; guard disabled for this push",
+				slog.String("artist", g.u.artist.Name), slog.String("connection", g.u.conn.Name), slog.String("error", err.Error()))
+		}
+		g.loaded = true
+	}
+	if !slices.Contains(g.hashes, img.ContentHash(data)) {
+		return false
+	}
+	g.p.logger.Info("skipping fanart upload: the peer already holds these bytes",
+		slog.String("artist", g.u.artist.Name), slog.String("connection", g.u.conn.Name), slog.Int("index", idx))
+	return true
 }
 
 // fanartIdentityIndex builds the cross-artist fanart phash registry for one
