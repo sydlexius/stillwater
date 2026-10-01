@@ -24,6 +24,7 @@ Closes #
 
 ## Test plan
 
+- [ ] New or changed functionality in this PR is covered by tests.
 - [ ] `go test -race ./...` passes locally.
 - [ ] `bash scripts/pre-push-gate.sh` passes locally.
 - [ ] Manual UAT steps (list the specific flows exercised):
