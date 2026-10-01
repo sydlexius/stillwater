@@ -16,7 +16,7 @@ Closes #
 - [ ] Code review pass complete (`/prep-pr` or `/pr-review-toolkit:review-pr`); critical and important findings fixed before pushing.
 - [ ] Commits squashed into clean, logical commits before the first push (Copilot reviews the diff at PR open).
 - [ ] At least one label set on `gh pr create --label ...` (the CI label gate fails without one).
-- [ ] Docs label decision made: `needs-docs-review` for user-visible changes, `docs: not-required` for test, CI, or refactor PRs with no user-visible behavioral change.
+- [ ] Docs shipped in this PR for any user-visible change, or `docs: not-required` set for a test, CI, or refactor PR with no user-visible behavioral change. Never add `needs-docs-review` yourself: the Docs Drift action sets it when code changed without docs, and clears it once the docs land.
 - [ ] Screenshot attached for any UI change.
 - [ ] UAT performed for user-visible changes (run the binary, not just the test suite).
 - [ ] OpenAPI spec updated if any request or response shape changed (`make check-openapi`).
