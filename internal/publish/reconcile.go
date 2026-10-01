@@ -155,7 +155,10 @@ func (p *Publisher) accumulateNeeds(
 // reconciler pass read that as damage and re-pushed the whole set, restoring
 // the copies the prune had just removed. Comparing against distinct content
 // makes the two agree: a pruned platform holding every distinct local image is
-// not a deficit, while a platform genuinely missing a local image still is.
+// not a deficit, while a platform holding FEWER backdrops than there are
+// distinct local images still is. It is a COUNT, not an identity check: a
+// platform holding enough backdrops but a different image in place of a local
+// one is not detected (see ReconcileArtworkToPlatforms).
 //
 // A file that cannot be hashed (read error, over the size bound, canceled ctx)
 // counts as DISTINCT. It cannot be proven a duplicate, and overcounting only
@@ -232,8 +235,13 @@ func (p *Publisher) syncMissingArtwork(ctx context.Context, a *artist.Artist, ne
 //     retries it, as before #3144;
 //   - thumb/logo/banner fire only when the platform lacks the image outright.
 //
-// Two limits, stated so nobody reads more into it. The check is count-based: a
-// platform holding enough backdrops but the WRONG ones is not detected. And
+// Two limits, stated so nobody reads more into it. The deficit check is
+// count-based and does not detect a substituted image: it reads only the
+// platform's BackdropCount, never its bytes, so a platform holding as many
+// backdrops as the local set has distinct images, but a different image in
+// place of a local one (local A,B,A against platform A,C), is not repaired.
+// That was equally true of the file-count check before #3144 (local A,B
+// against platform A,C). And
 // every Emby push leaves a copy in Emby's own metadata store (#3151), so a
 // pass that does fire is not free on Emby even though it converges.
 //

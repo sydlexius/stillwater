@@ -70,7 +70,11 @@ func (s *statefulBackdropPeer) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		w.Header().Set("Content-Type", "image/jpeg")
 		_, _ = w.Write(s.data[idx])
 	case http.MethodPost:
-		raw, _ := io.ReadAll(r.Body)
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "reading upload body: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		b, err := base64.StdEncoding.DecodeString(string(raw))
 		if err != nil {
 			http.Error(w, "bad body", http.StatusBadRequest)

@@ -4,6 +4,7 @@ package publish
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -86,6 +87,15 @@ func liveEmbyPrune(t *testing.T, local, seed, afterPrune, afterPass [][]byte) {
 }
 
 func liveJellyfinPrune(t *testing.T, local, seed, afterPrune, afterPass [][]byte) {
+	// This suite takes its own scratch item, falling back to the shared one.
+	// The internal/api live handler suite also clears and rewrites
+	// SW_LIVE_JELLYFIN_ITEM_ID, and `go test -tags integration ./...` may run
+	// both package binaries at once, so running both packages together needs
+	// distinct items or `-p 1`. (Emby's item is shared only within this
+	// package, whose live tests run sequentially.)
+	if id := os.Getenv("SW_LIVE_JELLYFIN_PRUNE_ITEM_ID"); id != "" {
+		t.Setenv("SW_LIVE_JELLYFIN_ITEM_ID", id)
+	}
 	env := loadLiveJellyfinEnv(t)
 	livePruneReconcile(t, connection.TypeJellyfin, env.url, env.apiKey, env.userID, env.itemID,
 		jellyfin.New(env.url, env.apiKey, env.userID, silentLogger()), local, seed, afterPrune, afterPass)
