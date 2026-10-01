@@ -707,7 +707,7 @@ After:  /music/Pink Floyd/ contains fanart.jpg, fanart2.jpg  (the identical copy
 - Skipped on shared-filesystem libraries.
 - Does not catch re-encoded or re-tagged copies of the same picture. Two files can look identical and still differ byte-for-byte (a re-saved JPEG, or the same image saved twice with different provenance recorded in it). Those are found by the 'No duplicate images' rule instead.
 - Only fanart is checked, because it is the only image type with more than one slot.
-- Cleans local fanart files only. Platform sync is additive, so copies already pushed to Emby/Jellyfin are not removed by this rule; prune them with the Platform Backdrop Duplicates admin report.
+- Cleans local fanart files only. On Emby, platform sync is additive, so copies already pushed there are not removed by this rule (Jellyfin replaces the artist's whole backdrop list with the local set on each push, so a surplus copy there is removed by the next push); prune them with the Platform Backdrop Duplicates admin report.
 
 ---
 
