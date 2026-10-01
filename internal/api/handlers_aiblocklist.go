@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -8,6 +10,10 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/provider/aiblock"
 )
+
+// aiBlocklistRefreshGap is the least time between two refresh attempts, so the
+// manual button cannot be used to hammer the upstream host.
+const aiBlocklistRefreshGap = 60 * time.Second
 
 // aiBlocklistStatusResponse is the JSON shape of both AI-blocklist endpoints.
 // It carries the source HOST only, never the full URL, and LastError is a
@@ -73,6 +79,31 @@ func (r *Router) handleAIBlocklistStatus(w http.ResponseWriter, req *http.Reques
 	if s == nil {
 		writeJSON(w, http.StatusOK, aiBlocklistStatusResponse{})
 		return
+	}
+	writeJSON(w, http.StatusOK, aiBlocklistStatusOf(s))
+}
+
+// handleAIBlocklistRefresh serves POST /api/v1/images/ai-blocklist/refresh: one
+// refresh now, then the new status. A failed download is reported in the
+// status (last_error), not as an HTTP error, since the request itself worked.
+func (r *Router) handleAIBlocklistRefresh(w http.ResponseWriter, req *http.Request) {
+	s := aiblock.DefaultStore()
+	if s == nil || s.Status().Disabled {
+		writeError(w, req, http.StatusConflict, "the AI image list download is turned off (SW_AI_BLOCKLIST_URL is empty)")
+		return
+	}
+	// A client disconnect must not cancel the download: that would record a
+	// false last_error and start the 429 lockout. The store client's own
+	// timeout still bounds the fetch.
+	ran, wait, err := s.RefreshIfDue(context.WithoutCancel(req.Context()), aiBlocklistRefreshGap)
+	if !ran {
+		secs := int(wait/time.Second) + 1
+		w.Header().Set("Retry-After", strconv.Itoa(secs))
+		writeError(w, req, http.StatusTooManyRequests, "the list was refreshed moments ago; try again in "+strconv.Itoa(secs)+" seconds")
+		return
+	}
+	if err != nil {
+		r.logger.Warn("AI blocklist: manual refresh failed", slog.String("error", err.Error()))
 	}
 	writeJSON(w, http.StatusOK, aiBlocklistStatusOf(s))
 }

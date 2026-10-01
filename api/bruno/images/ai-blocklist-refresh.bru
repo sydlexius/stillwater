@@ -1,0 +1,27 @@
+meta {
+  name: AI Blocklist Refresh
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{apiBase}}/images/ai-blocklist/refresh
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("returns 409 because the download is off", function() {
+    // The Bruno harness starts the server with SW_AI_BLOCKLIST_URL empty, which
+    // turns the download off, so a refresh is refused before any network call.
+    expect(res.status).to.equal(409);
+  });
+
+  test("error envelope says the download is turned off", function() {
+    expect(res.body.error).to.contain("turned off");
+  });
+}
