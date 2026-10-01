@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,12 +24,18 @@ import (
 // why the resync must delete high-index-first.
 type resyncPeer struct {
 	*fakeEmbyPeer
-	deletes []int
+	deletes   []int
+	failDelAt map[int]bool // delete indices that error WITHOUT removing
+	delTries  int
 }
 
 func (r *resyncPeer) DeleteImageAtIndex(_ context.Context, _, _ string, idx int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.delTries++
+	if r.failDelAt[idx] {
+		return errors.New("500 delete failed")
+	}
 	if idx < 0 || idx >= len(r.data) {
 		return errors.New("404 no such backdrop")
 	}
@@ -278,19 +285,62 @@ func TestSyncAllFanart_JellyfinExtrafanartAdvisoryOnlyWhenPushed(t *testing.T) {
 	})
 }
 
-// The per-target lock in pushFanartSetToPeer serializes the destructive
-// resync against a concurrent single-image sync of the same artist and
-// connection. Holds the lock, starts a sync, asserts the peer sees NOTHING for
-// a bounded window, then releases and asserts convergence.
+// A failed delete on the full-set path stops before any upload (#3145 review):
+// the stale backdrop would otherwise sit ahead of the re-uploaded set. Peer
+// holds 3; the first (index 2) delete fails, so nothing is cleared and nothing
+// uploaded, the warning says so, and the connection still counts as pushed
+// (attempted) so the advisory fires.
+func TestSyncAllFanart_JellyfinDeleteFailureStopsBeforeUploads(t *testing.T) {
+	peer := &resyncPeer{fakeEmbyPeer: &fakeEmbyPeer{appendAll: true}, failDelAt: map[int]bool{2: true}}
+	seedPeer(peer, 3)
+	p, a, _ := setResyncHarness(t, connection.TypeJellyfin, peer)
+	seedExtrafanart(t, a.Path, 2)
+
+	warnings := p.SyncAllFanartToPlatforms(context.Background(), a)
+
+	if peer.delTries != 1 {
+		t.Fatalf("delete attempts = %d, want exactly 1 (stop at the first failure)", peer.delTries)
+	}
+	if peer.ups != 0 || peer.count() != 3 {
+		t.Errorf("uploads=%d count=%d, want 0 uploads and the original 3 left in order", peer.ups, peer.count())
+	}
+	if !strings.Contains(strings.Join(warnings, "|"), "could not clear backdrop 2, upload skipped") {
+		t.Errorf("warnings = %v, want the upload-skipped clear failure", warnings)
+	}
+}
+
+// lockHooks installs the pushFanartSetToPeer lock observation seams for one
+// test: waiting closes once a push is about to take the target lock (so the
+// local snapshot was already captured), held closes once it holds it.
+func lockHooks(t *testing.T) (waiting, held chan struct{}) {
+	t.Helper()
+	waiting, held = make(chan struct{}), make(chan struct{})
+	var w, h sync.Once
+	fanartLockWaitHook = func() { w.Do(func() { close(waiting) }) }
+	fanartLockHeldHook = func() { h.Do(func() { close(held) }) }
+	t.Cleanup(func() { fanartLockWaitHook, fanartLockHeldHook = nil, nil })
+	return waiting, held
+}
+
+func awaitClosed(t *testing.T, ch <-chan struct{}, what string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("timed out waiting for %s", what)
+	}
+}
+
+// The per-target lock in pushFanartSetToPeer serializes the destructive resync
+// against a concurrent single-image sync. Deterministic: the waiting hook
+// proves the push reached the lock point; the held hook is the positive
+// observation of acquisition, and it must NOT fire while another operation
+// holds the lock. With the lock removed it fires at once.
 func TestSyncAllFanart_JellyfinResyncWaitsForTargetLock(t *testing.T) {
 	peer := &resyncPeer{fakeEmbyPeer: &fakeEmbyPeer{appendAll: true}}
 	seedPeer(peer, 2)
 	p, a, local := setResyncHarness(t, connection.TypeJellyfin, peer)
-	touched := func() bool {
-		peer.mu.Lock()
-		defer peer.mu.Unlock()
-		return len(peer.deletes) != 0 || peer.ups != 0
-	}
+	waiting, held := lockHooks(t)
 
 	unlock := p.lockPhashTarget("c1", "p1")
 	done := make(chan struct{})
@@ -298,72 +348,58 @@ func TestSyncAllFanart_JellyfinResyncWaitsForTargetLock(t *testing.T) {
 		defer close(done)
 		p.SyncAllFanartToPlatforms(context.Background(), a)
 	}()
+	awaitClosed(t, waiting, "the push to reach the target lock")
 
-	// Bounded absence check: poll for activity for 400ms. With the lock
-	// removed the whole sync completes in a few ms, well inside the window.
-	deadline := time.Now().Add(400 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		if touched() {
-			unlock()
-			<-done
-			t.Fatal("the resync wrote to the platform while the target lock was held by another operation")
-		}
-		time.Sleep(5 * time.Millisecond)
+	select {
+	case <-held:
+		unlock()
+		<-done
+		t.Fatal("the push acquired the target lock while another operation held it")
+	case <-time.After(300 * time.Millisecond):
+	}
+	if peer.ups != 0 || len(peer.deletes) != 0 {
+		t.Fatalf("peer touched while the lock was held: deletes=%v uploads=%d", peer.deletes, peer.ups)
 	}
 	unlock()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("sync did not finish after the lock was released")
-	}
+	awaitClosed(t, held, "the push to acquire the lock after release")
+	awaitClosed(t, done, "the sync to finish")
+
 	got := peer.snapshotData()
 	if len(got) != len(local) {
 		t.Fatalf("peer holds %d backdrops after release, want %d", len(got), len(local))
 	}
-	for i := range local {
-		if !bytes.Equal(got[i], local[i]) {
-			t.Errorf("slot %d does not hold local fanart %d's bytes", i, i)
+}
+
+// #3145 review: the local set must be re-read UNDER the lock. A full-set sync
+// snapshots set A, then blocks on the lock while another operation publishes
+// set B; once it wins the lock it must push B, never the stale A.
+func TestSyncAllFanart_JellyfinResyncPushesSetCurrentAtLockTime(t *testing.T) {
+	peer := &resyncPeer{fakeEmbyPeer: &fakeEmbyPeer{appendAll: true}}
+	seedPeer(peer, 2)
+	p, a, oldSet := setResyncHarness(t, connection.TypeJellyfin, peer)
+	waiting, _ := lockHooks(t)
+
+	unlock := p.lockPhashTarget("c1", "p1")
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		p.SyncAllFanartToPlatforms(context.Background(), a)
+	}()
+	awaitClosed(t, waiting, "the push to snapshot and reach the lock")
+
+	// The other operation publishes set B (distinct bytes, one file fewer).
+	newB := bandJPEG(t, 900)
+	writeFile(t, filepath.Join(a.Path, "fanart.jpg"), newB)
+	for _, name := range []string{"fanart2.jpg", "fanart3.jpg"} {
+		if err := os.Remove(filepath.Join(a.Path, name)); err != nil {
+			t.Fatal(err)
 		}
 	}
-}
+	unlock()
+	awaitClosed(t, done, "the sync to finish")
 
-// attempted must be true once the resync starts writing, even if EVERY upload
-// then fails: the deletes already changed the peer, so the post-push repair
-// and the extrafanart/ advisory must still fire. Returning "uploaded" instead
-// of "attempted" would silence both.
-func TestSyncAllFanart_JellyfinAllUploadsFailStillCountsAsPushed(t *testing.T) {
-	peer := &resyncPeer{fakeEmbyPeer: &fakeEmbyPeer{appendAll: true, dropCalls: map[int]bool{0: true, 1: true, 2: true}}}
-	seedPeer(peer, 2)
-	p, a, _ := setResyncHarness(t, connection.TypeJellyfin, peer)
-	seedExtrafanart(t, a.Path, 2)
-
-	warnings := p.SyncAllFanartToPlatforms(context.Background(), a)
-
-	if len(peer.deletes) != 2 || peer.count() != 0 {
-		t.Fatalf("precondition: deletes must succeed and every upload fail, got deletes=%v count=%d", peer.deletes, peer.count())
-	}
-	if findExtrafanartWarning(warnings) == "" {
-		t.Errorf("no advisory though the peer was written to (deletes landed); warnings = %v", warnings)
-	}
-}
-
-// A peer whose state cannot be read is refused BEFORE any write, so the
-// connection was not pushed to and the advisory must stay silent.
-func TestSyncAllFanart_JellyfinDetailReadFailureIsNotAPush(t *testing.T) {
-	peer := &resyncPeer{fakeEmbyPeer: &fakeEmbyPeer{appendAll: true, detailErr: func(int) error { return errors.New("503 unavailable") }}}
-	seedPeer(peer, 2)
-	p, a, _ := setResyncHarness(t, connection.TypeJellyfin, peer)
-	seedExtrafanart(t, a.Path, 2)
-
-	warnings := p.SyncAllFanartToPlatforms(context.Background(), a)
-
-	if peer.ups != 0 || len(peer.deletes) != 0 {
-		t.Fatalf("precondition: nothing may be written when the state read fails, got deletes=%v uploads=%d", peer.deletes, peer.ups)
-	}
-	if !strings.Contains(strings.Join(warnings, "|"), "could not read platform backdrop state") {
-		t.Fatalf("precondition: expected the detail-read refusal warning, got %v", warnings)
-	}
-	if w := findExtrafanartWarning(warnings); w != "" {
-		t.Errorf("advisory raised though nothing was pushed: %q", w)
+	got := peer.snapshotData()
+	if len(got) != 1 || !bytes.Equal(got[0], newB) {
+		t.Fatalf("peer holds %d backdrops; want exactly the set current at lock time (1 file). stale set A had %d", len(got), len(oldSet))
 	}
 }

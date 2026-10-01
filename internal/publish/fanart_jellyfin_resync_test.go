@@ -368,15 +368,13 @@ func TestUploadFanartForSync_EmbyStillUsesIndexedReplace_NotResync(t *testing.T)
 	}
 }
 
-// TestUploadFanartFullResyncForSync_PartialDeleteFailureStillReuploadsAll
-// covers the "continue and report" contract uploadFanartFullResyncForSync's
-// doc comment states: one DELETE failing must not abort the clear loop or
-// skip the reupload loop, because stopping partway would leave the artist
-// with SOME backdrops deleted and NONE restored -- strictly worse than
-// continuing. Forces index 1's delete to fail (index 0 still deleted fine)
-// and asserts BOTH local files are still reuploaded, plus a warning names
-// the failure.
-func TestUploadFanartFullResyncForSync_PartialDeleteFailureStillReuploadsAll(t *testing.T) {
+// TestUploadFanartFullResyncForSync_DeleteFailureStopsBeforeAnyUpload pins the
+// #3145 review contract: a failed DELETE stops the resync before ANY upload,
+// because an uncleared stale backdrop would sit ahead of the re-uploaded set
+// (Jellyfin appends) and nothing would repair the order. Forces the first,
+// high-index delete to fail and asserts no further delete, no upload, a
+// warning that says the upload was skipped, and that it is not success.
+func TestUploadFanartFullResyncForSync_DeleteFailureStopsBeforeAnyUpload(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "fanart.jpg"), bandJPEG(t, 40))
 	writeFile(t, filepath.Join(dir, "fanart2.jpg"), bandJPEG(t, 41))
@@ -433,20 +431,20 @@ func TestUploadFanartFullResyncForSync_PartialDeleteFailureStillReuploadsAll(t *
 	gotUploads := append([]string(nil), uploads...)
 	mu.Unlock()
 
-	if len(gotDeletes) != 2 {
-		t.Fatalf("DELETE calls = %d, want 2 (both attempted despite the first failing); got %v", len(gotDeletes), gotDeletes)
+	if len(gotDeletes) != 1 {
+		t.Fatalf("DELETE calls = %d, want 1 (stop at the first failure); got %v", len(gotDeletes), gotDeletes)
 	}
-	if len(gotUploads) != 2 {
-		t.Fatalf("POST (reupload) calls = %d, want 2 (both local slots reuploaded despite the partial delete failure); got %v", len(gotUploads), gotUploads)
+	if len(gotUploads) != 0 {
+		t.Fatalf("POST calls = %d, want 0 (no upload after a failed clear); got %v", len(gotUploads), gotUploads)
 	}
 	foundDeleteWarning := false
 	for _, w := range warnings {
-		if strings.Contains(w, "could not clear backdrop") {
+		if strings.Contains(w, "could not clear backdrop") && strings.Contains(w, "upload skipped") {
 			foundDeleteWarning = true
 		}
 	}
 	if !foundDeleteWarning {
-		t.Errorf("warnings = %v, want one mentioning the failed clear", warnings)
+		t.Errorf("warnings = %v, want one saying the clear failed and the upload was skipped", warnings)
 	}
 }
 

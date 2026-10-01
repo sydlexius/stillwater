@@ -1396,11 +1396,12 @@ func (p *Publisher) uploadFanartForSync(ctx context.Context, a *artist.Artist, p
 // is only the missing durable intent record.
 //
 // A FAILURE MID-RESYNC (after the restorability guard has passed) IS
-// REPORTED, NEVER SWALLOWED, AND BOTH LOOPS RUN TO COMPLETION REGARDLESS:
-// stopping partway would leave the artist with SOME backdrops deleted and
-// NONE restored, strictly worse than continuing (deletePollutedBackdrops
-// makes the same "continue and report" choice for the same reason). Every
-// failure is folded into the returned warning.
+// REPORTED, NEVER SWALLOWED. A failed DELETE stops the resync before any
+// upload: an uncleared stale backdrop would stay ahead of the re-uploaded
+// set (Jellyfin appends), leaving the platform in the wrong order with
+// nothing to repair it, so the next sync redoes the whole rebuild instead.
+// A failed UPLOAD does not stop the loop: the remaining local files are
+// still restored, and every failed one is named in the returned warning.
 //
 // NO ADDITIONAL LOCK: this runs inside uploadFanartForSync's own
 // lockPhashTarget critical section (held across resolve+this call, released
@@ -1414,15 +1415,31 @@ func (p *Publisher) uploadFanartFullResyncForSync(ctx context.Context, a *artist
 		return false, truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type))
 	}
 
+	// This single-image path keeps its #3146 rule and reports `uploaded`
+	// (at least one upload landed), unlike the full-set path, which reports
+	// `attempted` (any write issued). Unchanged here on purpose: changing the
+	// single-image contract is out of scope for #3145.
+	_, uploaded, warning = p.resyncFanartLocked(ctx, a, pid, conn, client, true)
+	return uploaded, warning
+}
+
+// resyncFanartLocked discovers and snapshots the artist's CURRENT local fanart
+// and resyncs it onto one connection. The CALLER MUST HOLD lockPhashTarget for
+// (conn, pid), which is what makes the snapshot taken here current for the
+// whole destructive window (#3145 review: a snapshot taken before the lock
+// could be stale by the time the lock is won). withSnapNotes says whether the
+// snapshot's own degrade notices belong in the returned warning; the full-set
+// path already surfaced the notices from its earlier read, so it passes false.
+func (p *Publisher) resyncFanartLocked(ctx context.Context, a *artist.Artist, pid artist.PlatformID, conn *connection.Connection, client fanartResyncClient, withSnapNotes bool) (attempted, uploaded bool, warning string) {
 	dir := p.ImageDir(a)
 	if dir == "" {
-		return false, truncateWarning(fmt.Sprintf("%s: artist has no image directory configured, fanart resync skipped", conn.Name))
+		return false, false, truncateWarning(fmt.Sprintf("%s: artist has no image directory configured, fanart resync skipped", conn.Name))
 	}
 	primary := p.getActiveFanartPrimary(ctx)
 	fanartPaths, discoverErr := img.DiscoverFanart(ctx, dir, primary)
 	if discoverErr != nil {
 		p.logger.Error("discovering fanart for platform resync", "artist", a.Name, "connection", conn.Name, "error", discoverErr)
-		return false, truncateWarning(fmt.Sprintf("%s: failed to read fanart directory for resync", conn.Name))
+		return false, false, truncateWarning(fmt.Sprintf("%s: failed to read fanart directory for resync", conn.Name))
 	}
 	if len(fanartPaths) == 0 {
 		// resolveFanartReplaceTarget already ruled out noop against `data`
@@ -1430,23 +1447,21 @@ func (p *Publisher) uploadFanartFullResyncForSync(ctx context.Context, a *artist
 		// removed between that read and this one -- an operator racing this
 		// sync with a delete, not the expected path. Report it rather than
 		// silently doing nothing.
-		return false, truncateWarning(fmt.Sprintf("%s: no local fanart found for resync", conn.Name))
+		return false, false, truncateWarning(fmt.Sprintf("%s: no local fanart found for resync", conn.Name))
 	}
 
 	snapshot, snapWarnings, snapErr := p.snapshotFanart(ctx, fanartPaths)
 	if snapErr != nil {
 		p.logger.Warn("fanart resync snapshot aborted", "artist", a.Name, "connection", conn.Name, "error", snapErr)
-		return false, truncateWarning(fmt.Sprintf("%s: fanart resync canceled before it could read the local set", conn.Name))
+		return false, false, truncateWarning(fmt.Sprintf("%s: fanart resync canceled before it could read the local set", conn.Name))
 	}
 	if !hasReadableFanart(snapshot) {
-		return false, truncateWarning(fmt.Sprintf("%s: fanart resync found no readable local fanart", conn.Name))
+		return false, false, truncateWarning(fmt.Sprintf("%s: fanart resync found no readable local fanart", conn.Name))
 	}
-	// This single-image path keeps its #3146 rule and reports `uploaded`
-	// (at least one upload landed), unlike the full-set path, which reports
-	// `attempted` (any write issued). Unchanged here on purpose: changing the
-	// single-image contract is out of scope for #3145.
-	_, uploaded, warning = p.resyncFanartFromSnapshot(ctx, a, pid, conn, client, snapshot, snapWarnings)
-	return uploaded, warning
+	if !withSnapNotes {
+		snapWarnings = nil
+	}
+	return p.resyncFanartFromSnapshot(ctx, a, pid, conn, client, snapshot, snapWarnings)
 }
 
 // resyncFanartFromSnapshot is the destructive half of the Jellyfin fanart
@@ -1509,7 +1524,16 @@ func (p *Publisher) resyncFanartFromSnapshot(ctx context.Context, a *artist.Arti
 		if delErr := client.DeleteImageAtIndex(ctx, pid.PlatformArtistID, "fanart", i); delErr != nil {
 			p.logger.Error("deleting backdrop during fanart resync", "artist", a.Name, "connection", conn.Name, "index", i, "error", delErr)
 			p.notifyPushFailure(pid.ConnectionID, conn.Name, classifyPushErr(delErr), a.ID, artistDisplayName(a), pushOpImageUpload, delErr)
-			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): fanart resync could not clear backdrop %d, continuing", conn.Name, conn.Type, i)))
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): fanart resync could not clear backdrop %d, upload skipped", conn.Name, conn.Type, i)))
+			// STOP. An uncleared stale backdrop stays AHEAD of anything
+			// uploaded now (Jellyfin appends), so continuing yields a wrong
+			// order the deferred repair cannot fix (it restores local files,
+			// not the platform). Deletes already issued (high index first)
+			// DID land, so attempted stays true; the platform is left with
+			// a prefix of its old set, and the next sync (or the reconciler,
+			// when the count is short of the local set) redoes the whole
+			// clear-and-rebuild from scratch.
+			return attempted, false, truncateWarning(strings.Join(warnings, "; "))
 		}
 	}
 
@@ -2920,24 +2944,42 @@ func (p *Publisher) pushFanartSetToPeer(ctx context.Context, u fanartUpload) (wa
 		p.logger.Warn("unsupported connection type for fanart resync", "type", u.conn.Type)
 		return []string{truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", u.conn.Name, u.conn.Type))}, false
 	}
+	if fanartLockWaitHook != nil {
+		fanartLockWaitHook()
+	}
 	unlock := p.lockPhashTarget(u.pid.ConnectionID, u.pid.PlatformArtistID)
 	defer unlock()
+	if fanartLockHeldHook != nil {
+		fanartLockHeldHook()
+	}
 	// #2540 notify-only collision check: uploadFanartSet raises it per file
 	// just before the write, so this path must too or a Jellyfin-only push
-	// silently loses the notification. Never blocks the push.
+	// silently loses the notification. Never blocks the push. Uses the
+	// pre-lock snapshot: it is only a notice, never the data written.
 	for _, sf := range u.snapshot {
 		if sf.data != nil {
 			p.notifyFanartCollision(ctx, u.artist, sf.path, sf.data, u.identityIdx, u.notified)
 		}
 	}
-	// Snapshot degrade notices were already added to the push's warnings by
-	// syncAllFanartToPlatforms, so none are passed here.
-	attempted, _, warning := p.resyncFanartFromSnapshot(ctx, u.artist, u.pid, u.conn, client, u.snapshot, nil)
+	// RE-READ THE LOCAL SET UNDER THE LOCK. u.snapshot was captured before the
+	// lock was won, so a concurrent single-image sync (which snapshots under
+	// this same lock) can have published a newer set in between; clearing and
+	// re-uploading the older snapshot would silently undo it. The re-read is
+	// authoritative; u.snapshot only served the early readability check.
+	attempted, _, warning := p.resyncFanartLocked(ctx, u.artist, u.pid, u.conn, client, false)
 	if warning == "" {
 		return nil, attempted
 	}
 	return []string{warning}, attempted
 }
+
+// Test seams for pushFanartSetToPeer's target lock. nil in production (a
+// single nil check each); tests set them to observe that a push has reached
+// the lock and when it actually holds it.
+var (
+	fanartLockWaitHook func()
+	fanartLockHeldHook func()
+)
 
 // uploadFanartSet pushes every captured backdrop to ONE peer, at its TRUE slot
 // index, and returns the per-file warnings.
