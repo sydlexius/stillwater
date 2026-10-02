@@ -103,8 +103,10 @@ func (c *releaseGroupCache) holds(mbid string) bool {
 // and must never imply one happened.
 func (c *releaseGroupCache) titles(ctx context.Context, mbid string) ([]string, bool) {
 	// Key on the NORMALIZED identity (#2868) so one MBID spelled two ways costs
-	// one fetch; validation normalizes too. The provider call and the failure
-	// log keep the RAW mbid: that is what the provider was actually asked for.
+	// one fetch; validation normalizes too. The provider is asked with the
+	// NORMALIZED key: the MusicBrainz adapter sends the id unmodified, so a raw
+	// padded spelling would fail and poison the shared entry for the clean one.
+	// The failure log keeps the RAW mbid, the spelling the caller supplied.
 	key := normalizeMBID(mbid)
 	if c == nil || c.fetcher == nil || key == "" {
 		return nil, false
@@ -113,7 +115,7 @@ func (c *releaseGroupCache) titles(ctx context.Context, mbid string) ([]string, 
 		return entry.titles, entry.known
 	}
 
-	groups, err := c.fetcher.GetReleaseGroups(ctx, mbid)
+	groups, err := c.fetcher.GetReleaseGroups(ctx, key)
 	if err != nil {
 		c.entries[key] = releaseGroupEntry{known: false}
 		if c.logger != nil {
