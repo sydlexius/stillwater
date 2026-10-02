@@ -667,9 +667,8 @@ func FilterDatesByArtistType(a *Artist) {
 // in this direction because it only ever adds values to a closed collective
 // list, never to the destructive default.
 //
-// Note this normalization is NOT shared with FilterDatesByArtistType, which
-// switches on the raw type: a stored "Group" clears gender here but keeps
-// born/died there. See that function for the measured divergence.
+// FilterDatesByArtistType matches the type identically (lowercased, trimmed),
+// so a stored "Group" clears gender here and born/died there.
 func IsGenderlessType(t string) bool {
 	switch strings.ToLower(strings.TrimSpace(t)) {
 	case "group", "orchestra", "choir":
@@ -683,9 +682,8 @@ func IsGenderlessType(t string) bool {
 // known to be genderless. It is the gender sibling of FilterDatesByArtistType
 // in intent, and like that pass it filters only on types it recognizes: an
 // unknown, unrecognized, "Other" or empty type is left completely alone. The
-// two are NOT alike in matching, though: this pass normalizes the type through
-// IsGenderlessType while the date pass matches it raw, so a stored "Group" is
-// recognized here and not there.
+// two match alike: both normalize the type (lowercased, trimmed), so a stored
+// "Group" is recognized by each.
 //
 // This pass exists because the producers that build a MetadataUpdate signal
 // "gender is inapplicable for this type" by emitting an empty Gender, which is
