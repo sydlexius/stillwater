@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // extraFanartDir is the subdirectory the migration drains (#3178).
@@ -170,15 +171,23 @@ type ExtraFanartApplyResult struct {
 // ApplyExtraFanartMigration executes a plan. The migration is ONE-WAY: there
 // is no rollback and no manifest; the dry run (the plan) is the safety net.
 //
-// The only filesystem-mutating calls are os.Rename of a file and, at the end,
-// os.Remove of the extrafanart/ directory (which fails if non-empty; never
-// RemoveAll). No operator file is deleted or overwritten.
+// Each file moves with an atomic no-replace rename between directory fds held
+// for the whole apply (extrafanart/ opened O_NOFOLLOW), so neither an operator
+// file appearing at the destination nor a symlink swapped in for extrafanart/
+// can cause an overwrite or a redirect. A filesystem that cannot do a
+// no-replace rename gets a failed entry, never a clobbering fallback. The only
+// other mutation is os.Remove of the emptied directory (never RemoveAll).
 //
 // A failure on one file is recorded and the rest proceed. A second apply of
 // the same plan finds every source gone and does nothing.
 func ApplyExtraFanartMigration(ctx context.Context, inv HashInvalidator, artistID string, plan *ExtraFanartPlan) (*ExtraFanartApplyResult, error) {
+	if inv == nil {
+		return nil, errors.New("extrafanart migration requires a hash invalidator")
+	}
 	res := &ExtraFanartApplyResult{}
 	allMoved := len(plan.Entries) > 0
+	mv := &fdMover{plan: plan}
+	defer mv.close()
 	var ctxErr error
 	for _, e := range plan.Entries {
 		if ctxErr = ctx.Err(); ctxErr != nil {
@@ -190,9 +199,13 @@ func ApplyExtraFanartMigration(ctx context.Context, inv HashInvalidator, artistI
 		case DispositionSkipIdentical:
 			r.Outcome = OutcomeSkipped
 		case DispositionMove:
-			r.Outcome, r.Err = moveNoOverwrite(e)
+			r.Outcome, r.Err = mv.move(e)
 		default:
 			r.Outcome = OutcomeBlocked
+			r.Err = errors.New(e.Reason)
+			if e.Reason == "" {
+				r.Err = errors.New("blocked by the plan")
+			}
 		}
 		switch r.Outcome {
 		case OutcomeMoved:
@@ -205,16 +218,15 @@ func ApplyExtraFanartMigration(ctx context.Context, inv HashInvalidator, artistI
 		}
 		res.Results = append(res.Results, r)
 	}
+	mv.close() // release the dir fds before the directory is removed
 
 	if res.Moved > 0 {
 		// Files moved INTO fanart slots: stored per-slot hashes and geometry
-		// now describe different files (see RenumberFanart).
+		// now describe different files (see RenumberFanart). Both always run.
 		ictx := context.WithoutCancel(ctx) // moved files need invalidating even after a cancel
-		if err := inv.InvalidateImageHashes(ictx, artistID, "fanart"); err != nil {
-			res.InvalidErr = err
-		} else if err := inv.InvalidateImageGeometry(ictx, artistID, "fanart"); err != nil {
-			res.InvalidErr = err
-		}
+		res.InvalidErr = errors.Join(
+			inv.InvalidateImageHashes(ictx, artistID, "fanart"),
+			inv.InvalidateImageGeometry(ictx, artistID, "fanart"))
 	}
 
 	if allMoved && res.Moved > 0 {
@@ -232,23 +244,74 @@ func ApplyExtraFanartMigration(ctx context.Context, inv HashInvalidator, artistI
 	return res, ctxErr
 }
 
-// moveNoOverwrite renames e.Source to e.Dest unless anything is at Dest.
-// os.Rename silently replaces on POSIX, so Dest is Lstat'd first; the small
-// check-to-rename window is accepted because closing it (link-then-remove,
-// copy-then-delete) would add a delete this engine forbids.
-func moveNoOverwrite(e MigrationEntry) (MigrationOutcome, error) {
-	if _, err := os.Lstat(e.Source); errors.Is(err, fs.ErrNotExist) {
+// fdMover moves entries between directory fds opened lazily on first use.
+type fdMover struct {
+	plan           *ExtraFanartPlan
+	srcFd, rootFd  int
+	opened, closed bool
+	openErr        error
+}
+
+func (m *fdMover) open() error {
+	if m.opened {
+		return m.openErr
+	}
+	m.opened = true
+	m.srcFd, m.openErr = openDirFd(filepath.Join(m.plan.ArtistDir, extraFanartDir), true)
+	if m.openErr != nil {
+		return m.openErr
+	}
+	if m.rootFd, m.openErr = openDirFd(m.plan.ArtistDir, false); m.openErr != nil {
+		closeFd(m.srcFd)
+		m.srcFd = -1
+	}
+	return m.openErr
+}
+
+func (m *fdMover) close() {
+	if m.opened && m.openErr == nil && !m.closed {
+		closeFd(m.srcFd)
+		closeFd(m.rootFd)
+	}
+	m.closed = true
+}
+
+// move renames one entry. Apply never trusts the plan's strings: the source
+// must sit directly in artistDir/extrafanart and the dest directly in
+// artistDir, each with a plain base name.
+func (m *fdMover) move(e MigrationEntry) (MigrationOutcome, error) {
+	srcName, dstName := filepath.Base(e.Source), filepath.Base(e.Dest)
+	plain := func(n string) bool {
+		return n != "." && n != ".." && n != string(filepath.Separator) && !strings.ContainsRune(n, '/')
+	}
+	if filepath.Dir(e.Source) != filepath.Join(m.plan.ArtistDir, extraFanartDir) ||
+		filepath.Dir(e.Dest) != filepath.Clean(m.plan.ArtistDir) || !plain(srcName) || !plain(dstName) {
+		return OutcomeBlocked, fmt.Errorf("plan entry %q -> %q is outside the artist directory; refusing", e.Source, e.Dest)
+	}
+	if err := m.open(); errors.Is(err, fs.ErrNotExist) {
+		return OutcomeGone, nil
+	} else if err != nil {
+		return OutcomeFailed, fmt.Errorf("opening %s without following links: %w", extraFanartDir, err)
+	}
+	// The final component is never followed by rename, so a symlink raced in
+	// after this check is moved AS a link: no data is lost or overwritten.
+	if ok, err := isRegularAt(m.srcFd, srcName); errors.Is(err, fs.ErrNotExist) {
 		return OutcomeGone, nil
 	} else if err != nil {
 		return OutcomeFailed, err
+	} else if !ok {
+		return OutcomeBlocked, fmt.Errorf("%s is not a regular file; refusing", e.Source)
 	}
-	if _, err := os.Lstat(e.Dest); err == nil {
+	switch err := renameNoReplace(m.srcFd, srcName, m.rootFd, dstName); {
+	case err == nil:
+		return OutcomeMoved, nil
+	case errors.Is(err, fs.ErrExist):
 		return OutcomeBlocked, fmt.Errorf("destination %s is occupied; refusing to overwrite", e.Dest)
-	} else if !errors.Is(err, fs.ErrNotExist) {
+	case errors.Is(err, fs.ErrNotExist):
+		return OutcomeGone, nil
+	case errors.Is(err, errors.ErrUnsupported), errors.Is(err, syscall.EINVAL), errors.Is(err, syscall.ENOSYS):
+		return OutcomeFailed, fmt.Errorf("this filesystem cannot rename without replacing; not moved: %w", err)
+	default:
 		return OutcomeFailed, err
 	}
-	if err := os.Rename(e.Source, e.Dest); err != nil {
-		return OutcomeFailed, err
-	}
-	return OutcomeMoved, nil
 }

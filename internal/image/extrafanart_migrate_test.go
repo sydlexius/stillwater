@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -304,8 +305,14 @@ func TestExtraFanart_SymlinkedSourceIsBlockedAndNothingMoves(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(dir, "extrafanart", "a.jpg")); err != nil {
 		t.Fatal("link must not be consumed: ", err)
 	}
-	if res, _ := ApplyExtraFanartMigration(ctx, &fakeHashInvalidator{}, "a1", plan); res.Moved != 1 {
+	res, _ := ApplyExtraFanartMigration(ctx, &fakeHashInvalidator{}, "a1", plan)
+	if res.Moved != 1 {
 		t.Errorf("moved=%d, want only the regular file", res.Moved)
+	}
+	for _, r := range res.Results {
+		if r.Outcome == OutcomeBlocked && r.Err == nil {
+			t.Errorf("blocked result without Err: %+v", r)
+		}
 	}
 	if fi, err := os.Lstat(filepath.Join(dir, "extrafanart", "a.jpg")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
 		t.Errorf("the symlink must stay where it was: %v", err)
@@ -327,8 +334,57 @@ func TestExtraFanart_SymlinkedDirIsRefusedAndNeverUnlinked(t *testing.T) {
 	plan := &ExtraFanartPlan{ArtistDir: dir, Entries: []MigrationEntry{{
 		Source: filepath.Join(link, "a.jpg"), Dest: filepath.Join(dir, "fanart2.jpg"), Disposition: DispositionMove}}}
 	res, _ := ApplyExtraFanartMigration(ctx, &fakeHashInvalidator{}, "a1", plan)
-	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 || res.Dir != DirKeptError {
-		t.Errorf("symlink must survive with kept-error: dir=%q err=%v", res.Dir, err)
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 || res.Moved != 0 || res.Results[0].Outcome != OutcomeFailed {
+		t.Errorf("symlink must survive and nothing move: moved=%d results=%+v err=%v", res.Moved, res.Results, err)
+	}
+	if _, err := os.Lstat(filepath.Join(outside, "a.jpg")); err != nil {
+		t.Errorf("outside/a.jpg must stay in place: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "fanart2.jpg")); err == nil {
+		t.Error("nothing may land at the artist root through the symlink")
+	}
+}
+
+func TestApplyExtraFanart_ForgedEntriesAreBlockedWithErr(t *testing.T) {
+	dir := seedTree(t, map[string]string{"fanart.jpg": "r", "extrafanart/a.jpg": "a", "elsewhere/x.jpg": "x"})
+	before := inventory(t, dir)
+	mk := func(src, dst string) MigrationEntry {
+		return MigrationEntry{Source: src, Dest: dst, Disposition: DispositionMove}
+	}
+	plan := &ExtraFanartPlan{ArtistDir: dir, Entries: []MigrationEntry{
+		mk(filepath.Join(dir, "elsewhere", "x.jpg"), filepath.Join(dir, "fanart2.jpg")),          // source outside extrafanart/
+		mk(filepath.Join(dir, "extrafanart", "a.jpg"), filepath.Join(dir, "elsewhere", "y.jpg")), // dest outside the root
+		mk(filepath.Join(dir, "extrafanart", ".."), filepath.Join(dir, "fanart3.jpg")),           // dot-dot base
+	}}
+	res, err := ApplyExtraFanartMigration(context.Background(), &fakeHashInvalidator{}, "a1", plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, r := range res.Results {
+		if r.Outcome != OutcomeBlocked || r.Err == nil {
+			t.Errorf("entry %d: %+v, want blocked with Err", i, r)
+		}
+	}
+	wantInv(t, dir, before)
+}
+
+func TestApplyExtraFanart_NilInvalidatorMovesNothing(t *testing.T) {
+	dir := seedTree(t, map[string]string{"fanart.jpg": "r", "extrafanart/a.jpg": "a"})
+	plan, _ := PlanExtraFanartMigration(context.Background(), dir, []string{"fanart.jpg"}, false)
+	before := inventory(t, dir)
+	if _, err := ApplyExtraFanartMigration(context.Background(), nil, "a1", plan); err == nil {
+		t.Error("a nil invalidator must be rejected")
+	}
+	wantInv(t, dir, before)
+}
+
+func TestApplyExtraFanart_BothInvalidationsRunAndErrorsJoin(t *testing.T) {
+	dir := seedTree(t, map[string]string{"fanart.jpg": "r", "extrafanart/a.jpg": "a"})
+	plan, _ := PlanExtraFanartMigration(context.Background(), dir, []string{"fanart.jpg"}, false)
+	inv := &fakeHashInvalidator{err: errors.New("hash boom"), geomErr: errors.New("geom boom")}
+	res, _ := ApplyExtraFanartMigration(context.Background(), inv, "a1", plan)
+	if len(inv.geomCall) != 1 || res.InvalidErr == nil || !strings.Contains(res.InvalidErr.Error(), "hash boom") || !strings.Contains(res.InvalidErr.Error(), "geom boom") {
+		t.Errorf("geometry calls=%d invalidErr=%v", len(inv.geomCall), res.InvalidErr)
 	}
 }
 
@@ -384,5 +440,24 @@ func TestApplyExtraFanart_SourceGoneAloneDoesNotKeepTheDir(t *testing.T) {
 	res, _ := ApplyExtraFanartMigration(ctx, &fakeHashInvalidator{}, "a1", plan)
 	if res.Moved != 1 || res.Dir != DirRemoved {
 		t.Errorf("moved=%d dir=%q, want 1 and removed", res.Moved, res.Dir)
+	}
+}
+
+func TestApplyExtraFanart_SourceSwappedForDirAfterPlanIsBlocked(t *testing.T) {
+	dir := seedTree(t, map[string]string{"fanart.jpg": "r", "extrafanart/a.jpg": "a"})
+	plan, _ := PlanExtraFanartMigration(context.Background(), dir, []string{"fanart.jpg"}, false)
+	a := filepath.Join(dir, "extrafanart", "a.jpg")
+	if err := os.Remove(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(a, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	res, _ := ApplyExtraFanartMigration(context.Background(), &fakeHashInvalidator{}, "a1", plan)
+	if res.Moved != 0 || res.Results[0].Outcome != OutcomeBlocked || res.Results[0].Err == nil {
+		t.Errorf("moved=%d results=%+v", res.Moved, res.Results)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "fanart2.jpg")); err == nil {
+		t.Error("a directory must not be moved into the artist root")
 	}
 }
