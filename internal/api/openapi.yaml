@@ -84,6 +84,20 @@ components:
             of scope, so it is declared at the root only -- it plays no part
             in the oneOf's artist_id/all_artists invariant and does not need
             repeating in either branch.
+        perceptual:
+          type: boolean
+          default: false
+          description: >-
+            Also prune backdrops that are the same picture without being
+            byte-identical (#3138), at the same 0.90 perceptual similarity the
+            local duplicate rule uses. Off unless set; the exact tier always
+            runs. The kept copy is, in order: one byte-identical to a local
+            fanart file, the larger image, the larger file, the lower index.
+            A copy matching a local fanart file is never removed by this tier,
+            and a locked artist gets the exact tier only. If any of an
+            artist's backdrops or local fanart files cannot be read, this tier
+            is skipped for that artist and reported in failures. Declared at
+            the root only, like dry_run.
       oneOf:
         - title: One artist
           required: [artist_id]
@@ -4281,6 +4295,13 @@ paths:
                         survivor:
                           type: integer
                           description: The index of the copy that is kept.
+                        tier:
+                          type: string
+                          enum: [exact, perceptual]
+                          description: >-
+                            Which evidence the delete rests on: `exact` is a
+                            byte-identical copy of the survivor, `perceptual`
+                            the same picture by perceptual hash.
                         outcome:
                           type: string
                           enum: [planned, deleted, skipped, failed]

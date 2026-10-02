@@ -23,8 +23,8 @@ func TestPlatformPruneResponse_CarriesEveryPlanFieldOnTheWire(t *testing.T) {
 		BackdropsRemoved: 1,
 		SkippedChanged:   1,
 		Plan: []publish.PlatformBackdropPrunePlanEntry{
-			{ArtistID: "a1", ConnectionID: "c1", Index: 2, Survivor: 0, Outcome: publish.PrunePlanDeleted},
-			{ArtistID: "a1", ConnectionID: "c1", Index: 1, Survivor: 0, Outcome: publish.PrunePlanSkipped},
+			{ArtistID: "a1", ConnectionID: "c1", Index: 2, Survivor: 0, Tier: publish.PruneTierExact, Outcome: publish.PrunePlanDeleted},
+			{ArtistID: "a1", ConnectionID: "c1", Index: 1, Survivor: 3, Tier: publish.PruneTierPerceptual, Outcome: publish.PrunePlanSkipped},
 		},
 	})
 	raw, err := json.Marshal(body)
@@ -37,6 +37,7 @@ func TestPlatformPruneResponse_CarriesEveryPlanFieldOnTheWire(t *testing.T) {
 			ConnectionID string `json:"connection_id"`
 			Index        int    `json:"index"`
 			Survivor     int    `json:"survivor"`
+			Tier         string `json:"tier"`
 			Outcome      string `json:"outcome"`
 		} `json:"plan"`
 	}
@@ -47,6 +48,8 @@ func TestPlatformPruneResponse_CarriesEveryPlanFieldOnTheWire(t *testing.T) {
 		t.Fatalf("plan has %d entries on the wire, want 2", len(got.Plan))
 	}
 	wantOutcomes := []string{publish.PrunePlanDeleted, publish.PrunePlanSkipped}
+	wantTiers := []string{publish.PruneTierExact, publish.PruneTierPerceptual}
+	wantSurvivors := []int{0, 3}
 	for i, e := range got.Plan {
 		if e.ArtistID != "a1" || e.ConnectionID != "c1" {
 			t.Errorf("entry %d lost its identity on the wire: %+v", i, e)
@@ -54,8 +57,11 @@ func TestPlatformPruneResponse_CarriesEveryPlanFieldOnTheWire(t *testing.T) {
 		if e.Outcome != wantOutcomes[i] {
 			t.Errorf("entry %d: outcome %q, want %q; without it a caller cannot tell which entries describe their library", i, e.Outcome, wantOutcomes[i])
 		}
-		if e.Survivor != 0 {
-			t.Errorf("entry %d: survivor %d, want 0", i, e.Survivor)
+		if e.Survivor != wantSurvivors[i] {
+			t.Errorf("entry %d: survivor %d, want %d", i, e.Survivor, wantSurvivors[i])
+		}
+		if e.Tier != wantTiers[i] {
+			t.Errorf("entry %d: tier %q, want %q; the operator must see which deletes rest on a similarity judgement", i, e.Tier, wantTiers[i])
 		}
 	}
 	if got.Plan[0].Index != 2 || got.Plan[1].Index != 1 {
