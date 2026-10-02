@@ -1,6 +1,10 @@
 package templates
 
-import "github.com/sydlexius/stillwater/web/components"
+import (
+	"net/url"
+
+	"github.com/sydlexius/stillwater/web/components"
+)
 
 // ForeignFileRow is one row rendered in the foreign-files list page.
 // Constructed by the API handler from foreign.Entry; kept on the templates
@@ -139,7 +143,16 @@ templ ForeignFilesTable(view ForeignFilesPageView) {
 					for _, r := range view.Rows {
 						<tr id={ "foreign-row-" + r.ID } data-sw-roving-item data-sw-roving-key={ r.ID }>
 							<td class="px-4 py-2 text-gray-900 dark:text-gray-100">
-								{ r.ArtistName }
+								if r.ArtistID != "" {
+									<a
+										href={ artistDetailHref(ctx, BasePath(), url.PathEscape(r.ArtistID)) }
+										target="_blank"
+										rel="noopener noreferrer"
+										class="text-blue-600 dark:text-blue-400 hover:underline"
+									>{ r.ArtistName }</a>
+								} else {
+									{ r.ArtistName }
+								}
 								if r.DuplicateCount > 1 {
 									<span
 										class="ml-1 inline-block rounded px-1.5 py-0.5 text-xs font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
