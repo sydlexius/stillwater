@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -428,6 +429,46 @@ func TestHandlePushImages_FanartUploadedAtCorrectIndices(t *testing.T) {
 		if idx != i {
 			t.Errorf("upload[%d] index = %d, want %d", i, idx, i)
 		}
+	}
+}
+
+// #3138 review: the per-index fanart push holds the per-target lock the
+// backdrop prune deletes under; without it the upload lands while it is held.
+func TestHandlePushImages_FanartWaitsForBackdropTargetLock(t *testing.T) {
+	t.Parallel()
+	var uploads atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/Images/Backdrop/") {
+			uploads.Add(1)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	r, artistSvc := testRouter(t)
+	r.platformService = platform.NewService(r.db)
+	a := &artist.Artist{Name: "Locked Push", SortName: "Locked Push", Path: t.TempDir()}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+	if err := os.WriteFile(filepath.Join(a.Path, "fanart.jpg"), []byte("fake-fanart"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	unlock := r.publisher.LockBackdropTarget("conn-emby", "emby-lock-1")
+	w, done := httptest.NewRecorder(), make(chan struct{})
+	go func() {
+		defer close(done)
+		body := `{"connection_id":"conn-emby","platform_artist_id":"emby-lock-1","image_types":["fanart"]}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/push/images", strings.NewReader(body))
+		req.SetPathValue("id", a.ID)
+		r.handlePushImages(w, req)
+	}()
+	time.Sleep(300 * time.Millisecond)
+	held := uploads.Load()
+	unlock()
+	<-done
+	if held != 0 || w.Code != http.StatusOK || uploads.Load() != 1 {
+		t.Errorf("uploads while locked %d, after %d, status %d; want 0, 1, 200", held, uploads.Load(), w.Code)
 	}
 }
 
