@@ -277,6 +277,10 @@ func TestRefresh_PartialLibraryScanDoesNotOverwriteKnownCount(t *testing.T) {
 func TestRefresh_DoesNotClobberFresherStoreLandedMidScan(t *testing.T) {
 	t.Parallel()
 	c := New(quietLogger())
+	// Frozen clock: every stamp is IDENTICAL, so a timestamp-ordered guard
+	// cannot tell the stores apart. Ordering must come from the generation (#2938).
+	tie := time.Now()
+	c.clock = func() time.Time { return tie }
 
 	c.Set(Counts{Library: 42})
 
@@ -310,11 +314,49 @@ func TestRefresh_DoesNotClobberFresherStoreLandedMidScan(t *testing.T) {
 	}
 }
 
+// Platforms-half mirror of the test above (#2938): same lost-update shape on
+// the other half, under a frozen clock so only the generation can order it.
+func TestRefresh_DoesNotClobberFresherPlatformsStoreLandedMidScan(t *testing.T) {
+	t.Parallel()
+	c := New(quietLogger())
+	tie := time.Now()
+	c.clock = func() time.Time { return tie }
+
+	c.Set(Counts{Platforms: []PlatformCount{emby(9)}})
+
+	scanning := make(chan struct{})
+	release := make(chan struct{})
+	c.SetSources(nil, func(context.Context) ([]PlatformCount, error) {
+		close(scanning)
+		<-release
+		return []PlatformCount{emby(9)}, nil // the stale pre-remediation view
+	})
+
+	done := make(chan error, 1)
+	go func() { done <- c.Refresh(context.Background()) }()
+
+	<-scanning
+	c.StorePlatforms([]PlatformCount{emby(1)}) // fresher, authoritative
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+
+	got := c.Get().Platforms
+	if len(got) != 1 || got[0].Count != 1 {
+		t.Fatalf("Platforms = %+v; the in-flight refresh clobbered the fresher store with its stale scan", got)
+	}
+}
+
 // The flip side of F3: a store that predates the refresh must NOT suppress it,
 // or the counts would freeze at whatever the last report-page visit saw.
 func TestRefresh_OverwritesAStoreThatPredatesIt(t *testing.T) {
 	t.Parallel()
 	c := New(quietLogger())
+	// Frozen clock: every stamp is IDENTICAL, so a timestamp-ordered guard
+	// cannot tell the stores apart. Ordering must come from the generation (#2938).
+	tie := time.Now()
+	c.clock = func() time.Time { return tie }
 
 	c.StoreLibrary(7)
 	c.SetSources(func(context.Context) (int, error) { return 3, nil }, nil)

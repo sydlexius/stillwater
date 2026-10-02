@@ -214,17 +214,13 @@ type Router struct {
 	backdropDupReportMu sync.RWMutex
 	backdropDupReport   rule.FanartDupReport
 	backdropDupReportAt time.Time
-	// backdropDupReportStartedAt is when the scan that produced the cached
-	// report BEGAN, and it is what makes the cache safe against out-of-order
-	// completion. Scans overlap in practice (a periodic refresh can still be
-	// walking the library when an operator remediates), and they finish in
-	// whatever order the filesystem allows -- so "last writer wins" lets a scan
-	// that started BEFORE a remediation land AFTER it and silently restore the
-	// pre-remediation duplicate counts. Keyed on start rather than completion
-	// because that is the ordering that actually determines whose data is
-	// older. Mirrors the compare-and-swap dupimages.Cache already applies to
-	// the sidebar counts.
-	backdropDupReportStartedAt time.Time
+	// backdropDupReportGen is the START generation (nextBackdropScanGen) of the
+	// scan that produced the cached report, and it makes the cache safe against
+	// out-of-order completion. Scans overlap in practice, so "last writer wins"
+	// would let a scan that started BEFORE a remediation land AFTER it and
+	// restore pre-remediation counts. A counter rather than a wall-clock start
+	// time because two starts can share a clock tick. Zero means none cached.
+	backdropDupReportGen uint64
 	// platformPruneRunning guards the singleton platform backdrop prune run
 	// (#2540 Task 7): only one prune may be in flight at a time, so a
 	// concurrent POST /api/v1/reports/platform-backdrop-duplicates/prune
