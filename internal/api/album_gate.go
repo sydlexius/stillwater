@@ -82,7 +82,7 @@ func (c *releaseGroupCache) holds(mbid string) bool {
 	if c == nil {
 		return false
 	}
-	_, ok := c.entries[mbid]
+	_, ok := c.entries[normalizeMBID(mbid)]
 	return ok
 }
 
@@ -102,16 +102,22 @@ func (c *releaseGroupCache) holds(mbid string) bool {
 // guards feeding albumEvidenceReason, which are reached before any call is made
 // and must never imply one happened.
 func (c *releaseGroupCache) titles(ctx context.Context, mbid string) ([]string, bool) {
-	if c == nil || c.fetcher == nil || mbid == "" {
+	// Key on the NORMALIZED identity (#2868) so one MBID spelled two ways costs
+	// one fetch; validation normalizes too. The provider is asked with the
+	// NORMALIZED key: the MusicBrainz adapter sends the id unmodified, so a raw
+	// padded spelling would fail and poison the shared entry for the clean one.
+	// The failure log keeps the RAW mbid, the spelling the caller supplied.
+	key := normalizeMBID(mbid)
+	if c == nil || c.fetcher == nil || key == "" {
 		return nil, false
 	}
-	if entry, ok := c.entries[mbid]; ok {
+	if entry, ok := c.entries[key]; ok {
 		return entry.titles, entry.known
 	}
 
-	groups, err := c.fetcher.GetReleaseGroups(ctx, mbid)
+	groups, err := c.fetcher.GetReleaseGroups(ctx, key)
 	if err != nil {
-		c.entries[mbid] = releaseGroupEntry{known: false}
+		c.entries[key] = releaseGroupEntry{known: false}
 		if c.logger != nil {
 			c.logger.Warn("identify: fetching a candidate's release groups failed, so its catalogue cannot corroborate anything",
 				"mbid", mbid, "error", err)
@@ -123,7 +129,7 @@ func (c *releaseGroupCache) titles(ctx context.Context, mbid string) ([]string, 
 	for i, g := range groups {
 		titles[i] = g.Title
 	}
-	c.entries[mbid] = releaseGroupEntry{titles: titles, known: true}
+	c.entries[key] = releaseGroupEntry{titles: titles, known: true}
 	return titles, true
 }
 
