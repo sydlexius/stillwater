@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/net/html"
+
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/backup"
 	"github.com/sydlexius/stillwater/internal/nfo"
@@ -414,5 +416,57 @@ func TestFormatBytes(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("formatBytes(%d) = %q, want %q", tc.input, got, tc.want)
 		}
+	}
+}
+
+// TestRenderBackupList_HeadersHaveText guards axe's empty-table-header rule:
+// every <th> in the backup list must carry non-empty text content (the
+// actions column uses a visually hidden label).
+func TestRenderBackupList_HeadersHaveText(t *testing.T) {
+	t.Parallel()
+	r, backupSvc := testRouterWithBackup(t)
+
+	if _, err := backupSvc.Backup(context.Background()); err != nil {
+		t.Fatalf("creating test backup: %v", err)
+	}
+	infos, err := backupSvc.ListBackups()
+	if err != nil || len(infos) == 0 {
+		t.Fatalf("listing backups: %v (n=%d)", err, len(infos))
+	}
+
+	w := httptest.NewRecorder()
+	r.renderBackupList(w, infos)
+
+	doc, err := html.Parse(strings.NewReader(w.Body.String()))
+	if err != nil {
+		t.Fatalf("parsing HTML: %v", err)
+	}
+	var text func(n *html.Node) string
+	text = func(n *html.Node) string {
+		if n.Type == html.TextNode {
+			return n.Data
+		}
+		var sb strings.Builder
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			sb.WriteString(text(c))
+		}
+		return sb.String()
+	}
+	count := 0
+	var walk func(n *html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "th" {
+			count++
+			if strings.TrimSpace(text(n)) == "" {
+				t.Errorf("th #%d has empty text content", count)
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(doc)
+	if count != 4 {
+		t.Errorf("found %d <th> elements, want 4", count)
 	}
 }
