@@ -227,7 +227,28 @@ There is deliberately no way to run the prune without saying which of the two yo
 
 You can also rehearse a run before committing to it. Through the [API](../api/index.md), a dry run that succeeds returns the complete plan -- for every copy it would delete, which copy would survive it -- and deletes nothing at all. A dry run that fails partway through your library returns the plan it had built up to that point rather than the whole one, so treat a failed rehearsal's plan as a partial picture. Every entry in that plan says what became of it: deleted, skipped, failed, or (in a dry run) merely planned. Read those rather than working it out from the total, because they are written as the work happens and cannot disagree with it.
 
-Because the prune only ever removes copies that are byte-identical to a kept survivor, no distinct artwork is ever lost. If a platform's copy is later needed again, re-running fanart sync from the local library re-pushes it from the local survivor.
+By default, the prune only ever removes copies that are byte-identical to a kept survivor, so no distinct artwork is ever lost. If a platform's copy is later needed again, re-running fanart sync from the local library re-pushes it from the local survivor.
+
+### Prune near-duplicate copies
+
+Most redundant platform backdrops are not byte-identical. When Emby or Jellyfin re-saves an image Stillwater pushed, or the same picture was pushed at two resolutions, the copies look the same but differ in their bytes, so the default prune cannot see them. Through the [API](../api/index.md), setting `perceptual` on a prune request adds a second pass that also removes copies that are the same picture, judged by perceptual hash at the "No duplicate images" rule's default similarity (90%). The rule's similarity is configurable; the prune's is fixed at that default. It is off unless you ask for it, because it is a similarity judgment rather than an exact match. The report page's buttons and counts still cover exact copies only.
+
+Unlike exact copies, near-duplicates are not interchangeable, so the prune chooses which one to keep. In order, it keeps:
+
+1. the copy that is byte-identical to one of the artist's local fanart files, since your local folder is the source of truth;
+2. otherwise the larger image (more pixels);
+3. otherwise the larger file, which at the same size usually means less compression;
+4. otherwise the copy in the lower slot.
+
+A platform copy that matches one of your local fanart files is never removed by this pass. A locked artist gets the exact pass only, and so does an artist with any locked or hand-set fanart slot: Stillwater cannot tell which copy on the server is the one you chose, so it leaves the judgment alone for that artist.
+
+Similarity is not transitive. If image A resembles B, and B resembles C, A and C can still be different pictures. The prune only removes a copy that directly matches the copy being kept, so which end of such a chain survives depends on which copy is kept: if B is kept, A and C both match it and both go; if A is kept, B goes and C, which does not match A, stays. A copy that matches nothing being kept is never removed.
+
+If any of an artist's backdrops on a server cannot be read as an image, the near-duplicate pass is skipped for that artist on that server. If the artist has no local image folder, any of its local fanart files cannot be read, or its folder holds no fanart at all (which is what a disconnected drive looks like), it is skipped for that artist on every server. Each skip is reported as a failure, and the exact pass still runs. Nothing is deleted on a judgment made with an image it could not see.
+
+Two limits to know before you opt in. The perceptual hash looks only at brightness, not color, so a color image and a grayscale or sepia version of it count as the same picture: the prune keeps the larger one and removes the other from the server, unless the smaller one matches one of your local fanart files, in which case the smaller one is kept. And a near-duplicate prune only stays in effect if your local folder does not itself hold near-duplicates of the same picture; otherwise the background sync sees a local image missing from the server and pushes it back. Clean the local folder first with the "No duplicate images" rule in the [rules catalog](../reference/rules-catalogue.md).
+
+Rehearse it first. A dry run with `perceptual` set lists every planned deletion with the slot that would be kept and a `tier` of `exact` or `perceptual`, so you can see which deletions rest on a similarity judgment before anything is removed. The slots in the plan are the ones the dry run saw. The kept copy can sit in a higher slot than the copies being removed, and the media server renumbers slots after every delete, so the prune tracks where the kept copy moves to as it works.
 
 A prune stays in effect across Stillwater's background reconciliation pass. That pass only re-pushes an artist's fanart when the platform is missing one of the artist's *distinct* local images, so a platform reduced to one copy of each image is left alone even when the artist's local folder still holds identical copies of its own. A platform that is genuinely missing one of your local images is still repaired, including after an interrupted Jellyfin push. The one exception is an interrupted push that had already sent every distinct image and was missing only an identical copy: that looks exactly like a prune, so the background pass leaves it alone, and your next fanart push restores the copy. A fanart push you trigger yourself, such as a reorder or delete on the Backdrops tab, still sends the whole local set, identical copies included. To stop a pruned copy coming back that way, remove the local copy too (the "No byte-identical images" rule in the [rules catalog](../reference/rules-catalogue.md) does this).
 

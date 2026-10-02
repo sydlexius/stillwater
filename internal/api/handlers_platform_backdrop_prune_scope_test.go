@@ -107,13 +107,15 @@ func TestDecodePlatformPruneRequest_FormCarriesTheArtistScope(t *testing.T) {
 		name, body     string
 		wantArtistID   string
 		wantAllArtists bool
+		wantPerceptual bool
 	}{
-		{"the per-row button", "artist_id=a1", "a1", false},
-		{"the library button", "all_artists=true", "", true},
+		{"the per-row button", "artist_id=a1", "a1", false, false},
+		{"the library button", "all_artists=true", "", true, false},
+		{"the perceptual tier", "artist_id=a1&perceptual=true", "a1", false, true},
 		// An id containing reserved characters must survive form decoding
 		// intact: a mangled id names a DIFFERENT artist, and the prune would
 		// then delete from the wrong one or refuse silently.
-		{"an id needing escaping", "artist_id=a%2Bb+c", "a+b c", false},
+		{"an id needing escaping", "artist_id=a%2Bb+c", "a+b c", false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -133,6 +135,13 @@ func TestDecodePlatformPruneRequest_FormCarriesTheArtistScope(t *testing.T) {
 			}
 			if got.AllArtists != tc.wantAllArtists {
 				t.Errorf("AllArtists = %v, want %v", got.AllArtists, tc.wantAllArtists)
+			}
+			if got.Perceptual != tc.wantPerceptual {
+				t.Errorf("Perceptual = %v, want %v", got.Perceptual, tc.wantPerceptual)
+			}
+			// And it must survive the hand-off to the publisher.
+			if s := got.scope(); s.Perceptual != tc.wantPerceptual || s.ArtistID != tc.wantArtistID || s.AllArtists != tc.wantAllArtists {
+				t.Errorf("scope() = %+v, lost a field from %+v", s, got)
 			}
 		})
 	}
@@ -169,6 +178,14 @@ func TestPlatformBackdropDuplicatesPrune_RejectsAMalformedFormBoolean(t *testing
 		// delete. A valid all_artists alongside it means only the strict
 		// dry_run parse can produce this 400.
 		{"all_artists=true&dry_run=maybe", "invalid boolean for dry_run"},
+		// A malformed perceptual must not silently read as false either: the
+		// operator asked for a different run than the one that would happen.
+		{"all_artists=true&perceptual=maybe", "invalid boolean for perceptual"},
+		// PRESENT BUT EMPTY is not absent (#3328 review): each must 400, never
+		// fall back to the default, which for dry_run means a real delete.
+		{"all_artists=true&perceptual=", "invalid boolean for perceptual"},
+		{"all_artists=true&dry_run=", "invalid boolean for dry_run"},
+		{"artist_id=a1&all_artists=", "invalid boolean for all_artists"},
 	} {
 		t.Run(tc.body, func(t *testing.T) {
 			t.Parallel()
@@ -322,6 +339,11 @@ func TestPlatformBackdropDuplicatesPrune_FormEncodingConformsToTheSpec(t *testin
 	}{
 		{"form-encoded, as the report page posts", "application/x-www-form-urlencoded", "all_artists=true"},
 		{"json, as the API posts", "application/json", `{"all_artists": true}`},
+		// The perceptual flag (#3138) is accepted in BOTH encodings. (The
+		// schema admits undeclared properties, so this proves acceptance, not
+		// that the property is declared.)
+		{"form-encoded with the perceptual tier", "application/x-www-form-urlencoded", "all_artists=true&perceptual=true&dry_run=true"},
+		{"json with the perceptual tier", "application/json", `{"all_artists": true, "perceptual": true, "dry_run": true}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

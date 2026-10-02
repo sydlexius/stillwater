@@ -210,6 +210,21 @@ type platformPruneRequest struct {
 	// DryRun returns the plan (which index survives each group) without
 	// deleting anything.
 	DryRun bool `json:"dry_run"`
+	// Perceptual adds the perceptual tier (#3138). Off unless set.
+	Perceptual bool `json:"perceptual"`
+}
+
+// scope converts the request into the publisher's scope. One function so a
+// field added to the request cannot be decoded and then silently dropped on the
+// way to the publisher (the perceptual tier, #3138, is opt-in: losing it would
+// quietly run exact-only).
+func (b platformPruneRequest) scope() publish.PlatformBackdropPruneScope {
+	return publish.PlatformBackdropPruneScope{
+		ArtistID:   b.ArtistID,
+		AllArtists: b.AllArtists,
+		DryRun:     b.DryRun,
+		Perceptual: b.Perceptual,
+	}
 }
 
 // decodePlatformPruneRequest reads the scope from either encoding the two
@@ -272,11 +287,16 @@ func decodePlatformPruneRequest(w http.ResponseWriter, req *http.Request, logger
 		}{
 			{"all_artists", &body.AllArtists},
 			{"dry_run", &body.DryRun},
+			{"perceptual", &body.Perceptual},
 		} {
-			raw := req.PostFormValue(f.name)
-			if raw == "" {
+			// Only an ABSENT key takes the default. PostFormValue reads a
+			// present-but-empty `dry_run=` as "" too, which would quietly turn
+			// a rehearsal into a real delete; so presence is checked on the
+			// parsed form and an empty value goes to the strict parse (400).
+			if _, present := req.PostForm[f.name]; !present {
 				continue
 			}
+			raw := req.PostForm.Get(f.name)
 			v, err := strconv.ParseBool(raw)
 			if err != nil {
 				// The offending VALUE goes to the log, never to the response:
@@ -361,11 +381,7 @@ func (r *Router) handlePlatformBackdropDuplicatesPrune(w http.ResponseWriter, re
 	if !ok {
 		return
 	}
-	scope := publish.PlatformBackdropPruneScope{
-		ArtistID:   body.ArtistID,
-		AllArtists: body.AllArtists,
-		DryRun:     body.DryRun,
-	}
+	scope := body.scope()
 	// Reject an unscoped or contradictory request HERE with a 400, before the
 	// singleton is claimed. The publisher validates the same scope again and
 	// that second check is the load-bearing one -- it holds for every caller,
@@ -548,6 +564,7 @@ func platformPruneResponse(result publish.PlatformBackdropPruneResult) map[strin
 			"connection_id": e.ConnectionID,
 			"index":         e.Index,
 			"survivor":      e.Survivor,
+			"tier":          e.Tier,
 			"outcome":       e.Outcome,
 		})
 	}
