@@ -277,3 +277,5 @@ ignore:
   # binary; scripts/pre-push-gate.sh excludes the same directory from
   # patch coverage so this keeps gate and codecov aligned.
   - "scripts/**"
+  # README and docs are not code.
+  - "**/*.md"
