@@ -162,22 +162,68 @@ func newRegistryRepairFixture(t *testing.T) *registryRepairFixture {
 	}
 }
 
-// postRepair drives the handler directly with an admin context and decodes the
-// report.
-func postRepair(t *testing.T, r *Router, body string) (int, registryRepairReport, string) {
+// startRepair POSTs to the handler as an admin and returns the raw recorder.
+func startRepair(t *testing.T, r *Router, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost,
 		"/api/v1/reports/registry-repair/remediate", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	r.handleRegistryRepairRemediate(w, req)
+	return w
+}
 
-	var report registryRepairReport
-	if w.Code == http.StatusOK {
-		if err := json.Unmarshal(w.Body.Bytes(), &report); err != nil {
-			t.Fatalf("decoding report: %v; body: %s", err, w.Body.String())
+func getRepairStatus(t *testing.T, r *Router) registryRepairStatus {
+	t.Helper()
+	req := httptest.NewRequestWithContext(adminContext(), http.MethodGet,
+		"/api/v1/reports/registry-repair/status", nil)
+	w := httptest.NewRecorder()
+	r.handleRegistryRepairStatus(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status endpoint = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	// A zero time must be omitted, never emitted as year 1 (idle and running
+	// bodies have no completed_at; idle has no started_at either).
+	if strings.Contains(w.Body.String(), "0001-01-01") {
+		t.Fatalf("status body carries a zero time: %s", w.Body.String())
+	}
+	var st registryRepairStatus
+	if err := json.Unmarshal(w.Body.Bytes(), &st); err != nil {
+		t.Fatalf("decoding status: %v; body: %s", err, w.Body.String())
+	}
+	return st
+}
+
+func waitRepairDone(t *testing.T, r *Router) registryRepairStatus {
+	t.Helper()
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if st := getRepairStatus(t, r); !st.Running {
+			return st
 		}
 	}
-	return w.Code, report, w.Body.String()
+	t.Fatal("registry repair did not finish within 30s")
+	return registryRepairStatus{}
+}
+
+// postRepair starts a run, waits, and maps the terminal status back onto the
+// codes the old synchronous endpoint returned (200 report, 503
+// library_unreachable, 500 other) so the report-content tests are unchanged.
+// A non-202 start response (400, 403, 409, 500) is returned as is.
+func postRepair(t *testing.T, r *Router, body string) (int, registryRepairReport, string) {
+	t.Helper()
+	w := startRepair(t, r, body)
+	if w.Code != http.StatusAccepted {
+		return w.Code, registryRepairReport{}, w.Body.String()
+	}
+	st := waitRepairDone(t, r)
+	raw, _ := json.Marshal(st)
+	switch {
+	case st.Status == "completed" && st.Report != nil:
+		return http.StatusOK, *st.Report, string(raw)
+	case st.ErrorCode == "library_unreachable":
+		return http.StatusServiceUnavailable, registryRepairReport{}, string(raw)
+	default:
+		return http.StatusInternalServerError, registryRepairReport{}, string(raw)
+	}
 }
 
 // snapshotArtistImages renders EVERY column of EVERY artist_images row, sorted.
@@ -707,7 +753,7 @@ func TestRegistryRepair_ConcurrentPostsSerialize(t *testing.T) {
 	ok, conflict := 0, 0
 	for _, c := range codes {
 		switch c {
-		case http.StatusOK:
+		case http.StatusAccepted:
 			ok++
 		case http.StatusConflict:
 			conflict++
@@ -722,6 +768,8 @@ func TestRegistryRepair_ConcurrentPostsSerialize(t *testing.T) {
 	if ok+conflict != 2 || ok == 0 {
 		t.Errorf("concurrent posts = %d ok, %d conflict; want at least one ok and no other status", ok, conflict)
 	}
+	// Let the detached job finish before the test's temp dirs are reaped.
+	waitRepairDone(t, f.router)
 }
 
 // TestRegistryRepair_MalformedBodyRejected: the body is decoded strictly
@@ -837,149 +885,236 @@ func TestRegistryRepair_SlotReleasedAfterRun(t *testing.T) {
 	}
 }
 
-// deadlineRecorder is a ResponseWriter that satisfies the interface
-// http.NewResponseController looks for, and records every SetWriteDeadline
-// call. httptest.ResponseRecorder alone does NOT implement SetWriteDeadline,
-// so a controller built over a bare recorder reports ErrNotSupported and the
-// handler's call would be unobservable -- the guard below would pass whether
-// or not the deadline was ever lifted.
-type deadlineRecorder struct {
-	*httptest.ResponseRecorder
-	deadlines []time.Time
-	// db, when set, is sampled at each SetWriteDeadline call so a test can
-	// assert WHEN the deadline was set relative to the passes' writes. Asserting
-	// only THAT it was set lets a regression move the call after both passes --
-	// which is the original bug's shape, a deadline dealt with too late to
-	// matter.
-	db        *sql.DB
-	rowsAtSet []int
+// --- async job (#2678) --------------------------------------------------------
+
+// POST returns 202 with a running status (snapshotted under the claim lock) and
+// no report.
+func TestRegistryRepairAsync_StartReturns202WithRunningStatus(t *testing.T) {
+	t.Parallel()
+	f := newRegistryRepairFixture(t)
+
+	w := startRepair(t, f.router, `{"commit":true}`)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("start status = %d, want 202; body: %s", w.Code, w.Body.String())
+	}
+	var st registryRepairStatus
+	if err := json.Unmarshal(w.Body.Bytes(), &st); err != nil {
+		t.Fatalf("decoding start body: %v", err)
+	}
+	if !st.Running || st.Status != "running" || st.Report != nil {
+		t.Errorf("start body = %+v, want running with no report", st)
+	}
+	waitRepairDone(t, f.router)
 }
 
-func (d *deadlineRecorder) SetWriteDeadline(t time.Time) error {
-	d.deadlines = append(d.deadlines, t)
-	if d.db != nil {
-		var n int
-		if err := d.db.QueryRow(`SELECT COUNT(*) FROM artist_images`).Scan(&n); err == nil {
-			d.rowsAtSet = append(d.rowsAtSet, n)
+func TestRegistryRepairAsync_StatusIdleBeforeAnyRun(t *testing.T) {
+	t.Parallel()
+	f := newRegistryRepairFixture(t)
+	if st := getRepairStatus(t, f.router); st.Running || st.Status != "idle" {
+		t.Errorf("status = %+v, want idle", st)
+	}
+}
+
+// Full lifecycle through the real goroutine: completed with the report, commit
+// carried through, and the write really landed.
+func TestRegistryRepairAsync_StatusRunningThenCompleted(t *testing.T) {
+	t.Parallel()
+	f := newRegistryRepairFixture(t)
+
+	if w := startRepair(t, f.router, `{"commit":true}`); w.Code != http.StatusAccepted {
+		t.Fatalf("start status = %d; body: %s", w.Code, w.Body.String())
+	}
+	st := waitRepairDone(t, f.router)
+	if st.Status != "completed" || st.Report == nil {
+		t.Fatalf("terminal status = %q error=%q, want completed with a report", st.Status, st.Error)
+	}
+	if !st.Commit || st.DryRun || !st.Report.Commit || st.Report.DryRun {
+		t.Errorf("commit flag not carried through: %+v", st)
+	}
+	if st.Report.Rebuilt < 1 || st.Report.Restored < 1 || st.CompletedAt.IsZero() {
+		t.Errorf("report rebuilt=%d restored=%d completed_at=%v", st.Report.Rebuilt, st.Report.Restored, st.CompletedAt)
+	}
+	if _, found := slot0Flag(t, f.db, f.presentID, "thumb"); !found {
+		t.Error("commit run did not write the rebuilt row")
+	}
+}
+
+// The preview mode is echoed on status and report, and nothing is written.
+func TestRegistryRepairAsync_DryRunFlagCarriedAndNothingWritten(t *testing.T) {
+	t.Parallel()
+	f := newRegistryRepairFixture(t)
+	before := snapshotArtistImages(t, f.db)
+
+	if w := startRepair(t, f.router, `{"commit":false}`); w.Code != http.StatusAccepted {
+		t.Fatalf("start status = %d; body: %s", w.Code, w.Body.String())
+	}
+	st := waitRepairDone(t, f.router)
+	if st.Status != "completed" || st.Report == nil {
+		t.Fatalf("terminal status = %q error=%q", st.Status, st.Error)
+	}
+	if st.Commit || !st.DryRun || st.Report.Commit || !st.Report.DryRun {
+		t.Errorf("dry-run flag not carried through: %+v", st)
+	}
+	if got := snapshotArtistImages(t, f.db); strings.Join(got, "\n") != strings.Join(before, "\n") {
+		t.Error("a preview run changed artist_images")
+	}
+}
+
+// A second start is 409 while the first holds the slot, and succeeds once the
+// first publishes a terminal status.
+func TestRegistryRepairAsync_ConflictWhileRunningThenFreed(t *testing.T) {
+	t.Parallel()
+	f := newRegistryRepairFixture(t)
+
+	if _, ok := f.router.startRegistryRepair(registryRepairRequest{Commit: true}); !ok {
+		t.Fatal("first claim must succeed")
+	}
+	if w := startRepair(t, f.router, `{"commit":false}`); w.Code != http.StatusConflict {
+		t.Fatalf("second start = %d, want 409; body: %s", w.Code, w.Body.String())
+	}
+	if st := getRepairStatus(t, f.router); !st.Running || !st.Commit {
+		t.Errorf("status while claimed = %+v, want running with the first run's mode", st)
+	}
+	f.router.finishRegistryRepair(nil, "boom", "")
+	if w := startRepair(t, f.router, `{"commit":false}`); w.Code != http.StatusAccepted {
+		t.Fatalf("start after release = %d, want 202; body: %s", w.Code, w.Body.String())
+	}
+	waitRepairDone(t, f.router)
+}
+
+// A pass failure is a failed status with a message and no report, and frees the
+// slot. A canceled shutdown context is the failure used, which also pins the
+// job to that context.
+func TestRegistryRepairAsync_ErrorSurfacedInStatus(t *testing.T) {
+	t.Parallel()
+	f := newRegistryRepairFixture(t)
+	f.router.webhookShutdownCancel()
+
+	if w := startRepair(t, f.router, `{"commit":true}`); w.Code != http.StatusAccepted {
+		t.Fatalf("start status = %d; body: %s", w.Code, w.Body.String())
+	}
+	st := waitRepairDone(t, f.router)
+	if st.Status != "failed" || st.Error == "" || st.Report != nil {
+		t.Fatalf("status = %q error=%q report=%v, want failed with a message and no report", st.Status, st.Error, st.Report)
+	}
+	if w := startRepair(t, f.router, `{"commit":false}`); w.Code != http.StatusAccepted {
+		t.Errorf("slot not released after a failed run: next start = %d", w.Code)
+	}
+	waitRepairDone(t, f.router)
+}
+
+// The mount-down guard is a failed status carrying the stable error_code.
+func TestRegistryRepairAsync_LibraryUnreachableCode(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	seedRepairArtist(t, db, "66666666-0000-0000-0000-000000000001", filepath.Join(t.TempDir(), "gone"))
+	r := newRegistryRepairRouter(t, db)
+
+	if w := startRepair(t, r, `{"commit":true}`); w.Code != http.StatusAccepted {
+		t.Fatalf("start status = %d; body: %s", w.Code, w.Body.String())
+	}
+	if st := waitRepairDone(t, r); st.Status != "failed" || st.ErrorCode != "library_unreachable" {
+		t.Errorf("status = %q code=%q, want failed/library_unreachable", st.Status, st.ErrorCode)
+	}
+}
+
+// The status report enumerates library health, so it is admin-only.
+func TestRegistryRepairAsync_StatusRequiresAdmin(t *testing.T) {
+	t.Parallel()
+	f := newRegistryRepairFixture(t)
+	ctx := middleware.WithTestRole(middleware.WithTestUserID(context.Background(), "u1"), "operator")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/reports/registry-repair/status", nil)
+	w := httptest.NewRecorder()
+	f.router.handleRegistryRepairStatus(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("non-admin status read = %d, want 403", w.Code)
+	}
+}
+
+// DrainWebhooks must wait for the detached job (webhookWg), or shutdown closes
+// the DB under a run still writing. Deterministic, no sleeps: a held pooled
+// connection parks the job inside its first query, and a held registryRepairMu
+// then keeps it from publishing, so the job provably outlives the first drain.
+func TestRegistryRepairAsync_ShutdownDrainWaitsForJob(t *testing.T) {
+	t.Parallel()
+	f := newRegistryRepairFixture(t)
+	f.db.SetMaxOpenConns(1)
+	conn, err := f.db.Conn(context.Background())
+	if err != nil {
+		t.Fatalf("holding the only connection: %v", err)
+	}
+	if w := startRepair(t, f.router, `{"commit":false}`); w.Code != http.StatusAccepted {
+		t.Fatalf("start status = %d", w.Code)
+	}
+	f.router.registryRepairMu.Lock() // the job cannot publish while this is held
+	if err := conn.Close(); err != nil {
+		t.Fatalf("releasing the connection: %v", err)
+	}
+
+	short, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if err := f.router.DrainWebhooks(short); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("DrainWebhooks returned %v with the job still unpublished, want the ctx error: the job is not tracked by webhookWg", err)
+	}
+	f.router.registryRepairMu.Unlock()
+	if err := f.router.DrainWebhooks(context.Background()); err != nil {
+		t.Errorf("DrainWebhooks after the job finished = %v, want nil", err)
+	}
+}
+
+// A panic inside a pass (a nil DB here) must become a failed status and free
+// the slot, or the endpoint is 409 until restart.
+func TestRegistryRepairAsync_PanicBecomesFailedAndFreesSlot(t *testing.T) {
+	t.Parallel()
+	f := newRegistryRepairFixture(t)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	f.router.maintenanceService = maintenance.NewService(nil, "", "", logger)
+
+	if w := startRepair(t, f.router, `{"commit":true}`); w.Code != http.StatusAccepted {
+		t.Fatalf("start status = %d", w.Code)
+	}
+	st := waitRepairDone(t, f.router)
+	if st.Status != "failed" || st.Error != "registry repair failed unexpectedly" {
+		t.Fatalf("status = %q error=%q, want failed/unexpectedly", st.Status, st.Error)
+	}
+	if w := startRepair(t, f.router, `{"commit":false}`); w.Code != http.StatusAccepted {
+		t.Errorf("slot not freed after a panic: next start = %d", w.Code)
+	}
+	waitRepairDone(t, f.router)
+}
+
+// The terminal status and the slot release are ONE critical section: the
+// instant a poller reads a terminal status, a POST must already get 202. No
+// sleep in the loop, so a release published even microseconds later is caught.
+func TestRegistryRepairAsync_TerminalStatusImpliesFreeSlot(t *testing.T) {
+	t.Parallel()
+	f := newRegistryRepairFixture(t)
+	if w := startRepair(t, f.router, `{"commit":false}`); w.Code != http.StatusAccepted {
+		t.Fatalf("start status = %d", w.Code)
+	}
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
+		if st := getRepairStatus(t, f.router); !st.Running {
+			if w := startRepair(t, f.router, `{"commit":false}`); w.Code != http.StatusAccepted {
+				t.Fatalf("POST right after a terminal status = %d, want 202 (slot released in a later critical section)", w.Code)
+			}
+			waitRepairDone(t, f.router)
+			return
 		}
 	}
-	return nil
+	t.Fatal("run did not finish within 30s")
 }
 
-// TestRegistryRepair_LiftsWriteDeadline pins the fix for #2685.
-//
-// The server sets a 180s WriteTimeout, which is a deadline on the CONNECTION,
-// not a cancellation of the handler. A library-wide repair is a filesystem
-// walk over every artist directory and runs for minutes (measured at 5m23s
-// against a 1226-artist library), so without lifting the deadline the run
-// completes normally and only THEN finds it can no longer write: the operator
-// gets an empty body after every write has already been performed, and has no
-// receipt for what changed.
-//
-// The deadline must be extended to a generous FINITE value, not cleared. A zero
-// deadline means NO deadline, which removes the only bound on the final write:
-// a client that stops reading without closing its socket could then block the
-// handler forever, and because the repair slot is freed by a deferred release
-// that cannot run until the handler returns, the singleton would stay claimed
-// for the life of the process. That earlier unbounded design was rejected in
-// review; this comment is what stops a future change from restoring it.
-func TestRegistryRepair_LiftsWriteDeadline(t *testing.T) {
-	t.Parallel()
+// The work deadline ending a run is error_code "timeout", distinct from a
+// broken run. Not parallel: it shortens the package-wide work timeout.
+func TestRegistryRepairAsync_WorkDeadlineIsTimeoutCode(t *testing.T) {
 	f := newRegistryRepairFixture(t)
+	withRemediationWorkTimeout(t, time.Nanosecond)
 
-	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost,
-		"/api/v1/reports/registry-repair/remediate", strings.NewReader(`{"commit":false}`))
-	w := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
-	f.router.handleRegistryRepairRemediate(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	if w := startRepair(t, f.router, `{"commit":true}`); w.Code != http.StatusAccepted {
+		t.Fatalf("start status = %d", w.Code)
 	}
-	if len(w.deadlines) == 0 {
-		t.Fatal("handler never called SetWriteDeadline: a library-wide run will " +
-			"complete and then fail to return its report (#2685)")
-	}
-	// FINITE, and far enough out to clear a slow library. A zero deadline means
-	// NO deadline, which removes the only bound on the final write: a client
-	// that stops reading without closing its socket would block the handler
-	// forever, and the repair slot -- freed by `defer release()` -- would stay
-	// claimed for the life of the process.
-	got := w.deadlines[0]
-	if got.IsZero() {
-		t.Fatal("SetWriteDeadline(zero) removes the deadline entirely; an " +
-			"unresponsive client can then wedge the repair slot permanently")
-	}
-	if remaining := time.Until(got); remaining < 10*time.Minute {
-		t.Errorf("write deadline is %v out, want a generous finite extension: "+
-			"too short and a large library still loses its report", remaining)
-	}
-}
-
-// TestRegistryRepair_SurvivesUnsupportedDeadline: a ResponseWriter that cannot
-// carry a deadline (the bare recorder every other test here uses) must not
-// break the request. The handler logs the failure loudly -- silent-failure
-// capability guards are forbidden -- but a scoped run still completes well
-// inside the deadline, so the repair stays useful rather than becoming
-// unreachable.
-func TestRegistryRepair_SurvivesUnsupportedDeadline(t *testing.T) {
-	t.Parallel()
-	f := newRegistryRepairFixture(t)
-
-	code, _, body := postRepair(t, f.router, `{"commit":false}`)
-	if code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 when the writer cannot carry a deadline; body: %s", code, body)
-	}
-}
-
-// TestRegistryRepair_DeadlineIsSetBeforeTheWork pins the PLACEMENT of the
-// write-deadline extension, not merely its existence.
-//
-// A hostile review of the original fix proved the gap: moving the identical
-// SetWriteDeadline call to just before the final writeJSON -- after both passes
-// had run -- still satisfied a test that only asserted the call happened. That
-// is precisely the defect's own shape: a deadline dealt with too late to help
-// the slow run it exists for.
-//
-// The database is the witness. In commit mode the rebuild pass inserts rows, so
-// if the deadline is set BEFORE the passes, the row count sampled at that
-// moment still equals the pre-request count; if it is set after, the sample has
-// already grown. The final count is asserted to have grown too, so the test
-// cannot pass vacuously against a run that wrote nothing.
-func TestRegistryRepair_DeadlineIsSetBeforeTheWork(t *testing.T) {
-	t.Parallel()
-	f := newRegistryRepairFixture(t)
-
-	var before int
-	if err := f.db.QueryRow(`SELECT COUNT(*) FROM artist_images`).Scan(&before); err != nil {
-		t.Fatalf("counting rows before: %v", err)
-	}
-
-	req := httptest.NewRequestWithContext(adminContext(), http.MethodPost,
-		"/api/v1/reports/registry-repair/remediate", strings.NewReader(`{"commit":true}`))
-	w := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder(), db: f.db}
-	f.router.handleRegistryRepairRemediate(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
-	}
-	if len(w.rowsAtSet) == 0 {
-		t.Fatal("handler never called SetWriteDeadline")
-	}
-
-	var after int
-	if err := f.db.QueryRow(`SELECT COUNT(*) FROM artist_images`).Scan(&after); err != nil {
-		t.Fatalf("counting rows after: %v", err)
-	}
-	// Precondition: without this the placement assertion below is vacuous,
-	// because before == after would satisfy it no matter when the call happened.
-	if after <= before {
-		t.Fatalf("fixture wrote no rows (before=%d after=%d); the placement "+
-			"assertion would pass vacuously", before, after)
-	}
-	if w.rowsAtSet[0] != before {
-		t.Errorf("deadline was set with %d rows present, want %d (the pre-request "+
-			"count): it is being set AFTER the repair passes have already written, "+
-			"which is too late to keep a slow run's report deliverable",
-			w.rowsAtSet[0], before)
+	st := waitRepairDone(t, f.router)
+	if st.Status != "failed" || st.ErrorCode != "timeout" {
+		t.Errorf("status = %q code=%q error=%q, want failed/timeout", st.Status, st.ErrorCode, st.Error)
 	}
 }

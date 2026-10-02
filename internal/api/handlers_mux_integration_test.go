@@ -289,3 +289,19 @@ func TestRegistryRepairRoute_IsRegistered(t *testing.T) {
 			w.Code, w.Body.String())
 	}
 }
+
+// TestRegistryRepairStatusRoute_IsRegistered pins the status route (#2678) onto
+// the mux; handler-level tests bypass routing. See the POST variant above.
+func TestRegistryRepairStatusRoute_IsRegistered(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouter(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/registry-repair/status", nil)
+	req.Header.Set("Authorization", "Bearer "+auth.APITokenPrefix+"definitely-not-a-real-token")
+	w := httptest.NewRecorder()
+	r.Handler(ctx).ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401 (a 404 means the route is not registered)", w.Code)
+	}
+}

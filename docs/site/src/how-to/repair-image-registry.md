@@ -44,6 +44,19 @@ curl -X POST https://<your-stillwater>/api/v1/reports/registry-repair/remediate 
 Both forms require authentication, and the request is subject to the same protections as every other
 state-changing call. Omitting `commit` previews.
 
+The repair runs in the background because it can take several minutes on a large library. The
+request returns `202 Accepted` at once; read the outcome from the status endpoint, repeating until
+`running` is `false`:
+
+```bash
+curl https://<your-stillwater>/api/v1/reports/registry-repair/status
+```
+
+The status reads `idle`, `running`, `completed` (the report below is under `report`) or `failed`
+(`error` says why). The status is kept in memory only. Restarting or shutting down Stillwater
+mid-run cancels the run, and afterwards the status reads `idle`, so a run that reads `idle` when you
+expected a result may have been cut off. Re-run it; the repair is safe to repeat.
+
 The operation is safe to repeat. Running it twice in a row leaves the second run with nothing to do.
 
 ### Repair a Single Artist
@@ -58,7 +71,8 @@ curl -X POST https://<your-stillwater>/api/v1/reports/registry-repair/remediate 
 
 ## Reading the Report
 
-The response summarizes the run, then repeats each pass's own detail underneath.
+The `report` field of a `completed` status summarizes the run, then repeats each pass's own detail
+underneath.
 
 | Field | Meaning |
 |---|---|
@@ -102,16 +116,19 @@ not restore files.
 
 | Status | Meaning |
 |---|---|
-| 200 | The run completed. Check `write_failures` -- a 200 with failures means incomplete, not clean |
+| 202 | The run started. Poll the status endpoint for the result |
 | 409 | A repair is already running. Wait for it to finish |
-| 503 | The library is not reachable. Usually a mount that is down; nothing was changed |
-| 500 | The run failed. Nothing partial is left behind that a re-run will not correct |
 
-A repair that is interrupted -- for example by disconnecting mid-run -- is reported as a failure
-rather than being silently recorded as a large number of individual write errors.
+The status endpoint is always `200`. A `completed` status with a non-zero `report.write_failures`
+means incomplete, not clean. A `failed` status with `error_code` `library_unreachable` means the
+library is not reachable, usually a mount that is down; nothing was changed.
+
+A repair that is interrupted by Stillwater shutting down mid-run is simply cut off, and the status
+reads `idle` after the restart; re-run it. A run that exceeds the 30-minute work limit reads `failed`
+with `error_code` `timeout`.
 
 ## Confirming the Result
 
 Compare the report against the files themselves rather than against the counts alone. After a commit
-run, the artwork that was present on disk should now appear in Stillwater, and a second preview
+run completes, the artwork that was present on disk should now appear in Stillwater, and a second preview
 should report nothing left to do.

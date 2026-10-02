@@ -293,8 +293,8 @@ func readDirCtx(ctx context.Context, dir string) ([]os.DirEntry, error) {
 // the least likely of the three to stall for long -- but on a hard-mounted
 // export that has stopped answering it hangs exactly as completely as a read,
 // and one of these sits on the registry-repair RESTORE path (see
-// confirmSlotOnDisk), which is inside a singleton-holding handler. Wrapping it
-// is what keeps that handler's deadline honest.
+// confirmSlotOnDisk), which runs inside the singleton-holding registry-repair job. Wrapping it
+// is what keeps that job's deadline honest.
 func statCtx(ctx context.Context, path string) (os.FileInfo, error) {
 	return runCancellable(ctx, func() (os.FileInfo, error) {
 		return os.Stat(path)

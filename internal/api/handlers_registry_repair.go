@@ -50,7 +50,15 @@
 // Route (admin-only via requireForeignAdmin; snake_case JSON):
 //
 //	POST {basePath}/api/v1/reports/registry-repair/remediate
-//	     {commit?, artist_id?}
+//	     {commit?, artist_id?}      -> 202 + status, or 409 if one is running
+//	GET  {basePath}/api/v1/reports/registry-repair/status
+//	                                -> {running, status, report?, error?}
+//
+// ASYNC (#2678). The run is a filesystem walk plus a full pixel decode per
+// candidate file and takes minutes on a large library, so POST starts it in a
+// goroutine and returns 202 immediately; the operator polls the status route.
+// The job's context is detached from the request and bound to the router's
+// shutdown context instead, so it survives the 202 but is canceled on shutdown.
 //
 // COMMIT IS AFFIRMATIVE, not dry_run. A Go bool zero-values to false, so a
 // `dry_run` field would mean a request that omitted it WRITES. `commit` means
@@ -77,23 +85,11 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/maintenance"
 )
-
-// registryRepairWriteTimeout is the write deadline this route substitutes for
-// the server's 180s default (internal/server/listeners.go), which a
-// library-wide repair blows through: 5m23s measured against a 1226-artist
-// library on a network mount.
-//
-// Finite ON PURPOSE. It has to clear the slowest legitimate run on a library
-// far larger than the one measured, while still guaranteeing the handler
-// returns -- and therefore that `defer release()` frees the repair slot -- even
-// against a client that stops reading without closing its socket. No deadline
-// at all would let such a client wedge the endpoint for the life of the
-// process. 30 minutes is ~5x the measured worst case.
-const registryRepairWriteTimeout = 30 * time.Minute
 
 // registryRepairRequest is the POST body for the repair endpoint. Both fields
 // are optional: the zero value is a library-wide PREVIEW.
@@ -176,47 +172,66 @@ type registryRepairReport struct {
 	Restore *maintenance.ExistsFlagRestoreResult `json:"restore"`
 }
 
-// claimRegistryRepairSlot atomically claims the registry-repair singleton or
-// writes a 409 and returns ok=false. On success it returns a release func the
-// caller MUST defer. See this file's package comment for why the flag is
-// dedicated rather than shared with the destructive-fanart singleton.
-func (r *Router) claimRegistryRepairSlot(w http.ResponseWriter) (release func(), ok bool) {
-	r.registryRepairMu.Lock()
-	if r.registryRepairRunning {
-		r.registryRepairMu.Unlock()
-		writeJSON(w, http.StatusConflict, map[string]any{
-			"status":  "running",
-			"message": "an image registry repair is already in progress",
-		})
-		return nil, false
-	}
-	r.registryRepairRunning = true
-	r.registryRepairMu.Unlock()
-	return func() {
-		r.registryRepairMu.Lock()
-		r.registryRepairRunning = false
-		r.registryRepairMu.Unlock()
-	}, true
+// registryRepairStatus is the polled state of the async job (#2678). The shape
+// matches the run-all-rules status that pollAsyncStatus consumers read
+// (running + status of idle|running|completed|failed); the operator report sits
+// whole under report once completed.
+type registryRepairStatus struct {
+	Running     bool                  `json:"running"`
+	Status      string                `json:"status"`
+	Commit      bool                  `json:"commit"`
+	DryRun      bool                  `json:"dry_run"`
+	ArtistID    string                `json:"artist_id,omitempty"`
+	StartedAt   time.Time             `json:"started_at,omitzero"`
+	CompletedAt time.Time             `json:"completed_at,omitzero"`
+	Error       string                `json:"error,omitempty"`
+	ErrorCode   string                `json:"error_code,omitempty"` // "library_unreachable" (the old 503) or "timeout"
+	Report      *registryRepairReport `json:"report,omitempty"`
 }
 
-// handleRegistryRepairRemediate runs the rebuild and restore passes and
-// reports the combined result. POST
-// {basePath}/api/v1/reports/registry-repair/remediate. Admin-gated; singleton;
-// previews unless commit is true.
-//
-// Synchronous by design, matching the phash/backdrop remediation precedent:
-// the singleton flag, not a progress feed, is what keeps two runs apart. Both
-// passes are bounded per-artist-directory work.
+// startRegistryRepair claims the singleton and publishes a "running" status,
+// or returns ok=false when a run is already in flight.
+func (r *Router) startRegistryRepair(body registryRepairRequest) (registryRepairStatus, bool) {
+	r.registryRepairMu.Lock()
+	defer r.registryRepairMu.Unlock()
+	if r.registryRepairRunning {
+		return registryRepairStatus{}, false
+	}
+	r.registryRepairRunning = true
+	r.registryRepair = &registryRepairStatus{
+		Running: true, Status: "running", Commit: body.Commit, DryRun: !body.Commit,
+		ArtistID: body.ArtistID, StartedAt: time.Now().UTC(),
+	}
+	return *r.registryRepair, true
+}
+
+// finishRegistryRepair publishes the terminal status and frees the singleton in
+// one critical section, so a poller that reads "completed" can start the next
+// run immediately.
+func (r *Router) finishRegistryRepair(report *registryRepairReport, errMsg, errCode string) {
+	r.registryRepairMu.Lock()
+	defer r.registryRepairMu.Unlock()
+	st := r.registryRepair
+	st.Running = false
+	st.CompletedAt = time.Now().UTC()
+	st.Status, st.Report = "completed", report
+	if errMsg != "" {
+		st.Status, st.Error, st.ErrorCode = "failed", errMsg, errCode
+	}
+	r.registryRepairRunning = false
+}
+
+// handleRegistryRepairRemediate starts an async image registry repair. POST
+// {basePath}/api/v1/reports/registry-repair/remediate. Admin-gated; singleton
+// (409 while one runs); previews unless commit is true. Returns 202 with the
+// initial status; the run is minutes long, so poll .../registry-repair/status.
 func (r *Router) handleRegistryRepairRemediate(w http.ResponseWriter, req *http.Request) {
 	if !r.requireForeignAdmin(w, req) {
 		return
 	}
 	if r.maintenanceService == nil {
 		// Fail loud: the production router always wires this. A miss is a
-		// wiring bug, never a silent no-op that reports a clean zero-count
-		// repair -- this repo forbids silent-failure capability guards, and a
-		// repair endpoint reporting success while doing nothing is precisely
-		// the failure class the feature exists to eliminate.
+		// wiring bug, never a silent no-op reporting a clean zero-count repair.
 		r.logger.Error("maintenance service not wired; registry repair unavailable")
 		http.Error(w, "registry repair unavailable", http.StatusInternalServerError)
 		return
@@ -225,135 +240,83 @@ func (r *Router) handleRegistryRepairRemediate(w http.ResponseWriter, req *http.
 	var body registryRepairRequest
 	// decodePHashBody is the package's strict single-object JSON decoder
 	// (DisallowUnknownFields, trailing-token rejection, 1 MiB cap, empty body
-	// allowed so the zero value applies). Reused rather than duplicated; it is
-	// not phash-specific beyond its name.
+	// allowed so the zero value applies).
 	if !decodePHashBody(w, req, &body) {
 		return
 	}
 
-	release, ok := r.claimRegistryRepairSlot(w)
+	status, ok := r.startRegistryRepair(body)
 	if !ok {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"status":  "running",
+			"message": "an image registry repair is already in progress",
+		})
 		return
 	}
-	defer release()
 
-	// EXTEND this response's write deadline, before either pass runs. The server
-	// sets a 180s WriteTimeout (internal/server/listeners.go) sized for ordinary
-	// requests, but a library-wide repair is a filesystem walk over every artist
-	// directory and runs for MINUTES: measured at 5m23s against a 1226-artist
-	// library on a network mount. WriteTimeout is a deadline on the CONNECTION,
-	// not a cancellation of the handler, so without this the run completes
-	// normally and only THEN discovers it can no longer write: the operator
-	// receives an empty body while every write has already been performed,
-	// leaving them no receipt for what changed. Extending it for this route only
-	// keeps the 180s default protecting every other endpoint.
-	//
-	// EXTENDED, NOT CLEARED, and this is load-bearing. A zero deadline means NO
-	// deadline, which removes the only bound on the final response write. A
-	// client that stops reading WITHOUT closing the socket (a hung proxy, a
-	// network partition that drops packets without a RST) would then block the
-	// final Write forever -- and because the slot is released by `defer
-	// release()`, which cannot run until this handler returns, the repair
-	// singleton would stay claimed for the life of the process and every later
-	// repair would 409. Reproduced against a real TCP client during review.
-	//
-	// The write deadline remains the ONLY bound on the final response write --
-	// that is its job, and #2689 does not change it. What #2689 DID change is
-	// the other half: the work itself is now bounded too (see the
-	// context.WithTimeout below), and RestoreExistsFlags' preview scan now
-	// honors cancellation on every on-disk probe rather than only in the
-	// commit-only UPDATE loop a preview never reaches. So a `{"commit":false}`
-	// request no longer depends on this deadline alone to end a wedged run.
-	//
-	// The value is sized to be generous against a much larger library than the
-	// one measured while still guaranteeing the slot is eventually released.
-	if err := http.NewResponseController(w).
-		SetWriteDeadline(time.Now().Add(registryRepairWriteTimeout)); err != nil {
-		// Fail loud rather than silently proceeding into a run whose report
-		// cannot be delivered. Not fatal -- a short scoped run still completes
-		// well inside the default deadline, so the repair remains useful -- but
-		// a library-wide run is now known to be at risk, and this repo forbids
-		// silent-failure capability guards.
-		r.logger.Error("could not extend write deadline for registry repair; "+
-			"a long run may complete but fail to return its report",
-			slog.Any("error", err))
-	}
+	// Detached from the request (which returns at 202) but bounded: the parent
+	// is webhookShutdownCtx, canceled by DrainWebhooks on shutdown, and
+	// webhookWg makes that drain wait for the run before the DB closes. The
+	// timeout is the same upper bound the other remediation handlers use (#2689).
+	r.webhookWg.Add(1)
+	go func() {
+		defer r.webhookWg.Done()
+		ctx, cancel := context.WithTimeout(r.webhookShutdownCtx, remediationWorkTimeout)
+		defer cancel()
+		report, msg, code := r.runRegistryRepair(ctx, body)
+		r.finishRegistryRepair(report, msg, code)
+	}()
 
-	// BOUND THE WORK, not just the response write (#2689). The deadline above
-	// is on the CONNECTION: it ends a write that cannot land, and it does
-	// nothing at all for a pass wedged inside a filesystem read, because no
-	// write has been attempted yet when the hang begins. Now that the image
-	// I/O honors a context, a real work deadline finally has teeth -- and it
-	// is what guarantees `defer release()` runs, which is what keeps this
-	// endpoint from 409ing for the life of the process.
-	//
-	// Derived from req.Context() rather than context.Background() so a client
-	// disconnect still cancels the run; the timeout only adds an upper bound
-	// the request context does not supply.
-	//
-	// remediationWorkTimeout is shared with the other singleton-holding
-	// remediation handlers and matches this route's write deadline, because
-	// all of them answer the same question ("how long may the slowest
-	// legitimate library-wide run take"). Independently-tuned numbers would
-	// drift into a state where the response deadline fires first and the work
-	// keeps running unobserved.
-	ctx, cancel := context.WithTimeout(req.Context(), remediationWorkTimeout)
-	defer cancel()
+	writeJSON(w, http.StatusAccepted, &status)
+}
 
-	// Pass 1: REBUILD. Insert rows for files on disk that the registry has
-	// forgotten. Runs first for the reasons in the package comment; the two
-	// passes are disjoint, so the result does not depend on it.
+// runRegistryRepair runs both passes and returns the report, or a failure
+// message and code. A panic becomes a failure so the singleton is always freed.
+func (r *Router) runRegistryRepair(ctx context.Context, body registryRepairRequest) (report *registryRepairReport, errMsg, errCode string) {
+	defer func() {
+		if rv := recover(); rv != nil {
+			r.logger.Error("panic in registry repair", "recover", rv, "stack", string(debug.Stack()))
+			report, errMsg, errCode = nil, "registry repair failed unexpectedly", ""
+		}
+	}()
+
+	// Pass 1: REBUILD, then pass 2: RESTORE (order rationale: package comment).
 	rebuild, err := r.maintenanceService.RepairImageRegistry(ctx, maintenance.ImageRepairOpts{
 		Commit:   body.Commit,
 		ArtistID: body.ArtistID,
 	})
 	if err != nil {
 		if errors.Is(err, maintenance.ErrLibraryUnreachable) {
-			// The mount-down guard fired: not one artist directory was
-			// readable across the whole library. Nothing was written. This is
-			// an environment fault the operator can fix, not a server bug, so
-			// it gets its own status and a message that says what to check.
+			// The mount-down guard fired: no artist directory was readable.
+			// Nothing was written; the operator can fix this.
 			r.logger.Error("registry repair: library not visible", slog.String("error", err.Error()))
-			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-				"status":  "library_unreachable",
-				"message": "no artist directory was readable across the whole library; check that the media mount is up. Nothing was changed.",
-			})
-			return
+			return nil, "no artist directory was readable across the whole library; check that the media mount is up. Nothing was changed.", "library_unreachable"
 		}
 		r.logger.Error("registry repair: rebuild pass failed", slog.String("error", err.Error()))
-		http.Error(w, "registry repair failed", http.StatusInternalServerError)
-		return
+		return nil, "registry repair failed", failureCode(err)
 	}
 
-	// Pass 2: RESTORE. Flip exists_flag back for rows that already existed with
-	// the flag cleared and whose file is confirmed present. Not the rows pass 1
-	// inserted -- those are inserted already flagged present.
 	restore, err := r.maintenanceService.RestoreExistsFlags(ctx, maintenance.ExistsFlagRestoreOpts{
 		Commit:   body.Commit,
 		ArtistID: body.ArtistID,
 	})
 	if err != nil {
-		// The rebuild pass may already have written rows. Say the repair
-		// failed rather than reporting a partial result as a success: a
-		// half-run repair reported as complete is what stops an operator from
-		// re-running it. The repair is idempotent, so a re-run is safe.
+		// Rebuild may already have written rows: report failure, not a partial
+		// success. The repair is idempotent, so a re-run is safe.
 		r.logger.Error("registry repair: restore pass failed", slog.String("error", err.Error()))
-		http.Error(w, "registry repair failed", http.StatusInternalServerError)
-		return
+		return nil, "registry repair failed", failureCode(err)
 	}
 
 	failures := writeFailures(body.Commit, rebuild, restore)
 	if failures > 0 {
-		// Error, not Warn: the run completed but the repair did NOT. The
-		// response is still 200 (the report body is the actionable artifact
-		// and a non-2xx invites clients and proxies to discard it), so this
-		// log line is what keeps the partial failure from being silent.
+		// Error, not Warn: the run completed but the repair did NOT, so this
+		// log line keeps the partial failure from being silent.
 		r.logger.Error("registry repair completed with write failures; the repair is INCOMPLETE and should be re-run",
 			slog.String("op_id", rebuild.OpID),
 			slog.Int("write_failures", failures))
 	}
 
-	writeJSON(w, http.StatusOK, registryRepairReport{
+	return &registryRepairReport{
 		OpID:     rebuild.OpID,
 		Commit:   body.Commit,
 		DryRun:   !body.Commit,
@@ -375,7 +338,34 @@ func (r *Router) handleRegistryRepairRemediate(w http.ResponseWriter, req *http.
 		WriteFailures:    failures,
 		Rebuild:          rebuild,
 		Restore:          restore,
-	})
+	}, "", ""
+}
+
+// failureCode maps a pass error to the status error_code: "timeout" when the
+// work deadline (remediationWorkTimeout) ended the run, so an operator can tell
+// a too-slow library from a broken one. Shutdown cancellation stays uncoded.
+func failureCode(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	return ""
+}
+
+// handleRegistryRepairStatus reports the current or last run. GET
+// {basePath}/api/v1/reports/registry-repair/status. Admin-gated like the POST
+// (the report enumerates library health). Always 200: a failed run is a status
+// value, so pollAsyncStatus keeps reading it.
+func (r *Router) handleRegistryRepairStatus(w http.ResponseWriter, req *http.Request) {
+	if !r.requireForeignAdmin(w, req) {
+		return
+	}
+	r.registryRepairMu.Lock()
+	status := registryRepairStatus{Status: "idle", DryRun: true}
+	if r.registryRepair != nil {
+		status = *r.registryRepair // value copy; Report is immutable once set
+	}
+	r.registryRepairMu.Unlock()
+	writeJSON(w, http.StatusOK, &status)
 }
 
 // writeFailures totals the writes this run attempted and could not complete.
