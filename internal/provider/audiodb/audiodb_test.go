@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -816,14 +817,26 @@ func TestFreeKeyRequestLogDoesNotLeakAPIKey(t *testing.T) {
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
 	useLoopbackTestClient(a)
 
-	_, err := a.SearchArtist(context.Background(), "Radiohead")
+	// The free key is the short string "123", which also appears in unrelated
+	// log text. The query below carries a stray "123" so the assertion must
+	// target the key's POSITION (its own path segment), not a bare substring.
+	_, err := a.SearchArtist(context.Background(), "Radiohead123")
 	if err != nil {
 		t.Fatalf("SearchArtist: %v", err)
 	}
 
 	logOutput := logBuf.String()
-	if strings.Contains(logOutput, freeAPIKey) {
-		t.Errorf("debug log leaked the free-tier API key %q:\n%s", freeAPIKey, logOutput)
+	if !strings.Contains(logOutput, "s=Radiohead123") {
+		t.Fatalf("precondition: expected the stray 123 in the logged query, got:\n%s", logOutput)
+	}
+	if keyPath := "/" + freeAPIKey + "/"; strings.Contains(logOutput, keyPath) {
+		t.Errorf("debug log leaked the free-tier API key in the URL path (%q):\n%s", keyPath, logOutput)
+	}
+	// The key as a whole VALUE catches a dedicated slog attr (apiKey=123) and a
+	// query param (?apikey=123). It must not match the stray s=Radiohead123.
+	valueRE := regexp.MustCompile(`=` + regexp.QuoteMeta(freeAPIKey) + `(?:[\s&"]|$)`)
+	if valueRE.MatchString(logOutput) {
+		t.Errorf("debug log leaked the free-tier API key as a value:\n%s", logOutput)
 	}
 	if !strings.Contains(logOutput, "requesting") || !strings.Contains(logOutput, "REDACTED") {
 		t.Errorf("expected a redacted \"requesting\" log line, got:\n%s", logOutput)
