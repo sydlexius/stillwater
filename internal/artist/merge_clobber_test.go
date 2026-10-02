@@ -656,3 +656,43 @@ func TestFilterGenderByArtistType_OtherBehavesExactlyLikeEmpty(t *testing.T) {
 		})
 	}
 }
+
+// TestFilterDatesByArtistType_NormalizesType guards #2767: the date pass must
+// match the stored type case- and whitespace-insensitively, like
+// IsGenderlessType, and must not rewrite a.Type.
+func TestFilterDatesByArtistType_NormalizesType(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		typ        string
+		keepBorn   bool // Born/Died survive
+		keepFormed bool // Formed/Disbanded survive
+	}{
+		{"group", "group", false, true},
+		{"Group mixed case", "Group", false, true},
+		{"group padded", " group ", false, true},
+		{"solo", "solo", true, false},
+		{"Solo mixed case", "Solo", true, false},
+		{"Other is unknown", "Other", true, true},
+		{"empty", "", true, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			a := &Artist{Type: tt.typ, Born: "1970", Died: "2020", Formed: "1990", Disbanded: "2010"}
+			FilterDatesByArtistType(a)
+
+			if a.Type != tt.typ {
+				t.Errorf("Type mutated: got %q, want %q", a.Type, tt.typ)
+			}
+			if got := a.Born != "" && a.Died != ""; got != tt.keepBorn {
+				t.Errorf("born/died kept = %v, want %v (Born=%q Died=%q)", got, tt.keepBorn, a.Born, a.Died)
+			}
+			if got := a.Formed != "" && a.Disbanded != ""; got != tt.keepFormed {
+				t.Errorf("formed/disbanded kept = %v, want %v (Formed=%q Disbanded=%q)", got, tt.keepFormed, a.Formed, a.Disbanded)
+			}
+		})
+	}
+}
