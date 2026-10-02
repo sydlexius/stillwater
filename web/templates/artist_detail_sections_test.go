@@ -54,13 +54,12 @@ func TestSectionProviders_RendersLazyPlatformMounts(t *testing.T) {
 		}
 	}
 
-	// Lidarr connection: also gets a platform-state mount (all connections are
-	// included; the platform-state handler handles unsupported types gracefully).
-	if !strings.Contains(out, `id="platform-state-conn-lidarr"`) {
-		t.Errorf("SectionProviders missing Lidarr connection mount")
+	// Lidarr connection: does NOT get a platform-state mount (unsupported connection type).
+	if strings.Contains(out, `id="platform-state-conn-lidarr"`) {
+		t.Errorf("SectionProviders should not render Lidarr connection mount")
 	}
-	if !strings.Contains(out, `hx-get="/api/v1/artists/art-1/platform-state?connection_id=conn-lidarr"`) {
-		t.Errorf("SectionProviders missing Lidarr hx-get")
+	if strings.Contains(out, `hx-get="/api/v1/artists/art-1/platform-state?connection_id=conn-lidarr"`) {
+		t.Errorf("SectionProviders should not render Lidarr hx-get")
 	}
 
 	// The stable .sw-dash-card chrome: no hardcoded opaque fill.

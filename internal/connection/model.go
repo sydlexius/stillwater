@@ -286,7 +286,8 @@ func DecodePathMappings(s string) ([]PathMapping, error) {
 // state (ArtistStateGetter in state.go). Emby and Jellyfin do; Lidarr has no
 // such endpoint. A POSITIVE allow-list like SupportsFeatureToggles: an
 // unrecognized or future type defaults to unsupported. The Providers and Debug
-// sections and the platform-state handler all consult this so they agree.
+// sections consult this; the platform-state handler keeps its own switch
+// (handlers_platform_state.go) and a test enforces they agree (internal/api).
 func SupportsPlatformState(connType string) bool {
 	switch connType {
 	case TypeEmby, TypeJellyfin:
