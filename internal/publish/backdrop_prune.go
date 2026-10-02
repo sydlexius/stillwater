@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -576,6 +577,11 @@ type PlatformBackdropPruneScope struct {
 	ArtistID string
 	// AllArtists must be set explicitly to page the whole library.
 	AllArtists bool
+	// Perceptual adds the perceptual tier (#3138): backdrops that are the same
+	// picture without being byte-identical, kept by the survivor rule in
+	// preferSurvivor. Off by default; the exact tier always runs. Skipped for a
+	// locked artist.
+	Perceptual bool
 	// DryRun computes and returns the full plan without deleting anything.
 	// It is the rehearsal that makes an irreversible sweep validatable: the
 	// operator sees which index survives each group BEFORE any artwork is
@@ -640,12 +646,17 @@ const (
 // showed the operator. On the exact tier they need no post-delete correction:
 // the survivor is always the LOWEST index of its byte-identical group (see
 // dedupBackdropIndices), so it sits below every candidate and the
-// high-index-first delete order never renumbers it.
+// high-index-first delete order never renumbers it. A perceptual survivor can
+// sit ABOVE its candidates; the delete loop tracks its moving slot internally
+// (shiftAfterDelete) and this record keeps the detection-time numbers.
 type PlatformBackdropPrunePlanEntry struct {
 	ArtistID     string
 	ConnectionID string
 	Index        int
 	Survivor     int
+	// Tier is PruneTierExact or PruneTierPerceptual: which evidence the delete
+	// rests on, so an operator reading a dry run can tell them apart.
+	Tier string
 	// Outcome is one of the PrunePlan* constants above.
 	Outcome string
 }
@@ -735,6 +746,55 @@ func verifyBackdropUnchanged(ctx context.Context, client backdropPruneClient, pl
 	return nil
 }
 
+// shiftAfterDelete rewrites the pending entries' slots after the platform
+// removed deletedIndex and renumbered every slot above it down by one (measured
+// on Emby 4.9.5.0; Jellyfin renumbers identically).
+//
+// The SURVIVOR half is the one that matters. Descending order already keeps
+// every candidate in place until its turn, but a perceptual survivor can sit
+// above the slot just deleted; unshifted, its re-verify reads a neighbor (or
+// off the end), fails, and the rest of the cluster is skipped as if it had been
+// concurrently modified. That was the earlier branch's DO NOT SHIP defect.
+func shiftAfterDelete(rs []redundantBackdrop, deletedIndex int) {
+	for i := range rs {
+		if rs[i].Index > deletedIndex {
+			rs[i].Index--
+		}
+		if rs[i].Survivor > deletedIndex {
+			rs[i].Survivor--
+		}
+	}
+}
+
+// perceptualOptsFor builds the perceptual tier's options for one artist, or
+// reports why the tier must stay off. The local twin set is the sha256 of every
+// local fanart file. A local file that cannot be hashed fails the tier CLOSED:
+// its platform twin would be unrecognizable and could be deleted as a mere
+// lower-quality copy.
+func (p *Publisher) perceptualOptsFor(ctx context.Context, a *artist.Artist) (perceptualPruneOpts, error) {
+	twins := make(map[[32]byte]bool)
+	dir := p.ImageDir(a)
+	if dir == "" {
+		return perceptualPruneOpts{Enabled: true, LocalTwins: twins}, nil
+	}
+	paths, err := img.DiscoverFanart(ctx, dir, p.getActiveFanartPrimary(ctx))
+	if err != nil {
+		return perceptualPruneOpts{}, fmt.Errorf("perceptual tier skipped: listing local fanart: %w", err)
+	}
+	local, unreadable := p.localFanartHashes(ctx, paths)
+	if unreadable > 0 {
+		return perceptualPruneOpts{}, fmt.Errorf("perceptual tier skipped: %d local fanart file(s) could not be hashed", unreadable)
+	}
+	for h := range local {
+		var sum [32]byte
+		if b, decErr := hex.DecodeString(h); decErr == nil && len(b) == len(sum) {
+			copy(sum[:], b)
+			twins[sum] = true
+		}
+	}
+	return perceptualPruneOpts{Enabled: true, LocalTwins: twins}, nil
+}
+
 // pruneOneArtist detects and deletes redundant backdrops for one artist
 // across its image-write-enabled platforms, updating result in place.
 func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, scope PlatformBackdropPruneScope, result *PlatformBackdropPruneResult) {
@@ -742,6 +802,19 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, scope 
 	if err != nil {
 		result.Failures = append(result.Failures, PlatformBackdropPruneFailure{ArtistID: a.ID, Err: err.Error()})
 		return
+	}
+	// A locked artist's artwork is operator-owned: the perceptual tier, which
+	// is a similarity judgement, never touches it. The exact tier still runs --
+	// it removes only byte-identical copies, so nothing the operator chose is
+	// lost.
+	var opts perceptualPruneOpts
+	if scope.Perceptual && !a.Locked && len(platformIDs) > 0 {
+		var optsErr error
+		if opts, optsErr = p.perceptualOptsFor(ctx, a); optsErr != nil {
+			p.logger.Warn("platform backdrop prune: perceptual tier skipped for artist",
+				slog.String("artist_id", a.ID), slog.String("error", optsErr.Error()))
+			result.Failures = append(result.Failures, PlatformBackdropPruneFailure{ArtistID: a.ID, Err: optsErr.Error()})
+		}
 	}
 	for _, pid := range platformIDs {
 		conn, connErr := p.connectionService.GetByID(ctx, pid.ConnectionID)
@@ -756,87 +829,111 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, scope 
 		if client == nil {
 			continue
 		}
-		redundant, _, detErr := backdropRedundantIndices(ctx, client, pid.PlatformArtistID)
-		if detErr != nil {
-			p.logger.Warn("platform backdrop prune: detection failed; skipping connection",
-				slog.String("artist_id", a.ID), slog.String("connection", conn.Name), slog.String("error", detErr.Error()))
-			result.Failures = append(result.Failures, PlatformBackdropPruneFailure{ArtistID: a.ID, ConnectionID: pid.ConnectionID, Err: detErr.Error()})
+		p.pruneOneTarget(ctx, a, conn, pid, client, scope, opts, result)
+	}
+}
+
+// pruneOneTarget runs detect, plan and delete for one artist on one connection
+// under lockPhashTarget, the per-target guard every other destructive backdrop
+// writer holds (#3316). Detect-to-delete is one read-modify-verify, and the
+// perceptual tier's per-backdrop decode widens the window a concurrent resync
+// could otherwise interleave with. Re-entrancy: the only caller chain is the
+// prune handler -> PrunePlatformBackdropDuplicates -> pruneOneArtist, none of
+// which holds the lock, and nothing below takes it.
+func (p *Publisher) pruneOneTarget(ctx context.Context, a *artist.Artist, conn *connection.Connection, pid artist.PlatformID, client backdropPruneClient, scope PlatformBackdropPruneScope, opts perceptualPruneOpts, result *PlatformBackdropPruneResult) {
+	unlock := p.lockPhashTarget(pid.ConnectionID, pid.PlatformArtistID)
+	defer unlock()
+	redundant, _, perceptualErr, detErr := detectBackdropRedundancy(ctx, client, pid.PlatformArtistID, opts)
+	if perceptualErr != nil {
+		p.logger.Warn("platform backdrop prune: perceptual tier skipped for connection",
+			slog.String("artist_id", a.ID), slog.String("connection", conn.Name), slog.String("error", perceptualErr.Error()))
+		result.Failures = append(result.Failures, PlatformBackdropPruneFailure{ArtistID: a.ID, ConnectionID: pid.ConnectionID, Err: perceptualErr.Error()})
+	}
+	if detErr != nil {
+		p.logger.Warn("platform backdrop prune: detection failed; skipping connection",
+			slog.String("artist_id", a.ID), slog.String("connection", conn.Name), slog.String("error", detErr.Error()))
+		result.Failures = append(result.Failures, PlatformBackdropPruneFailure{ArtistID: a.ID, ConnectionID: pid.ConnectionID, Err: detErr.Error()})
+		return
+	}
+	if len(redundant) == 0 {
+		return
+	}
+	// The plan is recorded from the DETECTION-TIME numbering, which is
+	// what a dry run shows the operator, and each entry's Outcome is
+	// filled in below by the loop that actually does the work -- so the
+	// plan cannot drift from what happened. planBase is where this
+	// connection's entries start, so the loop can address its own entries
+	// without a second pass or a parallel slice.
+	planBase := len(result.Plan)
+	for _, rb := range redundant {
+		result.Plan = append(result.Plan, PlatformBackdropPrunePlanEntry{
+			ArtistID: a.ID, ConnectionID: pid.ConnectionID,
+			Index: rb.Index, Survivor: rb.Survivor, Tier: rb.Tier,
+			Outcome: PrunePlanPlanned,
+		})
+	}
+	if scope.DryRun {
+		// Rehearsal: the plan above is the entire deliverable, and every
+		// entry keeps the "planned" outcome so a dry run can never be read
+		// as having deleted anything. Nothing is re-fetched and nothing is
+		// deleted, so ArtistsProcessed and BackdropsRemoved stay at zero
+		// and no cache needs invalidating.
+		return
+	}
+	removed := 0
+	// live is the loop's mutable copy: the platform renumbers after every
+	// confirmed delete, so detection-time slots stop being true mid-loop.
+	// result.Plan keeps the detection-time numbering the operator saw.
+	live := append([]redundantBackdrop(nil), redundant...)
+	for i := range live { // already descending by Index
+		rb := live[i]
+		entry := &result.Plan[planBase+i]
+		// Re-verify immediately before deleting: a concurrent platform
+		// write between detection (hashing, above) and this delete could
+		// have replaced the index's content. Re-check BOTH the candidate
+		// (about to be deleted) and its surviving (kept) counterpart;
+		// only delete if BOTH still match what detection hashed.
+		// Checking only the candidate would miss a write that instead
+		// replaced the SURVIVOR's content -- the candidate would still
+		// look redundant and deleting it would then destroy the last
+		// remaining copy of the survivor's original image. A skip here
+		// performs no delete, so lower indices are unaffected and the
+		// connection continues (`continue`) -- this is distinct from an
+		// actual delete error below, which leaves platform state
+		// ambiguous and must `break`.
+		if verr := verifyBackdropUnchanged(ctx, client, pid.PlatformArtistID, rb.Index, rb.Hash); verr != nil {
+			p.logger.Warn("platform backdrop prune: candidate re-verify failed; skipping delete",
+				slog.String("artist_id", a.ID), slog.String("connection", conn.Name),
+				slog.Int("index", rb.Index), slog.String("error", verr.Error()))
+			result.SkippedChanged++
+			entry.Outcome = PrunePlanSkipped
 			continue
 		}
-		if len(redundant) == 0 {
+		if verr := verifyBackdropUnchanged(ctx, client, pid.PlatformArtistID, rb.Survivor, rb.SurvivorHash); verr != nil {
+			p.logger.Warn("platform backdrop prune: survivor re-verify failed; skipping delete to avoid deleting its last remaining copy",
+				slog.String("artist_id", a.ID), slog.String("connection", conn.Name),
+				slog.Int("index", rb.Index), slog.Int("survivor_index", rb.Survivor), slog.String("error", verr.Error()))
+			result.SkippedChanged++
+			entry.Outcome = PrunePlanSkipped
 			continue
 		}
-		// The plan is recorded from the DETECTION-TIME numbering, which is
-		// what a dry run shows the operator, and each entry's Outcome is
-		// filled in below by the loop that actually does the work -- so the
-		// plan cannot drift from what happened. planBase is where this
-		// connection's entries start, so the loop can address its own entries
-		// without a second pass or a parallel slice.
-		planBase := len(result.Plan)
-		for _, rb := range redundant {
-			result.Plan = append(result.Plan, PlatformBackdropPrunePlanEntry{
-				ArtistID: a.ID, ConnectionID: pid.ConnectionID,
-				Index: rb.Index, Survivor: rb.Survivor,
-				Outcome: PrunePlanPlanned,
-			})
+		if delErr := client.DeleteImageAtIndex(ctx, pid.PlatformArtistID, "fanart", rb.Index); delErr != nil {
+			p.logger.Error("platform backdrop prune: delete failed",
+				slog.String("artist_id", a.ID), slog.String("connection", conn.Name),
+				slog.Int("index", rb.Index), slog.String("error", delErr.Error()))
+			result.Failures = append(result.Failures, PlatformBackdropPruneFailure{ArtistID: a.ID, ConnectionID: pid.ConnectionID, Err: delErr.Error()})
+			entry.Outcome = PrunePlanFailed
+			break // stop: later indices may have shifted after the failed delete
 		}
-		if scope.DryRun {
-			// Rehearsal: the plan above is the entire deliverable, and every
-			// entry keeps the "planned" outcome so a dry run can never be read
-			// as having deleted anything. Nothing is re-fetched and nothing is
-			// deleted, so ArtistsProcessed and BackdropsRemoved stay at zero
-			// and no cache needs invalidating.
-			continue
-		}
-		removed := 0
-		for i, rb := range redundant { // already descending by Index
-			entry := &result.Plan[planBase+i]
-			// Re-verify immediately before deleting: a concurrent platform
-			// write between detection (hashing, above) and this delete could
-			// have replaced the index's content. Re-check BOTH the candidate
-			// (about to be deleted) and its surviving (kept) counterpart;
-			// only delete if BOTH still match what detection hashed.
-			// Checking only the candidate would miss a write that instead
-			// replaced the SURVIVOR's content -- the candidate would still
-			// look redundant and deleting it would then destroy the last
-			// remaining copy of the survivor's original image. A skip here
-			// performs no delete, so lower indices are unaffected and the
-			// connection continues (`continue`) -- this is distinct from an
-			// actual delete error below, which leaves platform state
-			// ambiguous and must `break`.
-			if verr := verifyBackdropUnchanged(ctx, client, pid.PlatformArtistID, rb.Index, rb.Hash); verr != nil {
-				p.logger.Warn("platform backdrop prune: candidate re-verify failed; skipping delete",
-					slog.String("artist_id", a.ID), slog.String("connection", conn.Name),
-					slog.Int("index", rb.Index), slog.String("error", verr.Error()))
-				result.SkippedChanged++
-				entry.Outcome = PrunePlanSkipped
-				continue
-			}
-			if verr := verifyBackdropUnchanged(ctx, client, pid.PlatformArtistID, rb.Survivor, rb.Hash); verr != nil {
-				p.logger.Warn("platform backdrop prune: survivor re-verify failed; skipping delete to avoid deleting its last remaining copy",
-					slog.String("artist_id", a.ID), slog.String("connection", conn.Name),
-					slog.Int("index", rb.Index), slog.Int("survivor_index", rb.Survivor), slog.String("error", verr.Error()))
-				result.SkippedChanged++
-				entry.Outcome = PrunePlanSkipped
-				continue
-			}
-			if delErr := client.DeleteImageAtIndex(ctx, pid.PlatformArtistID, "fanart", rb.Index); delErr != nil {
-				p.logger.Error("platform backdrop prune: delete failed",
-					slog.String("artist_id", a.ID), slog.String("connection", conn.Name),
-					slog.Int("index", rb.Index), slog.String("error", delErr.Error()))
-				result.Failures = append(result.Failures, PlatformBackdropPruneFailure{ArtistID: a.ID, ConnectionID: pid.ConnectionID, Err: delErr.Error()})
-				entry.Outcome = PrunePlanFailed
-				break // stop: later indices may have shifted after the failed delete
-			}
-			entry.Outcome = PrunePlanDeleted
-			removed++
-		}
-		if removed > 0 {
-			result.ArtistsProcessed++
-			result.BackdropsRemoved += removed
-			p.logger.Info("platform backdrops pruned",
-				slog.String("artist_id", a.ID), slog.String("artist", a.Name),
-				slog.String("connection", conn.Name), slog.Int("removed", removed))
-		}
+		shiftAfterDelete(live[i+1:], rb.Index)
+		entry.Outcome = PrunePlanDeleted
+		removed++
+	}
+	if removed > 0 {
+		result.ArtistsProcessed++
+		result.BackdropsRemoved += removed
+		p.logger.Info("platform backdrops pruned",
+			slog.String("artist_id", a.ID), slog.String("artist", a.Name),
+			slog.String("connection", conn.Name), slog.Int("removed", removed))
 	}
 }
