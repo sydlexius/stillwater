@@ -656,3 +656,70 @@ func TestFilterGenderByArtistType_OtherBehavesExactlyLikeEmpty(t *testing.T) {
 		})
 	}
 }
+
+// TestFilterDatesByArtistType_NormalizesType guards #2767: the date pass must
+// match the stored type case- and whitespace-insensitively, like
+// IsGenderlessType, and must not rewrite a.Type.
+func TestFilterDatesByArtistType_NormalizesType(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		typ        string
+		keepBorn   bool // Born/Died survive
+		keepFormed bool // Formed/Disbanded survive
+	}{
+		{"group", "group", false, true},
+		{"Group mixed case", "Group", false, true},
+		{"group padded", " group ", false, true},
+		{"solo", "solo", true, false},
+		{"Solo mixed case", "Solo", true, false},
+		{"Other is unknown", "Other", true, true},
+		{"empty", "", true, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			a := &Artist{Type: tt.typ, Born: "1970", Died: "2020", Formed: "1990", Disbanded: "2010"}
+			FilterDatesByArtistType(a)
+
+			if a.Type != tt.typ {
+				t.Errorf("Type mutated: got %q, want %q", a.Type, tt.typ)
+			}
+
+			// Assert each date field independently against its expected state
+			if tt.keepBorn {
+				if a.Born == "" {
+					t.Errorf("row %q field Born: got empty, want %q", tt.name, "1970")
+				}
+				if a.Died == "" {
+					t.Errorf("row %q field Died: got empty, want %q", tt.name, "2020")
+				}
+			} else {
+				if a.Born != "" {
+					t.Errorf("row %q field Born: got %q, want empty", tt.name, a.Born)
+				}
+				if a.Died != "" {
+					t.Errorf("row %q field Died: got %q, want empty", tt.name, a.Died)
+				}
+			}
+
+			if tt.keepFormed {
+				if a.Formed == "" {
+					t.Errorf("row %q field Formed: got empty, want %q", tt.name, "1990")
+				}
+				if a.Disbanded == "" {
+					t.Errorf("row %q field Disbanded: got empty, want %q", tt.name, "2010")
+				}
+			} else {
+				if a.Formed != "" {
+					t.Errorf("row %q field Formed: got %q, want empty", tt.name, a.Formed)
+				}
+				if a.Disbanded != "" {
+					t.Errorf("row %q field Disbanded: got %q, want empty", tt.name, a.Disbanded)
+				}
+			}
+		})
+	}
+}
