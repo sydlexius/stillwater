@@ -668,16 +668,15 @@ jobs:
         # orphaned-lock shape came from wrapping npx, not apt-get).
         # Why: azure.archive.ubuntu.com crawled at 50-100 KB/s and the ~52 MB
         # firefox set (chromium ~35 MB) outran the old 8-minute step limit
-        # twice. APT::Acquire::Retries does not help a slow-but-moving fetch.
+        # twice. Acquire::Retries does not help a slow-but-moving fetch.
         # apt resumes partial downloads, so each bounded attempt keeps progress
         # (4 x 150 s; a mirror slower than ~90 KB/s can still exhaust this).
         # The .debs are also cached across PRs (restore/save steps around this
         # one), so the mirror is only hit on a cache miss.
         #
         # What remains bounds the damage without orphaning anything:
-        #   - APT::Acquire::Retries was meant to make apt retry in-process, but
-        #     the image's own apt config may override it, so do not rely on "3"
-        #     retries (the setting is tracked in #3300 and left untouched here).
+        #   - Acquire::Retries set to 3 via a config file that sorts after the
+        #     runner image's zz-retries, ensuring this setting takes precedence.
         #   - DEBIAN_FRONTEND=noninteractive removes the prompt-wait class of
         #     hang entirely.
         #   - the job-level timeout-minutes below is the backstop for a genuine
@@ -691,9 +690,11 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           set -eu
-          # Intended to make apt retry in-process (no child killed, no lock
-          # orphaned); probably ineffective on the current image, see #3300.
-          echo 'APT::Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/99-ci-retries >/dev/null
+          # Set Acquire::Retries to 3 via a file that sorts after zz-retries
+          # so this setting takes precedence. The correct apt config key is
+          # Acquire::Retries (not APT::Acquire::Retries).
+          echo 'Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/zzz-ci-retries >/dev/null
+          apt-config dump | grep -i retries
 
           # Disable the runner image's Google Chrome apt source (#3219). We do
           # not consume it: `install-deps` pulls only Ubuntu archive packages
