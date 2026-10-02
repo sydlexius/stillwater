@@ -46,6 +46,23 @@ func TestRepresentativeDeletionSet(t *testing.T) {
 			want:  map[int]int{0: 2, 1: 2},
 		},
 		{
+			// Two independent clusters: each member must be attributed to ITS
+			// representative, not to order[0].
+			name:  "each cluster reports its own absorber",
+			order: []int{0, 1, 2, 3},
+			edges: [][2]int{{0, 1}, {2, 3}},
+			want:  map[int]int{1: 0, 3: 2},
+		},
+		{
+			// 2 pairs with both 0 and 1. 0 is the first representative and
+			// claims it; 1 then finds 2 already gone. The first representative
+			// wins, so the reported survivor is 0, not 1.
+			name:  "first representative wins a contested member",
+			order: []int{0, 1, 2},
+			edges: [][2]int{{0, 2}, {1, 2}},
+			want:  map[int]int{2: 0},
+		},
+		{
 			name:  "no pairs deletes nothing",
 			order: []int{0, 1, 2},
 			want:  map[int]int{},

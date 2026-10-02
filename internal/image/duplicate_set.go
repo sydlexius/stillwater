@@ -34,7 +34,9 @@ const DefaultDuplicateTolerance = 0.90
 // The ORDER is the survivor policy: earlier members are preferred as
 // representatives. The local fanart rule passes ascending slot order (lowest
 // slot survives); the platform prune passes its quality ranking. paired is
-// called only with rep earlier than member in order.
+// called only with rep earlier than member in order. order must hold DISTINCT
+// values: a repeated value would be visited as two members and could be
+// reported as absorbed by itself.
 func RepresentativeDeletionSet(order []int, paired func(rep, member int) bool) map[int]int {
 	toDelete := make(map[int]int)
 	for i, rep := range order {
