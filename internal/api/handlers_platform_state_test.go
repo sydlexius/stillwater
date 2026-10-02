@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -381,5 +382,34 @@ func TestHandlePullMetadata_FailedReReadSkipsGenres(t *testing.T) {
 	}
 	if _, err := artistSvc.GetByID(ctx, a.ID); err == nil {
 		t.Error("artist still exists; the test did not make the re-read fail")
+	}
+}
+
+// TestNewStateGetter_AllowListMatchesSupportsPlatformState verifies that the
+// newStateGetter handler switch (Emby, Jellyfin) agrees with
+// connection.SupportsPlatformState on which types are supported.
+func TestNewStateGetter_AllowListMatchesSupportsPlatformState(t *testing.T) {
+	t.Parallel()
+	r, _, _ := testRouterWithHistory(t)
+
+	types := []string{
+		connection.TypeEmby,
+		connection.TypeJellyfin,
+		connection.TypeLidarr,
+	}
+
+	for _, typ := range types {
+		typ := typ
+		t.Run(typ, func(t *testing.T) {
+			t.Parallel()
+			supports := connection.SupportsPlatformState(typ)
+			conn := &connection.Connection{Type: typ, URL: "http://x", APIKey: "k"}
+			_, err := r.newStateGetter(conn)
+			getterSupports := !errors.Is(err, errUnsupportedConnectionType)
+
+			if supports != getterSupports {
+				t.Errorf("type=%s: SupportsPlatformState=%v, but newStateGetter error=%v (want agreement)", typ, supports, err)
+			}
+		})
 	}
 }

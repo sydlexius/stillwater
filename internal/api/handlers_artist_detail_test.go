@@ -334,14 +334,17 @@ func TestArtistDetail_ProvidersSectionLazyMounts(t *testing.T) {
 		t.Errorf("providers section card absent from page")
 	}
 
-	// Each connection gets an intersect once lazy-load mount.
-	for _, connID := range []string{"conn-emby", "conn-lidarr"} {
-		if !strings.Contains(body, `id="platform-state-`+connID+`"`) {
-			t.Errorf("missing platform-state mount for connection %s", connID)
-		}
-		if !strings.Contains(body, `platform-state?connection_id=`+connID) {
-			t.Errorf("platform-state hx-get for %s not present", connID)
-		}
+	// Emby gets an intersect once lazy-load mount.
+	if !strings.Contains(body, `id="platform-state-conn-emby"`) {
+		t.Errorf("missing platform-state mount for the Emby connection")
+	}
+	if !strings.Contains(body, `platform-state?connection_id=conn-emby`) {
+		t.Errorf("platform-state hx-get for the Emby connection not present")
+	}
+	// Lidarr has no platform-state endpoint (#2487): no placeholder, no request.
+	if strings.Contains(body, `id="platform-state-conn-lidarr"`) ||
+		strings.Contains(body, `platform-state?connection_id=conn-lidarr`) {
+		t.Errorf("Lidarr connection must not render a platform-state mount or request")
 	}
 	// Providers use intersect once (safer than revealed: a section visible on
 	// load fires reliably even before scroll). Changed from revealed (L2 fix).

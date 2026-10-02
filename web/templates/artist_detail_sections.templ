@@ -2,6 +2,8 @@ package templates
 
 import (
 	"fmt"
+
+	"github.com/sydlexius/stillwater/internal/connection"
 )
 
 // SectionProviders renders the Providers & platform-state section for the next/
@@ -26,6 +28,7 @@ templ SectionProviders(data ArtistDetailPageData) {
 			if len(d.Connections) > 0 {
 				<div class="space-y-4">
 					for _, conn := range d.Connections {
+						if connection.SupportsPlatformState(conn.Type) {
 						<div
 							id={ "platform-state-" + conn.ID }
 							hx-get={ fmt.Sprintf("/api/v1/artists/%s/platform-state?connection_id=%s", d.Artist.ID, conn.ID) }
@@ -39,6 +42,7 @@ templ SectionProviders(data ArtistDetailPageData) {
 								</div>
 							</div>
 						</div>
+						}
 					}
 				</div>
 			}
@@ -189,7 +193,7 @@ templ SectionDebug(data ArtistDetailPageData) {
 		@sectionHead("next-debug-heading", "next-debug-body", "", t(ctx, "artist.tab_debug"), isCollapsed("debug", data.Collapsed))
 		<div id="next-debug-body" class="body space-y-4" hidden?={ isCollapsed("debug", data.Collapsed) }>
 			for _, conn := range d.Connections {
-				if conn.Type == "emby" || conn.Type == "jellyfin" {
+				if connection.SupportsPlatformState(conn.Type) {
 					<div
 						id={ "debug-platform-state-" + conn.ID }
 						hx-get={ fmt.Sprintf("/api/v1/artists/%s/platform-state?connection_id=%s&readonly=true", d.Artist.ID, conn.ID) }

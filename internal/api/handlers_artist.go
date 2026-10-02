@@ -529,7 +529,7 @@ func (r *Router) buildArtistDetailData(w http.ResponseWriter, req *http.Request)
 				r.logger.Warn("fetching connection for detail page", "connection_id", pid.ConnectionID, "error", connErr)
 				continue
 			}
-			if conn.Type == connection.TypeEmby || conn.Type == connection.TypeJellyfin {
+			if connection.SupportsPlatformState(conn.Type) {
 				hasDebugConnection = true
 			}
 			extURL := buildPlatformArtistURL(conn, pid.PlatformArtistID)
