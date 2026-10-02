@@ -53,6 +53,8 @@
 //	     {commit?, artist_id?}      -> 202 + status, or 409 if one is running
 //	GET  {basePath}/api/v1/reports/registry-repair/status
 //	                                -> {running, status, report?, error?}
+//	GET  {basePath}/api/v1/reports/registry-repair/banner
+//	                                -> {needs_repair, count, checked_at?, ok}
 //
 // ASYNC (#2678). The run is a filesystem walk plus a full pixel decode per
 // candidate file and takes minutes on a large library, so POST starts it in a
@@ -264,6 +266,13 @@ func (r *Router) handleRegistryRepairRemediate(w http.ResponseWriter, req *http.
 		ctx, cancel := context.WithTimeout(r.webhookShutdownCtx, remediationWorkTimeout)
 		defer cancel()
 		report, msg, code := r.runRegistryRepair(ctx, body)
+		// A completed library-wide commit tells the banner cache the new state
+		// directly (clean, or the failure count) with no re-scan. A scoped run
+		// proves nothing about the rest of the library, and a failed run has no
+		// report, so both leave the cache alone.
+		if body.Commit && body.ArtistID == "" && report != nil {
+			r.registryRepairCache.SetFromRepair(report.WriteFailures)
+		}
 		r.finishRegistryRepair(report, msg, code)
 	}()
 
@@ -388,4 +397,44 @@ func writeFailures(commit bool, rebuild *maintenance.ImageRepairResult, restore 
 		shortfall = 0
 	}
 	return shortfall + restore.Failed
+}
+
+// RegistryRepairRunning reports whether a user-started repair is in flight. The
+// background detector (maintenance.StartRegistryRepairCheck) polls it so a
+// scheduled dry run never overlaps a real run.
+func (r *Router) RegistryRepairRunning() bool {
+	r.registryRepairMu.Lock()
+	defer r.registryRepairMu.Unlock()
+	return r.registryRepairRunning
+}
+
+// registryRepairBanner is the banner endpoint body. ok=false means never
+// checked or the last check failed; needs_repair is then false.
+type registryRepairBanner struct {
+	NeedsRepair bool      `json:"needs_repair"`
+	Count       int       `json:"count"`
+	CheckedAt   time.Time `json:"checked_at,omitzero"`
+	OK          bool      `json:"ok"`
+}
+
+// handleRegistryRepairBanner serves the cached detector result. GET
+// {basePath}/api/v1/reports/registry-repair/banner. Admin-gated. It only reads
+// the cache: the dry run behind it decodes every image, so a request must
+// never trigger one.
+func (r *Router) handleRegistryRepairBanner(w http.ResponseWriter, req *http.Request) {
+	if !r.requireForeignAdmin(w, req) {
+		return
+	}
+	count, checkedAt, ok := r.registryRepairCache.Get()
+	writeJSON(w, http.StatusOK, &registryRepairBanner{
+		NeedsRepair: ok && count > 0, Count: count, CheckedAt: checkedAt, OK: ok,
+	})
+}
+
+// cmpOrNewRegistryRepairCache returns c, or a fresh never-checked cache.
+func cmpOrNewRegistryRepairCache(c *maintenance.RegistryRepairCache) *maintenance.RegistryRepairCache {
+	if c == nil {
+		return &maintenance.RegistryRepairCache{}
+	}
+	return c
 }

@@ -210,6 +210,7 @@ type Application struct {
 	webhookDispatcher   *webhook.Dispatcher
 	backupService       *backup.Service
 	maintenanceService  *maintenance.Service
+	registryRepairCache *maintenance.RegistryRepairCache
 	lockSyncService     *connection.LockSync
 	settingsIOService   *settingsio.Service
 	updaterService      *updater.Service
@@ -611,7 +612,9 @@ func (a *Application) buildServices() error {
 	a.i18nBundle = i18nBundle
 
 	// --- HTTP router ---
+	a.registryRepairCache = &maintenance.RegistryRepairCache{}
 	a.router = api.NewRouter(api.RouterDeps{
+		RepairCache:        a.registryRepairCache,
 		AuthService:        a.authService,
 		AuthRegistry:       a.authRegistry,
 		ArtistService:      a.artistService,
@@ -1397,6 +1400,10 @@ func (a *Application) startListeners() error {
 	// installed this process's scan sources into (see router.go), so this
 	// adds cadence only -- it does not touch source wiring.
 	go a.maintenanceService.StartDuplicateImageCountRefresh(ctx, dupimages.Shared(), 0, 0)
+
+	// Registry-repair detector (#2678): cached dry run behind the banner
+	// endpoint, same 12h/2m cadence. Skips ticks while a repair is running.
+	go a.maintenanceService.StartRegistryRepairCheck(ctx, a.registryRepairCache, a.router.RegistryRepairRunning, 0, 0)
 
 	// One-shot repair of locked fields a past rule run overwrote (#3038).
 	a.startLockDamageRepair(ctx, db, logger)

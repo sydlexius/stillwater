@@ -1118,3 +1118,95 @@ func TestRegistryRepairAsync_WorkDeadlineIsTimeoutCode(t *testing.T) {
 		t.Errorf("status = %q code=%q error=%q, want failed/timeout", st.Status, st.ErrorCode, st.Error)
 	}
 }
+
+// --- banner + cache (#2678 slice 2a) -----------------------------------------
+
+func getBanner(t *testing.T, r *Router, ctx context.Context) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet,
+		"/api/v1/reports/registry-repair/banner", nil)
+	w := httptest.NewRecorder()
+	r.handleRegistryRepairBanner(w, req)
+	return w
+}
+
+func TestRegistryRepairBanner_CachedValuesAndNeverChecked(t *testing.T) {
+	t.Parallel()
+	// The router's maintenance service is nil: any scan attempt would hit the
+	// nil service and fail the request, so a 200 proves the read is cache-only.
+	cache := &maintenance.RegistryRepairCache{}
+	r := NewRouter(RouterDeps{SessionSecret: testSessionSecret, RepairCache: cache,
+		Logger: slog.New(slog.NewTextHandler(os.Stderr, nil)), DB: newTestDB(t),
+		StaticFS: os.DirFS("../../web/static")})
+
+	var b registryRepairBanner
+	w := getBanner(t, r, adminContext())
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &b) != nil || b.OK || b.NeedsRepair || b.Count != 0 {
+		t.Fatalf("never-checked: %d %s; want 200 with ok=false, needs_repair=false", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "0001-01-01") {
+		t.Fatalf("zero checked_at leaked: %s", w.Body.String())
+	}
+
+	cache.SetFromRepair(4)
+	w = getBanner(t, r, adminContext())
+	b = registryRepairBanner{}
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &b) != nil || !b.OK || !b.NeedsRepair || b.Count != 4 || b.CheckedAt.IsZero() {
+		t.Fatalf("cached: %d %s; want ok, needs_repair, count 4, checked_at", w.Code, w.Body.String())
+	}
+
+	ctx := middleware.WithTestRole(middleware.WithTestUserID(context.Background(), "u1"), "operator")
+	if w := getBanner(t, r, ctx); w.Code != http.StatusForbidden {
+		t.Fatalf("non-admin = %d, want 403", w.Code)
+	}
+}
+
+func TestRegistryRepair_CommitSetsBannerCache(t *testing.T) {
+	t.Parallel()
+	f := newRegistryRepairFixture(t)
+	cache := &maintenance.RegistryRepairCache{}
+	f.router.registryRepairCache = cache
+	cache.SetFromRepair(99) // stale non-zero state the commit must replace
+
+	// A preview must not touch it.
+	startRepair(t, f.router, `{"commit":false}`)
+	waitRepairDone(t, f.router)
+	if c, _, _ := cache.Get(); c != 99 {
+		t.Fatalf("preview changed the cache to %d", c)
+	}
+	// A scoped commit must not touch it either.
+	startRepair(t, f.router, `{"commit":true,"artist_id":"`+f.presentID+`"}`)
+	waitRepairDone(t, f.router)
+	if c, _, _ := cache.Get(); c != 99 {
+		t.Fatalf("scoped commit changed the cache to %d", c)
+	}
+	// A clean library-wide commit: write_failures == 0 -> count 0.
+	startRepair(t, f.router, `{"commit":true}`)
+	st := waitRepairDone(t, f.router)
+	if st.Report == nil || st.Report.WriteFailures != 0 {
+		t.Fatalf("fixture commit not clean: %+v", st.Report)
+	}
+	if c, _, ok := cache.Get(); !ok || c != 0 {
+		t.Fatalf("after clean commit Get() = %d, %v; want 0, true", c, ok)
+	}
+}
+
+func TestRegistryRepair_CommitWithWriteFailuresSetsFailureCount(t *testing.T) {
+	t.Parallel()
+	f := newRegistryRepairFixture(t)
+	cache := &maintenance.RegistryRepairCache{}
+	f.router.registryRepairCache = cache
+	// Make every write fail: restore's UPDATE hits a trigger that aborts it.
+	if _, err := f.db.Exec(`CREATE TRIGGER fail_restore BEFORE UPDATE ON artist_images
+		BEGIN SELECT RAISE(ABORT, 'forced'); END`); err != nil {
+		t.Fatalf("trigger: %v", err)
+	}
+	startRepair(t, f.router, `{"commit":true}`)
+	st := waitRepairDone(t, f.router)
+	if st.Report == nil || st.Report.WriteFailures == 0 {
+		t.Fatalf("expected write failures, got %+v (err %q)", st.Report, st.Error)
+	}
+	if c, _, ok := cache.Get(); !ok || c != st.Report.WriteFailures {
+		t.Fatalf("Get() = %d, %v; want %d, true", c, ok, st.Report.WriteFailures)
+	}
+}
