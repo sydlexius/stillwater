@@ -36,6 +36,13 @@ type statefulBackdropPeer struct {
 	appendAll bool
 	data      [][]byte
 	writes    int // every POST and DELETE, so a pass that touches nothing is provable
+	deletes   int // delete requests alone, so a path that must never delete is provable (#3147)
+}
+
+func (s *statefulBackdropPeer) deleteCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.deletes
 }
 
 var (
@@ -93,6 +100,7 @@ func (s *statefulBackdropPeer) ServeHTTP(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		s.writes++
+		s.deletes++
 		s.data = append(s.data[:idx], s.data[idx+1:]...)
 		w.WriteHeader(http.StatusNoContent)
 	default:
@@ -251,17 +259,18 @@ func TestPruneThenReconcile_DriveTheRealLoop(t *testing.T) {
 	}
 }
 
-// TestDistinctLocalFanart_UnreadableCountsAsDistinct pins the fail-open
+// TestLocalFanartHashes_UnreadableCountsAsDistinct pins the fail-open
 // direction: a file that cannot be hashed cannot be proven a duplicate, so it
 // counts as distinct and keeps the reconciler's repair armed.
-func TestDistinctLocalFanart_UnreadableCountsAsDistinct(t *testing.T) {
+func TestLocalFanartHashes_UnreadableCountsAsDistinct(t *testing.T) {
 	dir := t.TempDir()
 	a, b := filepath.Join(dir, "fanart.jpg"), filepath.Join(dir, "fanart2.jpg")
 	writeFile(t, a, bandJPEG(t, 41))
 	writeFile(t, b, bandJPEG(t, 41))
 	missing := filepath.Join(dir, "fanart3.jpg")
 	p := New(Deps{Logger: silentLogger()})
-	if got := p.distinctLocalFanart(context.Background(), []string{a, b, missing}); got != 2 {
-		t.Errorf("distinctLocalFanart = %d, want 2 (one distinct image plus one unreadable file)", got)
+	distinct, unreadable := p.localFanartHashes(context.Background(), []string{a, b, missing})
+	if len(distinct) != 1 || unreadable != 1 {
+		t.Errorf("localFanartHashes = %d distinct + %d unreadable, want 1 + 1 (one distinct image plus one unreadable file)", len(distinct), unreadable)
 	}
 }

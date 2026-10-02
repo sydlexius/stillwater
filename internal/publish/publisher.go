@@ -1386,14 +1386,26 @@ func (p *Publisher) uploadFanartForSync(ctx context.Context, a *artist.Artist, p
 // during an operator-initiated replace beats the duplication #3135 exists
 // to fix.
 //
-// A CRASH DURING THAT WINDOW IS NOT JOURNALED (#3147). If the process dies
-// between the delete loop and the upload loop completing, this connection is
-// left with FEWER backdrops than the local set and nothing records that a
-// resync was in flight. Since #3145 the background reconciler's repair
-// (syncAllFanartToPlatforms) reaches this same clear-then-reupload for
-// Jellyfin via pushFanartSetToPeer, so its repair RESTORES the set rather
-// than appending a duplicate set on top of the survivors; what remains open
-// is only the missing durable intent record.
+// A CRASH DURING THAT WINDOW IS RECOVERED BY THE RECONCILER WHENEVER THE
+// SURVIVING PREFIX IS MISSING A DISTINCT LOCAL IMAGE (#3147). If the process
+// dies after the deletes, the connection holds a PREFIX of the local set (zero
+// or more of the uploads, in order). fanartDeficit (reconcile.go) flags any
+// platform missing a distinct local image, by count where the count decides
+// and by the backdrops' bytes where a local duplicate makes the count
+// ambiguous (local A,A,B, crash after two uploads, platform A,A). Its repair,
+// syncAllFanartToPlatforms, reaches this same clear-then-reupload via
+// pushFanartSetToPeer, so the next pass rebuilds the exact ordered local set
+// and the pass after writes nothing (TestResyncCrash_ReconcilerConvergesJellyfin).
+//
+// THE LIMIT, BY DESIGN: when the prefix already holds every distinct image
+// (only possible when the local set has byte-identical duplicates: local
+// A,B,A, crash after two uploads, platform A,B), only a duplicate copy is
+// missing, and the reconciler treats it exactly like a backdrop prune and does
+// not restore it. Without a durable in-flight record the two states are
+// identical on the platform, and restoring it would undo every prune (#3144).
+// No such record is kept (#2698: intent must be recorded, never inferred).
+// The next operator push restores the copy. The window itself is not closed:
+// until a repair runs, the platform shows the partial set.
 //
 // A FAILURE MID-RESYNC (after the restorability guard has passed) IS
 // REPORTED, NEVER SWALLOWED. A failed DELETE stops the resync before any
@@ -1531,8 +1543,8 @@ func (p *Publisher) resyncFanartFromSnapshot(ctx context.Context, a *artist.Arti
 			// not the platform). Deletes already issued (high index first)
 			// DID land, so attempted stays true; the platform is left with
 			// a prefix of its old set, and the next sync (or the reconciler,
-			// when the count is short of the local set) redoes the whole
-			// clear-and-rebuild from scratch.
+			// when that prefix is missing a local image, see fanartDeficit)
+			// redoes the whole clear-and-rebuild from scratch.
 			return attempted, false, truncateWarning(strings.Join(warnings, "; "))
 		}
 	}
