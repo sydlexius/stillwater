@@ -747,8 +747,11 @@ func verifyBackdropUnchanged(ctx context.Context, client backdropPruneClient, pl
 }
 
 // shiftAfterDelete rewrites the pending entries' slots after the platform
-// removed deletedIndex and renumbered every slot above it down by one (measured
-// on Emby 4.9.5.0; Jellyfin renumbers identically).
+// removed deletedIndex and renumbered every slot above it down by one. Measured
+// on Emby 4.9.5.0 only; that Jellyfin renumbers the same way is ASSUMED, not
+// measured. If a peer did not renumber, the shifted re-verify would read a slot
+// whose bytes no longer match the recorded hash, so the entry is SKIPPED rather
+// than the wrong slot deleted -- the failure mode is a short run, not data loss.
 //
 // The SURVIVOR half is the one that matters. Descending order already keeps
 // every candidate in place until its turn, but a perceptual survivor can sit
@@ -780,6 +783,13 @@ func (p *Publisher) perceptualOptsFor(ctx context.Context, a *artist.Artist) (pe
 	paths, err := img.DiscoverFanart(ctx, dir, p.getActiveFanartPrimary(ctx))
 	if err != nil {
 		return perceptualPruneOpts{}, fmt.Errorf("perceptual tier skipped: listing local fanart: %w", err)
+	}
+	// An artist with a folder but NO fanart in it is indistinguishable from a
+	// folder on a mount that is down. Treating it as "no local twins" would
+	// strip the twin protection exactly when the local copy cannot be seen, so
+	// it is treated as unknown and the tier is skipped.
+	if len(paths) == 0 {
+		return perceptualPruneOpts{}, fmt.Errorf("perceptual tier skipped: no local fanart found in the artist folder")
 	}
 	local, unreadable := p.localFanartHashes(ctx, paths)
 	if unreadable > 0 {
@@ -834,8 +844,13 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, scope 
 }
 
 // pruneOneTarget runs detect, plan and delete for one artist on one connection
-// under lockPhashTarget, the per-target guard every other destructive backdrop
-// writer holds (#3316). Detect-to-delete is one read-modify-verify, and the
+// under lockPhashTarget (#3316). That guard is held by the polluted-backdrop
+// delete and restore (DeletePollutedBackdropOnPlatforms,
+// RestoreBackdropToPlatforms), the single-fanart sync (uploadFanartForSync) and
+// the Jellyfin branch of pushFanartSetToPeer. It is NOT held by the Emby
+// indexed set upload (uploadFanartSet) or the push handler's per-index uploads,
+// so this lock serializes the prune against those writers only, not against
+// every backdrop write. Detect-to-delete is one read-modify-verify, and the
 // perceptual tier's per-backdrop decode widens the window a concurrent resync
 // could otherwise interleave with. Re-entrancy: the only caller chain is the
 // prune handler -> PrunePlatformBackdropDuplicates -> pruneOneArtist, none of

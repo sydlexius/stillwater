@@ -213,3 +213,23 @@ func TestPrunePerceptual_WaitsForThePerTargetLock(t *testing.T) {
 		t.Errorf("deleted %v after the lock was released, want one delete", fake.deleted)
 	}
 }
+
+// An artist folder with no fanart in it looks exactly like a folder on a mount
+// that is down, so the local twins are unknown: the perceptual tier is skipped
+// rather than run with no twin protection.
+func TestPrunePerceptual_EmptyLocalFolderFailsClosed(t *testing.T) {
+	f := newPerceptualFixture(t)
+	dir := t.TempDir() // exists, holds no fanart
+	fake := &fakeBackdropClient{backdrops: [][]byte{f.small, f.big}, failAt: -1, failDeleteAt: -1}
+	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
+	fixtureArtist(t, p).artists[0].Path = dir
+
+	res, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true, Perceptual: true})
+	if err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	assertPlatform(t, fake, f.small, f.big)
+	if len(res.Failures) != 1 || res.Failures[0].ArtistID != "a1" {
+		t.Errorf("failures %+v, want one naming the skipped tier", res.Failures)
+	}
+}
