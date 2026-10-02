@@ -4,9 +4,15 @@ set -euo pipefail
 
 # Create temp files for generator logs; clean them up on exit (but after printing
 # on error). Temp files ensure concurrent runs don't collide in /tmp.
+TEMPL_LOG=""
+TAILWIND_LOG=""
+# The trap is installed before either file exists, so an interrupt between the
+# two mktemp calls cannot leak one. Single quotes defer expansion until the
+# trap fires (a $TMPDIR holding a quote cannot break or inject into it), and
+# the ${VAR:+...} guards skip a log that was never created.
+trap 'rm -f -- ${TEMPL_LOG:+"$TEMPL_LOG"} ${TAILWIND_LOG:+"$TAILWIND_LOG"}' EXIT
 TEMPL_LOG=$(mktemp)
 TAILWIND_LOG=$(mktemp)
-trap "rm -f '$TEMPL_LOG' '$TAILWIND_LOG'" EXIT
 
 # Content freshness check: regenerate all *_templ.go in a clean state and fail
 # if anything differs. This catches a missing regeneration, stale content from
