@@ -739,7 +739,8 @@ func (p *Publisher) PrunePlatformBackdropDuplicates(ctx context.Context, scope P
 		if p.artistGetter == nil {
 			return result, fmt.Errorf("prune platform backdrop duplicates: artist lookup not wired; cannot resolve a scoped artist")
 		}
-		a, err := p.artistGetter.GetByID(ctx, scope.ArtistID)
+		// The prune reads base columns only (ID, Name, Locked, Path): no side-table hydration.
+		a, err := p.artistGetter.GetByID(ctx, scope.ArtistID, artist.HydrateOpts{})
 		if err != nil {
 			return result, fmt.Errorf("prune platform backdrop duplicates: loading artist %s: %w", scope.ArtistID, err)
 		}
@@ -806,7 +807,8 @@ func (p *Publisher) PrunePlatformBackdropsForArtist(ctx context.Context, a *arti
 	if a == nil || a.ID == "" {
 		return result, fmt.Errorf("prune platform backdrops for artist: artist is required")
 	}
-	fresh, err := p.artistGetter.GetByID(ctx, a.ID)
+	// The prune reads base columns only (ID, Name, Locked, Path): no side-table hydration.
+	fresh, err := p.artistGetter.GetByID(ctx, a.ID, artist.HydrateOpts{})
 	if err != nil {
 		return result, fmt.Errorf("prune platform backdrops for artist: loading artist %s: %w", a.ID, err)
 	}

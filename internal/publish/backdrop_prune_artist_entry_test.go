@@ -155,7 +155,8 @@ func TestPruneForArtist_ReloadsTheArtist(t *testing.T) {
 	p := perceptualPublisher(t, fake)
 	stored := fixtureArtist(t, p).artists[0]
 	stored.Locked = true
-	p.artistGetter = &fakeArtistGetter{artists: map[string]*artist.Artist{"a1": &stored}}
+	getter := &optsRecordingGetter{fakeArtistGetter{artists: map[string]*artist.Artist{"a1": &stored}}, nil}
+	p.artistGetter = getter
 	stale := fixtureArtist(t, p).artists[0] // Locked: false
 
 	res, err := p.PrunePlatformBackdropsForArtist(context.Background(), &stale,
@@ -164,6 +165,9 @@ func TestPruneForArtist_ReloadsTheArtist(t *testing.T) {
 		t.Fatalf("prune: %v", err)
 	}
 	assertPlatform(t, fake, f.small, f.big)
+	if len(getter.opts) != 1 || getter.opts[0] != (artist.HydrateOpts{}) {
+		t.Errorf("reload opts %+v, want one empty HydrateOpts (base columns only)", getter.opts)
+	}
 	if len(res.Skipped) != 1 || res.Skipped[0].Reason != PruneSkipLockedArtist {
 		t.Errorf("skipped %+v, want locked_artist from the stored record", res.Skipped)
 	}
@@ -196,4 +200,15 @@ func TestPruneForArtist_OptionsReachTheRun(t *testing.T) {
 	assertPlatform(t, fake, f.small, f.big)
 	fake, _ = run(ArtistBackdropPruneOptions{Perceptual: true, Tolerance: 1}) // small and big hash identically
 	assertPlatform(t, fake, f.big)
+}
+
+// optsRecordingGetter records the HydrateOpts each reload passes.
+type optsRecordingGetter struct {
+	fakeArtistGetter
+	opts []artist.HydrateOpts
+}
+
+func (g *optsRecordingGetter) GetByID(ctx context.Context, id string, opts ...artist.HydrateOpts) (*artist.Artist, error) {
+	g.opts = append(g.opts, opts...)
+	return g.fakeArtistGetter.GetByID(ctx, id, opts...)
 }
