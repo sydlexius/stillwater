@@ -348,6 +348,19 @@ type WebImageProvider interface {
 	SearchImages(ctx context.Context, artistName string, imageType ImageType) ([]ImageResult, error)
 }
 
+// ImageFilter drops unwanted results from a batch and reports how many it
+// removed. aiblock.Matcher.Filter has this shape.
+type ImageFilter func(in []ImageResult) (kept []ImageResult, removed int)
+
+// FilteringWebImageProvider is an optional WebImageProvider capability: the
+// provider applies keep to each fetched page BEFORE its own result cap, and
+// may fetch more pages if too few survive (#3309). removed is the total the
+// filter dropped across all pages.
+type FilteringWebImageProvider interface {
+	WebImageProvider
+	SearchImagesFiltered(ctx context.Context, artistName string, imageType ImageType, keep ImageFilter) (results []ImageResult, removed int, err error)
+}
+
 // ReleaseGroupInfo represents a release group (album/EP/single) from a provider.
 type ReleaseGroupInfo struct {
 	// ID is the provider-specific identifier for the release group. For

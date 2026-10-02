@@ -11,6 +11,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,9 +20,13 @@ import (
 )
 
 const (
-	defaultBaseURL   = "https://duckduckgo.com"
-	htmlBaseURL      = "https://html.duckduckgo.com"
-	maxResults       = 30
+	defaultBaseURL = "https://duckduckgo.com"
+	htmlBaseURL    = "https://html.duckduckgo.com"
+	maxResults     = 30
+	// maxExtraPages caps how many additional i.js pages a filtered search may
+	// follow (#3309). The first page is always fetched; paging happens only
+	// when the caller's filter left fewer than maxResults survivors.
+	maxExtraPages    = 2
 	maxArtistNameLen = 200
 	userAgent        = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
@@ -116,24 +121,43 @@ func (a *Adapter) RequiresAuth() bool { return false }
 
 // SearchImages queries DuckDuckGo image search for artist images of a specific type.
 func (a *Adapter) SearchImages(ctx context.Context, artistName string, imageType provider.ImageType) ([]provider.ImageResult, error) {
+	results, _, err := a.searchImages(ctx, artistName, imageType, nil)
+	return results, err
+}
+
+// SearchImagesFiltered is SearchImages with a caller-supplied filter applied
+// to each fetched page BEFORE the maxResults cap (#3309), so results the
+// filter drops do not use up cap slots. The first page is filtered whole and
+// capped afterwards; only when fewer than maxResults survive does the adapter
+// follow the response's `next` cursor, at most maxExtraPages more times. It
+// returns the survivors and the total number the filter removed across every
+// page it processed. Extra pages reuse the first request's headers, cookie
+// jar and vqd token and go through the rate limiter; a failed extra page
+// (including a 403/202 challenge) is never retried and the search returns what
+// it already has.
+func (a *Adapter) SearchImagesFiltered(ctx context.Context, artistName string, imageType provider.ImageType, keep provider.ImageFilter) ([]provider.ImageResult, int, error) {
+	return a.searchImages(ctx, artistName, imageType, keep)
+}
+
+func (a *Adapter) searchImages(ctx context.Context, artistName string, imageType provider.ImageType, keep provider.ImageFilter) ([]provider.ImageResult, int, error) {
 	if provider.ShouldInjectFailure(a.Name()) {
-		return nil, provider.ErrInjectedFailure
+		return nil, 0, provider.ErrInjectedFailure
 	}
 	if artistName == "" || len(artistName) > maxArtistNameLen {
-		return nil, nil
+		return nil, 0, nil
 	}
 
 	suffix, ok := searchTerms[imageType]
 	if !ok {
-		return nil, nil
+		return nil, 0, nil
 	}
 	query := artistName + " " + suffix
 
 	if err := a.limiter.Wait(ctx, provider.NameDuckDuckGo); err != nil {
-		return nil, fmt.Errorf("rate limiter: %w", err)
+		return nil, 0, fmt.Errorf("rate limiter: %w", err)
 	}
 
-	// A fresh cookie jar per search: the vqd fetch and the i.js fetch for
+	// A fresh cookie jar per search: the vqd fetch and the i.js fetch(es) for
 	// THIS search share it (DDG's i.js request expects the cookie the vqd
 	// response set), but nothing carries over to the next search. The
 	// Transport (and its httpsafe SSRF guard) is shared with the long-lived
@@ -142,33 +166,54 @@ func (a *Adapter) SearchImages(ctx context.Context, artistName string, imageType
 
 	vqd, err := a.getVQDToken(ctx, client, query)
 	if err != nil {
-		return nil, fmt.Errorf("getting VQD token: %w", err)
+		return nil, 0, fmt.Errorf("getting VQD token: %w", err)
 	}
 
-	if err := a.limiter.Wait(ctx, provider.NameDuckDuckGo); err != nil {
-		return nil, fmt.Errorf("rate limiter: %w", err)
-	}
-
-	images, err := a.fetchImages(ctx, client, query, vqd)
-	if err != nil {
-		return nil, fmt.Errorf("fetching images: %w", err)
-	}
-
-	var results []provider.ImageResult
-	for _, hit := range images {
-		if hit.Image == "" {
-			continue
-		}
-		results = append(results, provider.ImageResult{
-			URL:    hit.Image,
-			Type:   imageType,
-			Width:  hit.Width,
-			Height: hit.Height,
-			Source: string(provider.NameDuckDuckGo),
-		})
-		if len(results) >= maxResults {
+	var (
+		results []provider.ImageResult
+		removed int
+		offset  int
+	)
+	for page := 0; ; page++ {
+		if err := a.limiter.Wait(ctx, provider.NameDuckDuckGo); err != nil {
+			if page == 0 || ctx.Err() != nil {
+				return nil, 0, fmt.Errorf("rate limiter: %w", err)
+			}
 			break
 		}
+
+		resp, err := a.fetchImages(ctx, client, query, vqd, offset)
+		if err != nil {
+			if page == 0 || ctx.Err() != nil {
+				// A canceled request surfaces its error so the caller stops
+				// instead of rendering a partial grid. Only a provider-side
+				// failure on an extra page degrades to partial results.
+				return nil, 0, fmt.Errorf("fetching images: %w", err)
+			}
+			// An extra page failed (e.g. a 403/202 challenge): never retry,
+			// keep what the earlier pages produced.
+			a.logger.Warn("extra image page failed, returning partial results",
+				slog.Int("page", page), slog.Any("error", err))
+			break
+		}
+
+		pageResults := hitsToResults(resp.Results, imageType)
+		if keep != nil {
+			var n int
+			pageResults, n = keep(pageResults)
+			removed += n
+		}
+		results = append(results, pageResults...)
+		if len(results) >= maxResults {
+			results = results[:maxResults]
+			break
+		}
+
+		next, ok := nextOffset(resp.Next, offset)
+		if !ok || keep == nil || page >= maxExtraPages {
+			break
+		}
+		offset = next
 	}
 
 	a.logger.Debug("image search completed",
@@ -176,7 +221,45 @@ func (a *Adapter) SearchImages(ctx context.Context, artistName string, imageType
 		slog.String("type", string(imageType)),
 		slog.Int("results", len(results)))
 
-	return results, nil
+	return results, removed, nil
+}
+
+// hitsToResults converts raw hits to ImageResults, dropping hits with no image URL.
+func hitsToResults(hits []imageHit, imageType provider.ImageType) []provider.ImageResult {
+	var out []provider.ImageResult
+	for _, hit := range hits {
+		if hit.Image == "" {
+			continue
+		}
+		out = append(out, provider.ImageResult{
+			URL:    hit.Image,
+			Type:   imageType,
+			Width:  hit.Width,
+			Height: hit.Height,
+			Source: string(provider.NameDuckDuckGo),
+		})
+	}
+	return out
+}
+
+// nextOffset extracts the result offset (the `s` param) from a response's
+// `next` cursor. Only the numeric offset is taken; the rest of the next
+// request is rebuilt from the first request's own params, so a hostile or
+// malformed cursor cannot redirect the request or change its shape. It
+// reports false when there is no usable cursor or the offset does not advance.
+func nextOffset(next string, prev int) (int, bool) {
+	if next == "" {
+		return 0, false
+	}
+	u, err := url.Parse(next)
+	if err != nil {
+		return 0, false
+	}
+	n, err := strconv.Atoi(u.Query().Get("s"))
+	if err != nil || n <= prev {
+		return 0, false
+	}
+	return n, true
 }
 
 // newSearchClient returns an *http.Client for one SearchImages call: same
@@ -386,13 +469,14 @@ func extractVQDFromHTMLFallback(data []byte) (string, error) {
 // known-good request shape measured in issue #3228 comment 5880827938: params
 // q, o=json, p=1, s=0, f=",,,," (four commas), l=us-en, vqd; headers Accept,
 // Accept-Language, Accept-Encoding: gzip, Referer set to the full vqd-fetch
-// URL, and X-Requested-With: XMLHttpRequest.
-func (a *Adapter) fetchImages(ctx context.Context, client *http.Client, query, vqd string) ([]imageHit, error) {
+// URL, and X-Requested-With: XMLHttpRequest. offset is the s param: 0 for the
+// first page, the cursor offset for a follow-up page (#3309).
+func (a *Adapter) fetchImages(ctx context.Context, client *http.Client, query, vqd string, offset int) (*imageSearchResponse, error) {
 	params := url.Values{
 		"q":   {query},
 		"o":   {"json"},
 		"p":   {"1"},
-		"s":   {"0"},
+		"s":   {strconv.Itoa(offset)},
 		"f":   {",,,,"},
 		"l":   {"us-en"},
 		"vqd": {vqd},
@@ -434,5 +518,5 @@ func (a *Adapter) fetchImages(ctx context.Context, client *http.Client, query, v
 		return nil, fmt.Errorf("parsing image results: %w", err)
 	}
 
-	return searchResp.Results, nil
+	return &searchResp, nil
 }

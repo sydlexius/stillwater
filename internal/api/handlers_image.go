@@ -1014,6 +1014,13 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 	// fallback are both true (filter); getUserBoolPreference logs a read error.
 	filterAI := r.getUserBoolPreference(req.Context(), PrefFilterAIImages, true)
 
+	// Snapshot the AI blocklist up front so a provider that can filter before
+	// its own result cap (#3309) and the post-loop pass use the same list.
+	// Matcher and status come from ONE snapshot, so the reported state always
+	// describes the list that actually filtered.
+	aiMatcher, aiStatus := aiblock.Snapshot()
+	aiFilter := webSearchAIFilterResult{Applied: filterAI, ListLoaded: aiStatus.Loaded, Disabled: aiStatus.Disabled}
+
 	var (
 		allImages        []provider.ImageResult
 		attempted        int
@@ -1036,7 +1043,16 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 		if p.Name() == provider.NameDuckDuckGo {
 			ddgEnabled = true
 		}
-		images, err := p.SearchImages(req.Context(), a.Name, imageType)
+		var images []provider.ImageResult
+		if fp, ok := p.(provider.FilteringWebImageProvider); ok && filterAI {
+			// Filter before the provider's cap so blocked hits do not use up
+			// slots (#3309); its removals count toward ai_filter.removed.
+			var removed int
+			images, removed, err = fp.SearchImagesFiltered(req.Context(), a.Name, imageType, aiMatcher.Filter)
+			aiFilter.Removed += removed
+		} else {
+			images, err = p.SearchImages(req.Context(), a.Name, imageType)
+		}
 		if err != nil {
 			if req.Context().Err() != nil {
 				// The client went away (canceled/deadline exceeded) mid-search.
@@ -1066,10 +1082,12 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 	// when the preference is on. Until a list has loaded the matcher is empty
 	// and removes nothing. Matcher and status come from ONE snapshot, so the
 	// reported state always describes the list that actually filtered.
-	aiMatcher, aiStatus := aiblock.Snapshot()
-	aiFilter := webSearchAIFilterResult{Applied: filterAI, ListLoaded: aiStatus.Loaded, Disabled: aiStatus.Disabled}
+	// Results from a provider that already filtered pass through here
+	// removing nothing more, so the counts do not double up.
 	if filterAI {
-		allImages, aiFilter.Removed = aiMatcher.Filter(allImages)
+		var removed int
+		allImages, removed = aiMatcher.Filter(allImages)
+		aiFilter.Removed += removed
 	}
 
 	// Normalize http:// URLs to https:// so they satisfy the img-src CSP
