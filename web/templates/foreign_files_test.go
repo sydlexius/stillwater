@@ -195,3 +195,34 @@ func TestForeignFilesPage_CanonicalNavTargets(t *testing.T) {
 		t.Error("allowlist page must not reference the retired /next/ or /settings/ foreign-files paths")
 	}
 }
+
+// TestForeignFilesTable_ArtistLink guards the Unmatched row artist-name link
+// (#2475): a row with an ID links to the artist detail page in a new tab, with
+// the ID path-escaped, and a row without an ID renders plain text, no link.
+func TestForeignFilesTable_ArtistLink(t *testing.T) {
+	ctx := testCtx(t)
+	render := func(t *testing.T, row ForeignFileRow) string {
+		t.Helper()
+		var buf bytes.Buffer
+		if err := ForeignFilesPage(AssetPaths{IsAdmin: true}, ForeignFilesPageView{Rows: []ForeignFileRow{row}, Count: 1}).Render(ctx, &buf); err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		return buf.String()
+	}
+
+	got := render(t, ForeignFileRow{ID: "f1", ArtistID: "a b/c", ArtistName: "Alpha", FileName: "x.jpg", DetectedAt: "now"})
+	if !strings.Contains(got, `href="/artists/a%20b%2Fc"`) {
+		t.Errorf("artist link href missing or unescaped; got:\n%s", got)
+	}
+	if !strings.Contains(got, `rel="noopener noreferrer"`) || !strings.Contains(got, `target="_blank"`) {
+		t.Errorf("artist link must open in a new tab with rel=noopener noreferrer")
+	}
+
+	got = render(t, ForeignFileRow{ID: "f1", ArtistName: "Alpha", FileName: "x.jpg", DetectedAt: "now"})
+	if strings.Contains(got, `href="/artists/`) {
+		t.Errorf("empty ArtistID must not render an artist link")
+	}
+	if !strings.Contains(got, "Alpha") {
+		t.Errorf("empty ArtistID must still render the artist name as text")
+	}
+}
