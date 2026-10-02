@@ -687,11 +687,38 @@ func TestFilterDatesByArtistType_NormalizesType(t *testing.T) {
 			if a.Type != tt.typ {
 				t.Errorf("Type mutated: got %q, want %q", a.Type, tt.typ)
 			}
-			if got := a.Born != "" && a.Died != ""; got != tt.keepBorn {
-				t.Errorf("born/died kept = %v, want %v (Born=%q Died=%q)", got, tt.keepBorn, a.Born, a.Died)
+
+			// Assert each date field independently against its expected state
+			if tt.keepBorn {
+				if a.Born == "" {
+					t.Errorf("row %q field Born: got empty, want %q", tt.name, "1970")
+				}
+				if a.Died == "" {
+					t.Errorf("row %q field Died: got empty, want %q", tt.name, "2020")
+				}
+			} else {
+				if a.Born != "" {
+					t.Errorf("row %q field Born: got %q, want empty", tt.name, a.Born)
+				}
+				if a.Died != "" {
+					t.Errorf("row %q field Died: got %q, want empty", tt.name, a.Died)
+				}
 			}
-			if got := a.Formed != "" && a.Disbanded != ""; got != tt.keepFormed {
-				t.Errorf("formed/disbanded kept = %v, want %v (Formed=%q Disbanded=%q)", got, tt.keepFormed, a.Formed, a.Disbanded)
+
+			if tt.keepFormed {
+				if a.Formed == "" {
+					t.Errorf("row %q field Formed: got empty, want %q", tt.name, "1990")
+				}
+				if a.Disbanded == "" {
+					t.Errorf("row %q field Disbanded: got empty, want %q", tt.name, "2010")
+				}
+			} else {
+				if a.Formed != "" {
+					t.Errorf("row %q field Formed: got %q, want empty", tt.name, a.Formed)
+				}
+				if a.Disbanded != "" {
+					t.Errorf("row %q field Disbanded: got %q, want empty", tt.name, a.Disbanded)
+				}
 			}
 		})
 	}

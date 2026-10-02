@@ -667,8 +667,8 @@ func FilterDatesByArtistType(a *Artist) {
 // in this direction because it only ever adds values to a closed collective
 // list, never to the destructive default.
 //
-// FilterDatesByArtistType matches the type identically (lowercased, trimmed),
-// so a stored "Group" clears gender here and born/died there.
+// FilterGenderByArtistType clears gender and FilterDatesByArtistType clears
+// born/died, both matching the type identically (lowercased, trimmed).
 func IsGenderlessType(t string) bool {
 	switch strings.ToLower(strings.TrimSpace(t)) {
 	case "group", "orchestra", "choir":
