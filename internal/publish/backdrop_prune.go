@@ -14,6 +14,7 @@
 package publish
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -26,6 +27,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/httpclient"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
+	img "github.com/sydlexius/stillwater/internal/image"
 )
 
 // errArtistAbsentOnPlatform signals that the platform gave a definitive
@@ -118,7 +120,26 @@ type redundantBackdrop struct {
 	Index    int
 	Hash     [32]byte
 	Survivor int
+	// SurvivorHash is the sha256 the SURVIVOR had at detection. On the exact
+	// tier it equals Hash by construction; on the perceptual tier the two
+	// copies are deliberately NOT byte-identical, so re-verifying the survivor
+	// against Hash would refuse every perceptual delete.
+	SurvivorHash [32]byte
+	// Tier is the evidence that authorized this delete: PruneTierExact or
+	// PruneTierPerceptual.
+	Tier string
 }
+
+// Prune tiers: which evidence authorized a planned delete (#3138).
+const (
+	// PruneTierExact: byte-identical (sha256) to the survivor. Nothing can be
+	// lost, so this tier needs no survivor choice.
+	PruneTierExact = "exact"
+	// PruneTierPerceptual: the same picture by perceptual hash at
+	// image.DefaultDuplicateTolerance, but not byte-identical. A similarity
+	// judgement, so it is opt-in and its survivor is chosen deliberately.
+	PruneTierPerceptual = "perceptual"
+)
 
 // dedupBackdropIndices returns the indices to delete: every index except the
 // lowest in each byte-identical group, each carrying the hash it had at
@@ -132,13 +153,143 @@ func dedupBackdropIndices(hashes [][32]byte) []redundantBackdrop {
 	var redundant []redundantBackdrop
 	for i, h := range hashes {
 		if survivor, ok := seen[h]; ok {
-			redundant = append(redundant, redundantBackdrop{Index: i, Hash: h, Survivor: survivor})
+			redundant = append(redundant, redundantBackdrop{
+				Index: i, Hash: h, Survivor: survivor, SurvivorHash: h, Tier: PruneTierExact,
+			})
 			continue
 		}
 		seen[h] = i
 	}
-	sort.Slice(redundant, func(a, b int) bool { return redundant[a].Index > redundant[b].Index })
+	sortRedundantDescending(redundant)
 	return redundant
+}
+
+// sortRedundantDescending enforces the delete-order contract: highest index
+// first, because both peers renumber the remaining backdrops after each delete.
+// Shared by both tiers and their union so they cannot drift apart on it.
+//
+// Descending order keeps every CANDIDATE stable until its turn. It says nothing
+// about a SURVIVOR: the exact tier's survivor is its group's lowest index and
+// so never moves, but a perceptual survivor can sit ABOVE its candidates, and
+// the delete loop must shift it (see shiftAfterDelete).
+func sortRedundantDescending(rs []redundantBackdrop) {
+	sort.SliceStable(rs, func(a, b int) bool { return rs[a].Index > rs[b].Index })
+}
+
+// backdropFingerprint is what the perceptual tier learned about one platform
+// backdrop from the single fetch of its bytes.
+type backdropFingerprint struct {
+	index   int
+	content [32]byte
+	phash   uint64
+	area    int64 // width*height
+	size    int   // encoded byte length
+	// localTwin: byte-identical to a fanart file in the artist's local folder.
+	localTwin bool
+}
+
+// fingerprintBackdrop derives the perceptual inputs from bytes already in
+// memory: no extra round trip (#3138). Any decode failure is an ERROR, never a
+// zero-valued fingerprint, so the caller can fail the whole tier closed rather
+// than compare an image it could not read.
+func fingerprintBackdrop(index int, data []byte, content [32]byte, localTwins map[[32]byte]bool) (backdropFingerprint, error) {
+	w, h, err := img.GetDimensions(bytes.NewReader(data))
+	if err != nil {
+		return backdropFingerprint{}, err
+	}
+	if w <= 0 || h <= 0 {
+		return backdropFingerprint{}, fmt.Errorf("non-positive dimensions %dx%d", w, h)
+	}
+	ph, err := img.PerceptualHash(bytes.NewReader(data))
+	if err != nil {
+		return backdropFingerprint{}, err
+	}
+	return backdropFingerprint{
+		index: index, content: content, phash: ph,
+		area: int64(w) * int64(h), size: len(data), localTwin: localTwins[content],
+	}, nil
+}
+
+// preferSurvivor reports whether a should be KEPT over b when both are the same
+// picture. THE SURVIVOR RULE (#3138), in order:
+//
+//  1. A copy byte-identical to a local fanart file. The local folder is
+//     authoritative; it is the image the operator chose and the one the
+//     reconciler checks the platform for, so deleting it would also be undone.
+//  2. Larger pixel area: two copies of one picture differ mostly in resolution.
+//  3. Larger byte size, at equal dimensions (less compression loss). This is
+//     the measured Emby re-save case: same dimensions, a few bytes apart.
+//  4. Lower index. Total and deterministic, so a re-run over the same platform
+//     state builds the same plan.
+//
+// It deliberately does NOT prefer the lowest index first. That is the exact
+// tier's rule, free there because the copies are identical, and here it would
+// routinely keep a downscale and delete the better image.
+func preferSurvivor(a, b backdropFingerprint) bool {
+	if a.localTwin != b.localTwin {
+		return a.localTwin
+	}
+	if a.area != b.area {
+		return a.area > b.area
+	}
+	if a.size != b.size {
+		return a.size > b.size
+	}
+	return a.index < b.index
+}
+
+// perceptualRedundant returns the perceptual tier's deletions among fps, at
+// image.DefaultDuplicateTolerance -- the local image_duplicate rule's
+// threshold and meaning, not a second number.
+//
+// Slots in claimed (already deleted by the exact tier) take no part. A slot
+// whose perceptual hash is 0 also takes no part: Similarity(0, 0) is 1, so an
+// unhashable-looking image would otherwise match every other one (the rule
+// package excludes it for the same reason). Excluded means KEPT.
+//
+// Non-transitivity is handled by image.RepresentativeDeletionSet, the same
+// representative walk the local rule uses, walked in preferSurvivor order so
+// each cluster keeps its best copy. A local twin is never a deletion
+// candidate, only a survivor: the platform should mirror the local folder, and
+// a deleted twin would read to the reconciler as a missing local image and be
+// re-pushed.
+func perceptualRedundant(fps []backdropFingerprint, claimed map[int]bool) []redundantBackdrop {
+	byIndex := make(map[int]backdropFingerprint, len(fps))
+	cands := make([]backdropFingerprint, 0, len(fps))
+	for _, f := range fps {
+		if claimed[f.index] || f.phash == 0 {
+			continue
+		}
+		byIndex[f.index] = f
+		cands = append(cands, f)
+	}
+	sort.SliceStable(cands, func(a, b int) bool { return preferSurvivor(cands[a], cands[b]) })
+	order := make([]int, len(cands))
+	for i, f := range cands {
+		order[i] = f.index
+	}
+	absorbed := img.RepresentativeDeletionSet(order, func(rep, member int) bool {
+		m := byIndex[member]
+		return !m.localTwin && img.Similarity(byIndex[rep].phash, m.phash) >= img.DefaultDuplicateTolerance
+	})
+	out := make([]redundantBackdrop, 0, len(absorbed))
+	for idx, survivor := range absorbed {
+		out = append(out, redundantBackdrop{
+			Index: idx, Hash: byIndex[idx].content,
+			Survivor: survivor, SurvivorHash: byIndex[survivor].content,
+			Tier: PruneTierPerceptual,
+		})
+	}
+	return out
+}
+
+// perceptualPruneOpts turns on the perceptual tier for one detection pass. The
+// zero value is the exact-only behavior shipped in #2540.
+type perceptualPruneOpts struct {
+	Enabled bool
+	// LocalTwins is the set of sha256 content hashes of the artist's local
+	// fanart files (see preferSurvivor and perceptualRedundant).
+	LocalTwins map[[32]byte]bool
 }
 
 // platformBackdropDup holds one artist/connection's detection result.
@@ -160,27 +311,62 @@ type platformBackdropDup struct {
 // "could not determine" while the message still carries the original status
 // text for diagnosability.
 func backdropRedundantIndices(ctx context.Context, client backdropPruneClient, platformArtistID string) (redundant []redundantBackdrop, total int, err error) {
+	redundant, total, _, err = detectBackdropRedundancy(ctx, client, platformArtistID, perceptualPruneOpts{})
+	return redundant, total, err
+}
+
+// detectBackdropRedundancy is backdropRedundantIndices with the perceptual tier
+// available. The perceptual hash is computed from the same bytes the exact tier
+// already fetches, so enabling it costs a decode per backdrop, not a request.
+//
+// FAIL CLOSED, per tier. A fetch error still aborts the whole connection (err),
+// exactly as before. A backdrop that was fetched but could not be decoded turns
+// the perceptual tier OFF for this connection and is reported in
+// perceptualErr, while the exact tier's result -- which needs no decode -- is
+// still returned. A judgement made with one image unreadable could delete the
+// copy that unreadable image was the better twin of.
+func detectBackdropRedundancy(ctx context.Context, client backdropPruneClient, platformArtistID string, opts perceptualPruneOpts) (redundant []redundantBackdrop, total int, perceptualErr, err error) {
 	detail, err := client.GetArtistDetail(ctx, platformArtistID)
 	if err != nil {
 		var statusErr *httpclient.StatusError
 		if errors.As(err, &statusErr) && statusErr.IsNotFound() {
-			return nil, 0, fmt.Errorf("fetching artist detail: %w: %w", errArtistAbsentOnPlatform, err)
+			return nil, 0, nil, fmt.Errorf("fetching artist detail: %w: %w", errArtistAbsentOnPlatform, err)
 		}
-		return nil, 0, fmt.Errorf("fetching artist detail: %w", err)
+		return nil, 0, nil, fmt.Errorf("fetching artist detail: %w", err)
 	}
 	count := detail.BackdropCount
 	if count <= 1 {
-		return nil, count, nil
+		return nil, count, nil, nil
 	}
 	hashes := make([][32]byte, 0, count)
+	var fps []backdropFingerprint
 	for i := 0; i < count; i++ {
 		data, _, fErr := client.GetArtistBackdrop(ctx, platformArtistID, i)
 		if fErr != nil {
-			return nil, 0, fmt.Errorf("fetching backdrop %d: %w", i, fErr)
+			return nil, 0, nil, fmt.Errorf("fetching backdrop %d: %w", i, fErr)
 		}
-		hashes = append(hashes, sha256.Sum256(data))
+		content := sha256.Sum256(data)
+		hashes = append(hashes, content)
+		if opts.Enabled && perceptualErr == nil {
+			fp, fpErr := fingerprintBackdrop(i, data, content, opts.LocalTwins)
+			if fpErr != nil {
+				perceptualErr = fmt.Errorf("perceptual tier skipped: backdrop %d could not be decoded: %w", i, fpErr)
+				continue
+			}
+			fps = append(fps, fp)
+		}
 	}
-	return dedupBackdropIndices(hashes), count, nil
+	redundant = dedupBackdropIndices(hashes)
+	if !opts.Enabled || perceptualErr != nil {
+		return redundant, count, perceptualErr, nil
+	}
+	claimed := make(map[int]bool, len(redundant))
+	for _, rb := range redundant {
+		claimed[rb.Index] = true
+	}
+	redundant = append(redundant, perceptualRedundant(fps, claimed)...)
+	sortRedundantDescending(redundant)
+	return redundant, count, nil, nil
 }
 
 // connAbsenceTally accumulates, per connection, how many artists carried a
