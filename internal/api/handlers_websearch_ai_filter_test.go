@@ -387,7 +387,9 @@ func TestWebImageSearch_FilteringProviderCountsRemovalsOnce(t *testing.T) {
 			Removed int `json:"removed"`
 		} `json:"ai_filter"`
 	}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("filter off: decoding response: %v", err)
+	}
 	if len(resp.Images) != 3 || resp.AIFilter.Removed != 0 {
 		t.Errorf("filter off: images/removed = %d/%d, want 3/0", len(resp.Images), resp.AIFilter.Removed)
 	}

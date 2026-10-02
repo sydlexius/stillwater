@@ -176,7 +176,7 @@ func (a *Adapter) searchImages(ctx context.Context, artistName string, imageType
 	)
 	for page := 0; ; page++ {
 		if err := a.limiter.Wait(ctx, provider.NameDuckDuckGo); err != nil {
-			if page == 0 {
+			if page == 0 || ctx.Err() != nil {
 				return nil, 0, fmt.Errorf("rate limiter: %w", err)
 			}
 			break
@@ -184,7 +184,10 @@ func (a *Adapter) searchImages(ctx context.Context, artistName string, imageType
 
 		resp, err := a.fetchImages(ctx, client, query, vqd, offset)
 		if err != nil {
-			if page == 0 {
+			if page == 0 || ctx.Err() != nil {
+				// A canceled request surfaces its error so the caller stops
+				// instead of rendering a partial grid. Only a provider-side
+				// failure on an extra page degrades to partial results.
 				return nil, 0, fmt.Errorf("fetching images: %w", err)
 			}
 			// An extra page failed (e.g. a 403/202 challenge): never retry,

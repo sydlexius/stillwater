@@ -5,7 +5,9 @@ package duckduckgo
 // against an httptest fake; none touches a real DuckDuckGo host.
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -309,4 +311,53 @@ func TestNoFilterShortPageDoesNotPage(t *testing.T) {
 	if n := len(iJSRequests(captured())); n != 1 {
 		t.Errorf("i.js requests = %d, want 1", n)
 	}
+}
+
+// A canceled request must surface ctx.Err() so the caller stops, rather than
+// returning page 1's partial results as if the search had completed. This is
+// distinct from a 403/202 on an extra page, which keeps the partial results.
+func TestCancelDuringExtraPagePropagates(t *testing.T) {
+	t.Run("during page 2 fetch", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.URL.Path == "/":
+				_, _ = w.Write([]byte(`<script>vqd='4-111'</script>`))
+			case r.URL.Query().Get("s") == "0":
+				_ = json.NewEncoder(w).Encode(imageSearchResponse{
+					Results: []imageHit{{Image: "https://good.example/a.jpg"}, {Image: "https://blocked.example/b.jpg"}},
+					Next:    "i.js?s=2",
+				})
+			default:
+				cancel()
+				<-r.Context().Done()
+			}
+		}))
+		defer srv.Close()
+		a := newTestAdapter(t, srv.URL)
+		res, _, err := a.SearchImagesFiltered(ctx, "Artist", provider.ImageThumb, blockHost)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v (results %d), want context.Canceled", err, len(res))
+		}
+	})
+
+	t.Run("during limiter wait before page 2", func(t *testing.T) {
+		srv, _, _ := pagedServer(t, map[string]fakePage{
+			"0": {hits: 4, blocked: func(i int) bool { return i > 0 }, next: "i.js?s=4"},
+			"4": {hits: 4},
+		})
+		a := newTestAdapter(t, srv.URL)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		cancelAfterPage := func(in []provider.ImageResult) ([]provider.ImageResult, int) {
+			kept, n := blockHost(in)
+			cancel()
+			return kept, n
+		}
+		_, _, err := a.SearchImagesFiltered(ctx, "Artist", provider.ImageThumb, cancelAfterPage)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v, want context.Canceled", err)
+		}
+	})
 }
