@@ -1386,18 +1386,26 @@ func (p *Publisher) uploadFanartForSync(ctx context.Context, a *artist.Artist, p
 // during an operator-initiated replace beats the duplication #3135 exists
 // to fix.
 //
-// A CRASH DURING THAT WINDOW IS RECOVERED BY THE RECONCILER, WITHOUT A
-// JOURNAL (#3147). If the process dies after the deletes, the connection holds
-// a PREFIX of the local set (zero or more of the uploads, in order). No intent
-// record is needed because that state is recognizable from the platform
-// itself: fanartDeficit (reconcile.go) flags any platform missing a distinct
-// local image, by count where the count decides and by the backdrops' bytes
-// where a local duplicate makes the count ambiguous (local A,A,B, crash after
-// two uploads, platform A,A). Its repair, syncAllFanartToPlatforms, reaches
-// this same clear-then-reupload via pushFanartSetToPeer, so the next pass
-// rebuilds the exact ordered local set and the pass after writes nothing
-// (TestResyncCrash_ReconcilerConvergesJellyfin). The window itself is not
-// closed: until that pass runs, the platform shows the partial set.
+// A CRASH DURING THAT WINDOW IS RECOVERED BY THE RECONCILER WHENEVER THE
+// SURVIVING PREFIX IS MISSING A DISTINCT LOCAL IMAGE (#3147). If the process
+// dies after the deletes, the connection holds a PREFIX of the local set (zero
+// or more of the uploads, in order). fanartDeficit (reconcile.go) flags any
+// platform missing a distinct local image, by count where the count decides
+// and by the backdrops' bytes where a local duplicate makes the count
+// ambiguous (local A,A,B, crash after two uploads, platform A,A). Its repair,
+// syncAllFanartToPlatforms, reaches this same clear-then-reupload via
+// pushFanartSetToPeer, so the next pass rebuilds the exact ordered local set
+// and the pass after writes nothing (TestResyncCrash_ReconcilerConvergesJellyfin).
+//
+// THE LIMIT, BY DESIGN: when the prefix already holds every distinct image
+// (only possible when the local set has byte-identical duplicates: local
+// A,B,A, crash after two uploads, platform A,B), only a duplicate copy is
+// missing, and the reconciler treats it exactly like a backdrop prune and does
+// not restore it. Without a durable in-flight record the two states are
+// identical on the platform, and restoring it would undo every prune (#3144).
+// No such record is kept (#2698: intent must be recorded, never inferred).
+// The next operator push restores the copy. The window itself is not closed:
+// until a repair runs, the platform shows the partial set.
 //
 // A FAILURE MID-RESYNC (after the restorability guard has passed) IS
 // REPORTED, NEVER SWALLOWED. A failed DELETE stops the resync before any

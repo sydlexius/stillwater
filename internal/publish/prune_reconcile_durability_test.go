@@ -270,7 +270,7 @@ func TestLocalFanartHashes_UnreadableCountsAsDistinct(t *testing.T) {
 	missing := filepath.Join(dir, "fanart3.jpg")
 	p := New(Deps{Logger: silentLogger()})
 	distinct, unreadable := p.localFanartHashes(context.Background(), []string{a, b, missing})
-	if got := len(distinct) + unreadable; got != 2 {
-		t.Errorf("localFanartHashes = %d distinct + %d unreadable, want 2 (one distinct image plus one unreadable file)", len(distinct), unreadable)
+	if len(distinct) != 1 || unreadable != 1 {
+		t.Errorf("localFanartHashes = %d distinct + %d unreadable, want 1 + 1 (one distinct image plus one unreadable file)", len(distinct), unreadable)
 	}
 }

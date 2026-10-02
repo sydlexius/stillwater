@@ -56,25 +56,47 @@ func liveResyncCrash(t *testing.T, connType, url, apiKey, userID, itemID string,
 		}
 	}
 
+	// A rebuild writes identical bytes, so the final set alone cannot prove
+	// pass 2 wrote nothing. The real client exposes no backdrop tags, so count
+	// fanart pushes instead: syncAllFanartToPlatforms builds one indexed
+	// uploader per peer before ANY write, on Emby and Jellyfin alike.
+	pushes := 0
+	origUploader := newIndexedImageUploader
+	newIndexedImageUploader = func(conn *connection.Connection, logger *slog.Logger) connection.IndexedImageUploader {
+		pushes++
+		return origUploader(conn, logger)
+	}
+	t.Cleanup(func() { newIndexedImageUploader = origUploader })
+
 	measure("before the interrupted push", seed)
 	crashResyncAfter(t, landed, func() { _ = p.SyncAllFanartToPlatforms(ctx, a) })
 	measure("after the interrupted push", crashed)
+	afterPass1 := 0
 	for pass := 1; pass <= 2; pass++ {
 		p.ReconcileArtworkToPlatforms(ctx)
 		time.Sleep(500 * time.Millisecond)
 		measure("after reconciler pass "+string(rune('0'+pass)), local)
+		if pass == 1 {
+			afterPass1 = pushes
+		}
+	}
+	t.Logf("fanart pushes started by reconciler pass 2 = %d (want 0)", pushes-afterPass1)
+	if pushes != afterPass1 {
+		t.Errorf("reconciler pass 2 started %d fanart pushes, want 0: a converged platform must not be re-pushed", pushes-afterPass1)
 	}
 }
 
 func liveJellyfinCrash(t *testing.T, local, seed [][]byte, landed int, crashed [][]byte) {
-	// This suite takes its own scratch item, falling back to the shared one.
-	// The internal/api live handler suite also clears and rewrites
-	// SW_LIVE_JELLYFIN_ITEM_ID, and `go test -tags integration ./...` may run
-	// both package binaries at once, so running both packages together needs
-	// distinct items or `-p 1`.
-	if id := os.Getenv("SW_LIVE_JELLYFIN_CRASH_ITEM_ID"); id != "" {
-		t.Setenv("SW_LIVE_JELLYFIN_ITEM_ID", id)
+	// This suite REQUIRES its own scratch item, with no fallback to the shared
+	// SW_LIVE_JELLYFIN_ITEM_ID: the internal/api live handler suite clears and
+	// rewrites that item, and `go test -tags integration ./...` may run both
+	// package binaries at once, so sharing it would let them trample each
+	// other's fixtures (distinct items or `-p 1`; only the first is enforced).
+	id := os.Getenv("SW_LIVE_JELLYFIN_CRASH_ITEM_ID")
+	if id == "" {
+		t.Skip("SW_LIVE_JELLYFIN_CRASH_ITEM_ID not set; this suite needs a dedicated scratch Jellyfin item (it never falls back to SW_LIVE_JELLYFIN_ITEM_ID)")
 	}
+	t.Setenv("SW_LIVE_JELLYFIN_ITEM_ID", id)
 	env := loadLiveJellyfinEnv(t)
 	liveResyncCrash(t, connection.TypeJellyfin, env.url, env.apiKey, env.userID, env.itemID,
 		jellyfin.New(env.url, env.apiKey, env.userID, silentLogger()), local, seed, landed, crashed)

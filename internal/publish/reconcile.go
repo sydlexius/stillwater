@@ -155,10 +155,17 @@ func (p *Publisher) accumulateNeeds(
 //     its deletes and some uploads leaves a PREFIX of the local set that can
 //     repeat one image and lack another (local A,A,B, platform A,A: short a
 //     B). So this tier reads the platform's backdrop bytes and flags a deficit
-//     when any readable distinct local image is absent. It is the only state a
-//     crash mid-resync leaves that tiers 1 and 2 cannot see: every other prefix
-//     is shorter than the distinct count, and the repair (syncAllFanartToPlatforms,
-//     which on Jellyfin clears and rebuilds) restores the full ordered set.
+//     when any readable distinct local image is absent, and the repair
+//     (syncAllFanartToPlatforms, which on Jellyfin clears and rebuilds)
+//     restores the full ordered set.
+//
+// WHAT THIS GUARANTEES FOR AN INTERRUPTED RESYNC: it is recovered whenever the
+// surviving prefix is missing at least one distinct local image. When the
+// prefix already holds every distinct image (local A,B,A, crash after two
+// uploads, platform A,B), only a duplicate copy is missing; that is
+// byte-for-byte what the prune leaves, so it is treated as a prune and not
+// restored, by design. Without a durable in-flight record the two states are
+// identical (TestResyncCrash_DistinctCompletePrefixIsTreatedAsPrune).
 //
 // Tier 3 is a MEMBERSHIP check, not an order or substitution check: a platform
 // holding enough backdrops but a different image in place of a local one is
@@ -279,7 +286,9 @@ func (p *Publisher) syncMissingArtwork(ctx context.Context, a *artist.Artist, ne
 //     (fanartDeficit: fewer backdrops than distinct images, or, when the
 //     local set holds duplicates, a distinct image absent from the platform's
 //     bytes), so a platform the backdrop prune reduced to one copy per image
-//     is left alone;
+//     is left alone. The same rule means a resync interrupted after it had
+//     already uploaded every distinct image is left one duplicate short, by
+//     design: without an in-flight record it is identical to a prune (#3147);
 //   - when it fires, Emby replaces in place below its count and appends the
 //     rest, and Jellyfin clears and rebuilds the whole list (#3145), so a push
 //     that lands in full ends at or above the distinct count and the next

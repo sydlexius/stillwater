@@ -198,3 +198,65 @@ func TestFanartDeficit_IdentityTierFailsClosed(t *testing.T) {
 		t.Error("a platform below the distinct count was not flagged")
 	}
 }
+
+// sliceBackdropReader serves a fixed platform backdrop list.
+type sliceBackdropReader [][]byte
+
+func (r sliceBackdropReader) GetArtistDetail(context.Context, string) (*connection.ArtistPlatformState, error) {
+	return &connection.ArtistPlatformState{BackdropCount: len(r)}, nil
+}
+
+func (r sliceBackdropReader) GetArtistBackdrop(_ context.Context, _ string, i int) ([]byte, string, error) {
+	return r[i], "image/jpeg", nil
+}
+
+// TestFanartDeficit_IdentityTierMembership isolates tier 3's membership check
+// with a reader that returns bytes. Local A,A,B, platform count 2 (between
+// the distinct and file counts, so only tier 3 decides).
+func TestFanartDeficit_IdentityTierMembership(t *testing.T) {
+	dir := t.TempDir()
+	A, B := bandJPEG(t, 61), bandJPEG(t, 62)
+	writeFile(t, dir+"/fanart.jpg", A)
+	writeFile(t, dir+"/fanart2.jpg", A)
+	writeFile(t, dir+"/fanart3.jpg", B)
+	p := New(Deps{Logger: silentLogger()})
+	for _, tc := range []struct {
+		name     string
+		platform sliceBackdropReader
+		want     bool
+	}{
+		{"platform A,A is missing B", sliceBackdropReader{A, A}, true},
+		{"platform A,B holds every distinct image", sliceBackdropReader{A, B}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := &connection.ArtistPlatformState{BackdropCount: len(tc.platform)}
+			if got := p.fanartDeficit(context.Background(), "a1", dir, state, tc.platform, "p1"); got != tc.want {
+				t.Errorf("fanartDeficit = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestResyncCrash_DistinctCompletePrefixIsTreatedAsPrune pins the DOCUMENTED
+// LIMIT of #3147: local A,B,A and a crash after two uploads leaves A,B, which
+// holds every distinct image and is byte-for-byte what the backdrop prune
+// leaves. With no durable in-flight record the two are identical, so the
+// reconciler must treat it as a prune: zero writes, platform stays A,B. If a
+// future change restores the copy here, it also undoes every prune (#3144).
+func TestResyncCrash_DistinctCompletePrefixIsTreatedAsPrune(t *testing.T) {
+	A, B := bandJPEG(t, 63), bandJPEG(t, 64)
+	ctx := context.Background()
+	peer := &statefulBackdropPeer{appendAll: true, data: [][]byte{B, A, A}}
+	p, a := durabilityHarness(t, connection.TypeJellyfin, peer, [][]byte{A, B, A})
+
+	crashResyncAfter(t, 2, func() { _ = p.SyncAllFanartToPlatforms(ctx, a) })
+	got, writes0 := peer.state()
+	assertPeerHolds(t, "after the interrupted push (precondition)", got, [][]byte{A, B})
+
+	p.ReconcileArtworkToPlatforms(ctx)
+	got, writes1 := peer.state()
+	assertPeerHolds(t, "after reconciler pass", got, [][]byte{A, B})
+	if writes1 != writes0 {
+		t.Errorf("reconciler issued %d writes, want 0: this state is indistinguishable from a prune", writes1-writes0)
+	}
+}
