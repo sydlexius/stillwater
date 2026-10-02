@@ -770,15 +770,19 @@ func shiftAfterDelete(rs []redundantBackdrop, deletedIndex int) {
 }
 
 // perceptualOptsFor builds the perceptual tier's options for one artist, or
-// reports why the tier must stay off. The local twin set is the sha256 of every
-// local fanart file. A local file that cannot be hashed fails the tier CLOSED:
-// its platform twin would be unrecognizable and could be deleted as a mere
-// lower-quality copy.
+// reports why the tier must stay off; every doubt fails it CLOSED. Protected
+// fanart (#2533) skips the whole artist: platform indices do not map to local
+// slots, and a re-encoded user image is no sha256 twin. No local folder, an
+// empty one, or an unhashable file leaves the local twin set (the sha256 of
+// every local fanart file) unknown.
 func (p *Publisher) perceptualOptsFor(ctx context.Context, a *artist.Artist) (perceptualPruneOpts, error) {
+	if err := p.checkNoProtectedFanart(ctx, a.ID); err != nil {
+		return perceptualPruneOpts{}, err
+	}
 	twins := make(map[[32]byte]bool)
 	dir := p.ImageDir(a)
 	if dir == "" {
-		return perceptualPruneOpts{Enabled: true, LocalTwins: twins}, nil
+		return perceptualPruneOpts{}, fmt.Errorf("perceptual tier skipped: artist has no local image folder")
 	}
 	paths, err := img.DiscoverFanart(ctx, dir, p.getActiveFanartPrimary(ctx))
 	if err != nil {
@@ -803,6 +807,25 @@ func (p *Publisher) perceptualOptsFor(ctx context.Context, a *artist.Artist) (pe
 		}
 	}
 	return perceptualPruneOpts{Enabled: true, LocalTwins: twins}, nil
+}
+
+// checkNoProtectedFanart errors when any fanart row is locked or user-set, or
+// when that cannot be read.
+func (p *Publisher) checkNoProtectedFanart(ctx context.Context, artistID string) error {
+	if p.artistImages == nil {
+		p.logger.Error("platform backdrop prune: artist image reader not wired; perceptual tier unavailable")
+		return fmt.Errorf("perceptual tier skipped: fanart protection state unavailable")
+	}
+	imgs, err := p.artistImages.GetImagesForArtist(ctx, artistID)
+	if err != nil {
+		return fmt.Errorf("perceptual tier skipped: reading fanart protection state: %w", err)
+	}
+	for i := range imgs {
+		if im := &imgs[i]; im.ImageType == "fanart" && (im.Locked || im.Source == artist.ImageSourceUser) {
+			return fmt.Errorf("perceptual tier skipped: artist has locked or user-set fanart")
+		}
+	}
+	return nil
 }
 
 // pruneOneArtist detects and deletes redundant backdrops for one artist
@@ -844,13 +867,11 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, scope 
 }
 
 // pruneOneTarget runs detect, plan and delete for one artist on one connection
-// under lockPhashTarget (#3316). That guard is held by the polluted-backdrop
-// delete and restore (DeletePollutedBackdropOnPlatforms,
-// RestoreBackdropToPlatforms), the single-fanart sync (uploadFanartForSync) and
-// the Jellyfin branch of pushFanartSetToPeer. It is NOT held by the Emby
-// indexed set upload (uploadFanartSet) or the push handler's per-index uploads,
-// so this lock serializes the prune against those writers only, not against
-// every backdrop write. Detect-to-delete is one read-modify-verify, and the
+// under lockPhashTarget (#3316), which every Stillwater indexed backdrop writer
+// also holds: the polluted-backdrop delete and restore, uploadFanartForSync,
+// both branches of pushFanartSetToPeer, and the push handler (via
+// LockBackdropTarget). A write by the platform itself is outside it, so each
+// delete still re-verifies. Detect-to-delete is one read-modify-verify, and the
 // perceptual tier's per-backdrop decode widens the window a concurrent resync
 // could otherwise interleave with. Re-entrancy: the only caller chain is the
 // prune handler -> PrunePlatformBackdropDuplicates -> pruneOneArtist, none of

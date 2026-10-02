@@ -3,10 +3,14 @@ package publish
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/sydlexius/stillwater/internal/artist"
 )
 
 // perceptualFixture is one picture at three resolutions plus an unrelated
@@ -23,6 +27,30 @@ func newPerceptualFixture(t *testing.T) perceptualFixture {
 	mustSimilar(t, f.big, f.mid, true)
 	mustSimilar(t, f.big, f.other, false)
 	return f
+}
+
+// fakeArtistImages serves the artist_images rows the perceptual tier reads.
+type fakeArtistImages struct {
+	rows []artist.ArtistImage
+	err  error
+}
+
+func (f *fakeArtistImages) GetImagesForArtist(_ context.Context, _ string) ([]artist.ArtistImage, error) {
+	return f.rows, f.err
+}
+
+// perceptualPublisher is the one-artist publisher the perceptual tier can run
+// on: nothing protected, and local fanart that no platform backdrop matches.
+func perceptualPublisher(t *testing.T, fake backdropPruneClient) *Publisher {
+	t.Helper()
+	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
+	p.artistImages = &fakeArtistImages{}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), []byte("unrelated local fanart"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fixtureArtist(t, p).artists[0].Path = dir
+	return p
 }
 
 // fixtureArtist reaches the single artist the one-artist publisher pages over,
@@ -59,7 +87,7 @@ func assertPlatform(t *testing.T, fake *fakeBackdropClient, want ...[]byte) {
 func TestPrunePerceptual_SurvivorAboveCandidatesCompletesThePlan(t *testing.T) {
 	f := newPerceptualFixture(t)
 	fake := &fakeBackdropClient{backdrops: [][]byte{f.small, f.other, f.mid, f.other, f.big}, failAt: -1, failDeleteAt: -1}
-	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
+	p := perceptualPublisher(t, fake)
 
 	res, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true, Perceptual: true})
 	if err != nil {
@@ -95,7 +123,7 @@ func TestPrunePerceptual_SurvivorAboveCandidatesCompletesThePlan(t *testing.T) {
 func TestPrunePerceptual_OffByDefault(t *testing.T) {
 	f := newPerceptualFixture(t)
 	fake := &fakeBackdropClient{backdrops: [][]byte{f.small, f.big}, failAt: -1, failDeleteAt: -1}
-	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
+	p := perceptualPublisher(t, fake)
 	if _, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true}); err != nil {
 		t.Fatalf("prune: %v", err)
 	}
@@ -105,7 +133,7 @@ func TestPrunePerceptual_OffByDefault(t *testing.T) {
 func TestPrunePerceptual_DryRunReportsTheTierAndDeletesNothing(t *testing.T) {
 	f := newPerceptualFixture(t)
 	fake := &fakeBackdropClient{backdrops: [][]byte{f.small, f.big}, failAt: -1, failDeleteAt: -1}
-	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
+	p := perceptualPublisher(t, fake)
 
 	res, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true, Perceptual: true, DryRun: true})
 	if err != nil {
@@ -130,7 +158,7 @@ func TestPrunePerceptual_KeepsTheLocalTwin(t *testing.T) {
 		t.Fatal(err)
 	}
 	fake := &fakeBackdropClient{backdrops: [][]byte{f.big, f.small}, failAt: -1, failDeleteAt: -1}
-	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
+	p := perceptualPublisher(t, fake)
 	fixtureArtist(t, p).artists[0].Path = dir
 
 	if _, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true, Perceptual: true}); err != nil {
@@ -142,7 +170,7 @@ func TestPrunePerceptual_KeepsTheLocalTwin(t *testing.T) {
 func TestPrunePerceptual_LockedArtistGetsExactOnly(t *testing.T) {
 	f := newPerceptualFixture(t)
 	fake := &fakeBackdropClient{backdrops: [][]byte{f.small, f.big, f.big}, failAt: -1, failDeleteAt: -1}
-	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
+	p := perceptualPublisher(t, fake)
 	fixtureArtist(t, p).artists[0].Locked = true
 
 	if _, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true, Perceptual: true}); err != nil {
@@ -161,7 +189,7 @@ func TestPrunePerceptual_UnreadableLocalFanartFailsClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	fake := &fakeBackdropClient{backdrops: [][]byte{f.small, f.big}, failAt: -1, failDeleteAt: -1}
-	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
+	p := perceptualPublisher(t, fake)
 	fixtureArtist(t, p).artists[0].Path = dir
 
 	res, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true, Perceptual: true})
@@ -178,7 +206,7 @@ func TestPrunePerceptual_UndecodableBackdropDeletesNothingPerceptual(t *testing.
 	f := newPerceptualFixture(t)
 	junk := []byte("not an image")
 	fake := &fakeBackdropClient{backdrops: [][]byte{f.small, f.big, junk}, failAt: -1, failDeleteAt: -1}
-	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
+	p := perceptualPublisher(t, fake)
 
 	res, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true, Perceptual: true})
 	if err != nil {
@@ -194,7 +222,7 @@ func TestPrunePerceptual_UndecodableBackdropDeletesNothingPerceptual(t *testing.
 // while it is held elsewhere, no delete happens.
 func TestPrunePerceptual_WaitsForThePerTargetLock(t *testing.T) {
 	fake := &fakeBackdropClient{backdrops: [][]byte{[]byte("A"), []byte("A")}, failAt: -1, failDeleteAt: -1}
-	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
+	p := perceptualPublisher(t, fake)
 	unlock := p.lockPhashTarget("c-emby", "p1")
 
 	done := make(chan struct{})
@@ -221,7 +249,7 @@ func TestPrunePerceptual_EmptyLocalFolderFailsClosed(t *testing.T) {
 	f := newPerceptualFixture(t)
 	dir := t.TempDir() // exists, holds no fanart
 	fake := &fakeBackdropClient{backdrops: [][]byte{f.small, f.big}, failAt: -1, failDeleteAt: -1}
-	p := newTestPublisherWithOneArtistOnePlatform(t, fake)
+	p := perceptualPublisher(t, fake)
 	fixtureArtist(t, p).artists[0].Path = dir
 
 	res, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true, Perceptual: true})
@@ -231,5 +259,46 @@ func TestPrunePerceptual_EmptyLocalFolderFailsClosed(t *testing.T) {
 	assertPlatform(t, fake, f.small, f.big)
 	if len(res.Failures) != 1 || res.Failures[0].ArtistID != "a1" {
 		t.Errorf("failures %+v, want one naming the skipped tier", res.Failures)
+	}
+}
+
+// Protected fanart (#2533: locked or user-set) or an unreadable protection
+// state skips the perceptual tier; the exact tier still removes the twin.
+func TestPrunePerceptual_ProtectedFanartGetsExactOnly(t *testing.T) {
+	f := newPerceptualFixture(t)
+	for name, imgs := range map[string]*fakeArtistImages{
+		"locked slot":   {rows: []artist.ArtistImage{{ImageType: "fanart", SlotIndex: 1, Locked: true}}},
+		"user-set slot": {rows: []artist.ArtistImage{{ImageType: "fanart", Source: artist.ImageSourceUser}}},
+		"read error":    {err: errors.New("database is locked")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := &fakeBackdropClient{backdrops: [][]byte{f.small, f.big, f.big}, failAt: -1, failDeleteAt: -1}
+			p := perceptualPublisher(t, fake)
+			p.artistImages = imgs
+			assertSkipped(t, p, fake, "perceptual tier skipped", f.small, f.big)
+		})
+	}
+}
+
+// No local image folder means no twin protection, so the tier is skipped.
+func TestPrunePerceptual_NoLocalFolderFailsClosed(t *testing.T) {
+	f := newPerceptualFixture(t)
+	fake := &fakeBackdropClient{backdrops: [][]byte{f.small, f.big}, failAt: -1, failDeleteAt: -1}
+	p := perceptualPublisher(t, fake)
+	fixtureArtist(t, p).artists[0].Path = ""
+	assertSkipped(t, p, fake, "no local image folder", f.small, f.big)
+}
+
+// assertSkipped runs a live perceptual prune and checks the platform's final
+// state plus the one artist-level failure naming why the tier was skipped.
+func assertSkipped(t *testing.T, p *Publisher, fake *fakeBackdropClient, why string, want ...[]byte) {
+	t.Helper()
+	res, err := p.PrunePlatformBackdropDuplicates(context.Background(), PlatformBackdropPruneScope{AllArtists: true, Perceptual: true})
+	if err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	assertPlatform(t, fake, want...)
+	if len(res.Failures) != 1 || res.Failures[0].ArtistID != "a1" || !strings.Contains(res.Failures[0].Err, why) {
+		t.Errorf("failures %+v, want one containing %q", res.Failures, why)
 	}
 }

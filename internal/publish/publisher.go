@@ -224,6 +224,7 @@ type Deps struct {
 	// of failing at scan time (#2540 review).
 	ArtistLister       artistPageLister
 	ArtistGetter       artistGetter
+	ArtistImages       artistImageReader
 	ConnectionService  connectionGetter
 	LibraryService     libraryResolver
 	NFOSnapshotService *nfo.SnapshotService
@@ -269,6 +270,7 @@ type Publisher struct {
 	artistService      artistPlatformLister
 	artistLister       artistPageLister
 	artistGetter       artistGetter
+	artistImages       artistImageReader
 	connectionService  connectionGetter
 	libraryService     libraryResolver
 	nfoSnapshotService *nfo.SnapshotService
@@ -343,6 +345,12 @@ type artistGetter interface {
 	GetByID(ctx context.Context, id string, opts ...artist.HydrateOpts) (*artist.Artist, error)
 }
 
+// artistImageReader reads the artist_images rows the perceptual backdrop prune
+// checks for operator-protected fanart. Optional: nil fails that tier closed.
+type artistImageReader interface {
+	GetImagesForArtist(ctx context.Context, artistID string) ([]artist.ArtistImage, error)
+}
+
 // ImageWriteGate gates image writes via the conflict ledger. Implemented by
 // *conflict.Gate; kept as a narrow interface so the publish package does not
 // import internal/conflict.
@@ -384,6 +392,7 @@ func New(d Deps) *Publisher {
 		artistService:      d.ArtistService,
 		artistLister:       d.ArtistLister,
 		artistGetter:       d.ArtistGetter,
+		artistImages:       d.ArtistImages,
 		connectionService:  d.ConnectionService,
 		libraryService:     d.LibraryService,
 		nfoSnapshotService: d.NFOSnapshotService,
@@ -2939,7 +2948,10 @@ func embyBackdropReader(conn *connection.Connection, logger *slog.Logger) connec
 // holds the same key across its own resolve+resync, so locking in the shared
 // core would self-deadlock. This path does not run under that lock, so it
 // takes it, serializing against a concurrent single-image sync of the same
-// artist on the same connection.
+// artist on the same connection. The Emby indexed upload takes it too (#3138
+// review), so it cannot rewrite the set between the backdrop prune's re-verify
+// and its delete. Re-entrancy: the only caller, syncAllFanartToPlatforms, holds
+// no lock, and nothing under it takes this one.
 //
 // attempted reports whether any platform write was issued. For Emby it is
 // always true, exactly as before #3145, even when uploadFanartSet skips every
@@ -2948,13 +2960,13 @@ func embyBackdropReader(conn *connection.Connection, logger *slog.Logger) connec
 // as pushed to: the post-push repair and the #3177 extrafanart/ advisory both
 // key on "a peer was reached".
 func (p *Publisher) pushFanartSetToPeer(ctx context.Context, u fanartUpload) (warnings []string, attempted bool) {
-	if connection.SupportsIndexedBackdropReplace(u.conn.Type) {
-		return p.uploadFanartSet(ctx, u), true
-	}
-	client := newFanartResyncClient(u.conn, p.logger)
-	if client == nil {
-		p.logger.Warn("unsupported connection type for fanart resync", "type", u.conn.Type)
-		return []string{truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", u.conn.Name, u.conn.Type))}, false
+	indexed := connection.SupportsIndexedBackdropReplace(u.conn.Type)
+	var client fanartResyncClient
+	if !indexed {
+		if client = newFanartResyncClient(u.conn, p.logger); client == nil {
+			p.logger.Warn("unsupported connection type for fanart resync", "type", u.conn.Type)
+			return []string{truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", u.conn.Name, u.conn.Type))}, false
+		}
 	}
 	if fanartLockWaitHook != nil {
 		fanartLockWaitHook()
@@ -2963,6 +2975,9 @@ func (p *Publisher) pushFanartSetToPeer(ctx context.Context, u fanartUpload) (wa
 	defer unlock()
 	if fanartLockHeldHook != nil {
 		fanartLockHeldHook()
+	}
+	if indexed {
+		return p.uploadFanartSet(ctx, u), true
 	}
 	// #2540 notify-only collision check: uploadFanartSet raises it per file
 	// just before the write, so this path must too or a Jellyfin-only push

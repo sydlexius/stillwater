@@ -944,6 +944,7 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 		ArtistService:      a.artistService,
 		ArtistLister:       a.artistService,
 		ArtistGetter:       a.artistService,
+		ArtistImages:       a.artistService,
 		ConnectionService:  a.connectionService,
 		LibraryService:     a.libraryService,
 		NFOSnapshotService: a.nfoSnapshotService,

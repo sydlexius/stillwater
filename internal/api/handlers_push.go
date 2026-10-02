@@ -238,6 +238,15 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 				uploadErrs = append(uploadErrs, "fanart: failed to read directory")
 				continue
 			}
+			// Indexed writes serialize with the backdrop prune's per-target
+			// lock (#3138 review). Re-entrancy: this handler holds no lock and
+			// the loop below never calls the publisher.
+			if r.publisher == nil {
+				r.logger.Error("publisher not wired; fanart push refused", slog.String("artist_id", a.ID))
+				uploadErrs = append(uploadErrs, "fanart: push unavailable")
+				continue
+			}
+			unlockTarget := r.publisher.LockBackdropTarget(body.ConnectionID, body.PlatformArtistID)
 			for i, fp := range fanartPaths {
 				// Bounded, ctx-aware read (#2934): DiscoverFanart above already
 				// honors the request context, so a bare os.ReadFile here left
@@ -265,6 +274,7 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 					// handler answered 200 with an errors list -- reporting a
 					// push it could not actually perform.
 					if distrust := img.ReadFailureDistrustsLoop(req.Context(), readErr); distrust != nil {
+						unlockTarget()
 						writeCanceledPush(w, r.logger, a.Name, uploaded, distrust)
 						return
 					}
@@ -290,6 +300,7 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 				}
 				uploaded = append(uploaded, fmt.Sprintf("fanart[%d]", i))
 			}
+			unlockTarget()
 			continue
 		}
 
