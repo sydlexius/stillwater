@@ -741,6 +741,9 @@ jobs:
       - name: PR trigger guard self-test
         run: bash scripts/test-check-pr-trigger-scope.sh
 
+      - name: Release blockers check self-test
+        run: bash scripts/test-check-release-blockers.sh
+
       # Harness boot-site guard (#2310): every test-harness server must set
       # SW_AI_BLOCKLIST_URL empty so no test job downloads the AI blocklist.
       # The boot sites it guards live in tests/**, scripts/**, workflows and
