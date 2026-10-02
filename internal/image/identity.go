@@ -116,7 +116,7 @@ type IdentityResult struct {
 // because unlike the detector (which owns its own default and NaN
 // fallback, phash_mismatch.go:468-480) this primitive has no scan-level
 // context to pick one -- callers are expected to pass
-// defaultImageDupTolerance-equivalent value themselves. This is
+// DefaultDuplicateTolerance (or an equivalent value) themselves. This is
 // deliberately fail-open like every other unusable-input case here: a
 // broken tolerance must never be read as "everything collides".
 func CompareIdentity(candidatePHash uint64, destArtistID string, reference []FanartIdentityEntry, tolerance float64) IdentityResult {

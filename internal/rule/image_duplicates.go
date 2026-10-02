@@ -15,8 +15,9 @@ import (
 
 // defaultImageDupTolerance is the perceptual similarity at or above which two
 // images are reported as duplicates when the rule config supplies no valid
-// tolerance of its own.
-const defaultImageDupTolerance = 0.90
+// tolerance of its own. The value and its derivation live in the image
+// package so the platform backdrop prune shares it (#3138).
+const defaultImageDupTolerance = image.DefaultDuplicateTolerance
 
 // hashUnknown is the zero value both hash columns use to mean "this file has
 // not been hashed", as distinct from any hash a real file could have.
@@ -604,19 +605,15 @@ func nonTransitiveFanartDeletionSet(groups []imageDupGroup) map[int]bool {
 	}
 	sort.Ints(slots)
 
-	toDelete := make(map[int]bool)
-	for _, i := range slots {
-		if toDelete[i] {
-			continue
-		}
-		for _, j := range slots {
-			if j <= i || toDelete[j] {
-				continue
-			}
-			if pairSet[[2]int{i, j}] {
-				toDelete[j] = true
-			}
-		}
+	// Ascending slot order makes the lowest slot of each cluster the
+	// representative. The walk itself is shared with the platform backdrop
+	// prune (#3138), which differs only in the order it passes.
+	absorbed := image.RepresentativeDeletionSet(slots, func(rep, member int) bool {
+		return pairSet[[2]int{rep, member}]
+	})
+	toDelete := make(map[int]bool, len(absorbed))
+	for slot := range absorbed {
+		toDelete[slot] = true
 	}
 	return toDelete
 }

@@ -38,7 +38,7 @@ func TestCompareIdentity(t *testing.T) {
 		t.Fatalf("distance-7 similarity = %v, want 0.890625 (test construction is broken)", sim)
 	}
 
-	const tolerance = 0.90 // mirrors defaultPHashMismatchTolerance / defaultImageDupTolerance
+	const tolerance = DefaultDuplicateTolerance // the rule package's duplicate and phash-mismatch defaults alias this
 
 	dist2 := withFlippedBits(2) // similarity 0.96875, well inside tolerance
 	dist6 := withFlippedBits(6) // similarity 0.90625, just inside tolerance
