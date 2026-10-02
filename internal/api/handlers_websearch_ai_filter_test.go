@@ -307,3 +307,88 @@ func TestWebImageSearch_AIFilterNotLoadedNotice(t *testing.T) {
 		})
 	}
 }
+
+// filteringWebProvider is a stub FilteringWebImageProvider (#3309). It records
+// which entry point the handler used and applies the handler-supplied filter
+// to its own batch, as the DuckDuckGo adapter does per page.
+type filteringWebProvider struct {
+	*stubWebImageProvider
+	plainCalls, filteredCalls int
+	batch                     []provider.ImageResult
+}
+
+func (f *filteringWebProvider) SearchImages(ctx context.Context, name string, it provider.ImageType) ([]provider.ImageResult, error) {
+	f.plainCalls++
+	return f.batch, nil
+}
+
+func (f *filteringWebProvider) SearchImagesFiltered(_ context.Context, _ string, _ provider.ImageType, keep provider.ImageFilter) ([]provider.ImageResult, int, error) {
+	f.filteredCalls++
+	kept, removed := keep(f.batch)
+	return kept, removed, nil
+}
+
+func TestWebImageSearch_FilteringProviderCountsRemovalsOnce(t *testing.T) {
+	installAIBlocklist(t, true)
+	batch := []provider.ImageResult{
+		{URL: aiHostImage, Source: "duckduckgo"},
+		{URL: plainHostImage, Source: "duckduckgo"},
+		{URL: aiHostImage + "?2", Source: "duckduckgo"},
+	}
+	// PRECONDITION: two of the three really are blocked.
+	if !aiblock.Default().MatchURL(batch[0].URL) || !aiblock.Default().MatchURL(batch[2].URL) {
+		t.Fatal("fixture list does not block the test URLs")
+	}
+	removed := func(w *httptest.ResponseRecorder) int {
+		var resp struct {
+			Images   []provider.ImageResult `json:"images"`
+			AIFilter struct {
+				Removed int `json:"removed"`
+			} `json:"ai_filter"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		if len(resp.Images) != 1 {
+			t.Errorf("images = %d, want 1 survivor", len(resp.Images))
+		}
+		return resp.AIFilter.Removed
+	}
+
+	r, svc := newImageHandlerTestServer(t)
+	stub := &filteringWebProvider{stubWebImageProvider: aiFilterStub(), batch: batch}
+	r.webSearchRegistry.Register(stub)
+	if err := r.providerSettings.SetWebSearchEnabled(context.Background(), stub.name, true); err != nil {
+		t.Fatal(err)
+	}
+	a := &artist.Artist{Name: "Filtering Provider Artist", SortName: "Filtering Provider Artist", Path: t.TempDir()}
+	if err := svc.Create(context.Background(), a); err != nil {
+		t.Fatal(err)
+	}
+
+	// Filter on: the provider is asked to filter, removals counted exactly once
+	// (the post-loop pass over already-filtered results removes nothing more).
+	if got := removed(aiFilterSearch(t, r, a.ID, "u-fp", false)); got != 2 {
+		t.Errorf("ai_filter.removed = %d, want 2", got)
+	}
+	if stub.filteredCalls != 1 || stub.plainCalls != 0 {
+		t.Errorf("filtered/plain calls = %d/%d, want 1/0", stub.filteredCalls, stub.plainCalls)
+	}
+
+	// Filter off: the plain entry point, nothing removed.
+	seedUserPref(t, r, "u-fp", PrefFilterAIImages, "false")
+	w := aiFilterSearch(t, r, a.ID, "u-fp", false)
+	if stub.filteredCalls != 1 || stub.plainCalls != 1 {
+		t.Errorf("filter off: filtered/plain calls = %d/%d, want 1/1", stub.filteredCalls, stub.plainCalls)
+	}
+	var resp struct {
+		Images   []provider.ImageResult `json:"images"`
+		AIFilter struct {
+			Removed int `json:"removed"`
+		} `json:"ai_filter"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if len(resp.Images) != 3 || resp.AIFilter.Removed != 0 {
+		t.Errorf("filter off: images/removed = %d/%d, want 3/0", len(resp.Images), resp.AIFilter.Removed)
+	}
+}
