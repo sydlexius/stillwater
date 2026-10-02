@@ -146,7 +146,7 @@ docker compose restart stillwater
 docker compose stop
 
 # Open a shell inside the container
-docker compose exec stillwater sh
+docker compose exec stillwater sh    # or bash (images newer than v1.7.2; older images have sh only)
 ```
 
 ## Upgrading

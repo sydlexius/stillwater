@@ -65,7 +65,7 @@ LABEL org.opencontainers.image.source="https://github.com/sydlexius/stillwater" 
       org.opencontainers.image.description="Artist metadata and image manager for Emby, Jellyfin, and Kodi" \
       org.opencontainers.image.licenses="GPL-3.0"
 
-RUN apk add --no-cache ca-certificates tzdata su-exec && \
+RUN apk add --no-cache ca-certificates tzdata su-exec bash && \
     apk upgrade --no-cache
 
 # Create app user (guarded: GID/UID may already be claimed after apk upgrade)
