@@ -985,8 +985,9 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, query string, re
 	return candidates
 }
 
-// sortCandidatesByRank orders candidates best-first, preferring measured album
-// overlap over the network-free estimate.
+// sortCandidatesByRank orders candidates best-first: MusicBrainz results above
+// every other provider's (#2811), then measured album overlap over the
+// network-free estimate within each tier.
 //
 // A candidate whose album overlap was actually computed sorts above one that
 // was not, because the overlap is evidence about the operator's own library
@@ -1000,6 +1001,17 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, query string, re
 // providers returned them in, rather than shuffling between identical requests.
 func sortCandidatesByRank(query string, candidates []templates.DisambiguationCandidate) {
 	slices.SortStableFunc(candidates, func(a, b templates.DisambiguationCandidate) int {
+		// Provider tier is the first key (#2811): a MusicBrainz result outranks
+		// every other provider's regardless of album overlap or score, matching
+		// the orchestrator's own ordering, which this re-rank must not undo.
+		aMB := a.Result.Source == string(provider.NameMusicBrainz)
+		bMB := b.Result.Source == string(provider.NameMusicBrainz)
+		if aMB != bMB {
+			if aMB {
+				return -1
+			}
+			return 1
+		}
 		aScored := a.HasMeasuredOverlap()
 		bScored := b.HasMeasuredOverlap()
 		if aScored != bScored {

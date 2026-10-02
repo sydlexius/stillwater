@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"regexp"
 	"runtime/debug"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -1446,7 +1447,26 @@ func (o *Orchestrator) SearchForLinking(ctx context.Context, name string, provid
 		allResults = append(allResults, perResults[i]...)
 	}
 
+	// perStatus stays in input order (above); only the result slice is ranked.
+	sortDisambiguationResults(allResults)
 	return allResults, statuses, nil
+}
+
+// sortDisambiguationResults orders disambiguation candidates in place with a
+// two-tier comparator: every MusicBrainz result ranks above every other
+// provider's, regardless of score (an accurate MBID is the key the other
+// integrations hang off, #2811), then score descending within each tier. The
+// sort is stable so equal-tier, equal-score results keep their incoming
+// per-provider order. The contract lives here, not in the caller's provider
+// slice order, so reordering or extending that slice cannot change a result's tier.
+func sortDisambiguationResults(results []ArtistSearchResult) {
+	isMB := func(r ArtistSearchResult) bool { return r.Source == string(NameMusicBrainz) }
+	sort.SliceStable(results, func(i, j int) bool {
+		if mi, mj := isMB(results[i]), isMB(results[j]); mi != mj {
+			return mi
+		}
+		return results[i].Score > results[j].Score
+	})
 }
 
 // isImageFieldName returns true for metadata fields that represent image slots.
