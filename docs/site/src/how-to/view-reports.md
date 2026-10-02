@@ -231,7 +231,7 @@ By default, the prune only ever removes copies that are byte-identical to a kept
 
 ### Prune near-duplicate copies
 
-Most redundant platform backdrops are not byte-identical. When Emby or Jellyfin re-saves an image Stillwater pushed, or the same picture was pushed at two resolutions, the copies look the same but differ in their bytes, so the default prune cannot see them. Through the [API](../api/index.md), setting `perceptual` on a prune request adds a second pass that also removes copies that are the same picture, judged by perceptual hash at the same similarity the local duplicate-images rule uses. It is off unless you ask for it, because it is a similarity judgment rather than an exact match. The report page's buttons and counts still cover exact copies only.
+Most redundant platform backdrops are not byte-identical. When Emby or Jellyfin re-saves an image Stillwater pushed, or the same picture was pushed at two resolutions, the copies look the same but differ in their bytes, so the default prune cannot see them. Through the [API](../api/index.md), setting `perceptual` on a prune request adds a second pass that also removes copies that are the same picture, judged by perceptual hash at the "No duplicate images" rule's default similarity (90%). The rule's similarity is configurable; the prune's is fixed at that default. It is off unless you ask for it, because it is a similarity judgment rather than an exact match. The report page's buttons and counts still cover exact copies only.
 
 Unlike exact copies, near-duplicates are not interchangeable, so the prune chooses which one to keep. In order, it keeps:
 
@@ -242,9 +242,11 @@ Unlike exact copies, near-duplicates are not interchangeable, so the prune choos
 
 A platform copy that matches one of your local fanart files is never removed by this pass. A locked artist gets the exact pass only.
 
-Similarity is not transitive. If image A resembles B, and B resembles C, A and C can still be different pictures. The prune only removes a copy that directly matches the copy being kept, so a chain of similar images never collapses into one survivor and C is kept.
+Similarity is not transitive. If image A resembles B, and B resembles C, A and C can still be different pictures. The prune only removes a copy that directly matches the copy being kept, so which end of such a chain survives depends on which copy is kept: if B is kept, A and C both match it and both go; if A is kept, B goes and C, which does not match A, stays. A copy that matches nothing being kept is never removed.
 
-If any of an artist's backdrops on a platform cannot be read as an image, or any of the artist's local fanart files cannot be read, the near-duplicate pass is skipped for that artist and reported as a failure; the exact pass still runs. Nothing is deleted on a judgment made with an image it could not see.
+If any of an artist's backdrops on a server cannot be read as an image, the near-duplicate pass is skipped for that artist on that server. If any of the artist's local fanart files cannot be read, or the artist's folder holds no fanart at all (which is what a disconnected drive looks like), it is skipped for that artist on every server. Each skip is reported as a failure, and the exact pass still runs. Nothing is deleted on a judgment made with an image it could not see.
+
+Two limits to know before you opt in. The perceptual hash looks only at brightness, not color, so a color image and a grayscale or sepia version of it count as the same picture: the prune keeps the larger one and removes the other from the server. And a near-duplicate prune only stays in effect if your local folder does not itself hold near-duplicates of the same picture; otherwise the background sync sees a local image missing from the server and pushes it back. Clean the local folder first with the "No duplicate images" rule in the [rules catalog](../reference/rules-catalogue.md).
 
 Rehearse it first. A dry run with `perceptual` set lists every planned deletion with the slot that would be kept and a `tier` of `exact` or `perceptual`, so you can see which deletions rest on a similarity judgment before anything is removed. The slots in the plan are the ones the dry run saw. The kept copy can sit in a higher slot than the copies being removed, and the media server renumbers slots after every delete, so the prune tracks where the kept copy moves to as it works.
 

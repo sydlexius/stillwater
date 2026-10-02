@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/getkin/kin-openapi/openapi3"
+
 	"github.com/sydlexius/stillwater/internal/publish"
 )
 
@@ -66,5 +68,36 @@ func TestPlatformPruneResponse_CarriesEveryPlanFieldOnTheWire(t *testing.T) {
 	}
 	if got.Plan[0].Index != 2 || got.Plan[1].Index != 1 {
 		t.Errorf("plan indices = %d,%d, want 2,1", got.Plan[0].Index, got.Plan[1].Index)
+	}
+}
+
+// TestPlatformPruneSpec_TierEnumMatchesThePublisher pins the published `tier`
+// enum to the publisher's own constants, so neither can change without the
+// other: a client generated from the spec must accept every tier the server
+// emits, and nothing else.
+func TestPlatformPruneSpec_TierEnumMatchesThePublisher(t *testing.T) {
+	t.Parallel()
+	doc, err := openapi3.NewLoader().LoadFromData(openapiSpec)
+	if err != nil {
+		t.Fatalf("loading the embedded spec: %v", err)
+	}
+	op := doc.Paths.Find("/reports/platform-backdrop-duplicates/prune").Post
+	plan := op.Responses.Status(200).Value.Content.Get("application/json").Schema.Value.Properties["plan"].Value
+	tier := plan.Items.Value.Properties["tier"]
+	if tier == nil {
+		t.Fatal("plan items carry no `tier` property in the spec")
+	}
+	got := map[any]bool{}
+	for _, v := range tier.Value.Enum {
+		got[v] = true
+	}
+	want := map[any]bool{publish.PruneTierExact: true, publish.PruneTierPerceptual: true}
+	if len(got) != len(want) {
+		t.Fatalf("tier enum %v, want exactly %v", tier.Value.Enum, want)
+	}
+	for v := range want {
+		if !got[v] {
+			t.Errorf("tier enum %v is missing %q", tier.Value.Enum, v)
+		}
 	}
 }

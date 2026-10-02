@@ -89,14 +89,17 @@ components:
           default: false
           description: >-
             Also prune backdrops that are the same picture without being
-            byte-identical (#3138), at the same 0.90 perceptual similarity the
-            local duplicate rule uses. Off unless set; the exact tier always
+            byte-identical (#3138), at the "No duplicate images" rule's DEFAULT
+            perceptual similarity (0.90). The rule's tolerance is configurable;
+            this tier's is fixed. The hash is luminance only, so a color image
+            and its grayscale or sepia version count as the same picture. Off unless set; the exact tier always
             runs. The kept copy is, in order: one byte-identical to a local
             fanart file, the larger image, the larger file, the lower index.
             A copy matching a local fanart file is never removed by this tier,
-            and a locked artist gets the exact tier only. If any of an
-            artist's backdrops or local fanart files cannot be read, this tier
-            is skipped for that artist and reported in failures. Declared at
+            and a locked artist gets the exact tier only. An unreadable backdrop skips this tier for
+            that artist on that connection; an unreadable local fanart file, or
+            an artist folder holding no fanart, skips it for that artist on
+            every connection. Each skip is reported in failures. Declared at
             the root only, like dry_run.
       oneOf:
         - title: One artist
