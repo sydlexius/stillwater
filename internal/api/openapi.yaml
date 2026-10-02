@@ -92,7 +92,7 @@ components:
             byte-identical (#3138), at the "No duplicate images" rule's DEFAULT
             perceptual similarity (0.90). The rule's tolerance is configurable;
             this tier's is fixed. The hash is luminance only, so a color image
-            and its grayscale or sepia version count as the same picture. Off unless set; the exact tier always
+            and a desaturated or tinted copy of it count as the same picture. Off unless set; the exact tier always
             runs. The kept copy is, in order: one byte-identical to a local
             fanart file, the larger image, the larger file, the lower index.
             A copy matching a local fanart file is never removed by this tier,
