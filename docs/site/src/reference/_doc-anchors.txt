@@ -454,6 +454,7 @@ how-to/refresh-metadata#when-albums-werent-compared
 how-to/refresh-metadata#when-you-get-the-disambiguation-prompt
 how-to/refresh-metadata#which-values-a-refresh-replaces
 how-to/refresh-metadata#why-a-field-didnt-update
+how-to/repair-image-registry#background-check
 how-to/repair-image-registry#confirming-the-result
 how-to/repair-image-registry#preview-first-then-apply
 how-to/repair-image-registry#reading-the-report
