@@ -175,8 +175,8 @@ func FindExistingImage(ctx context.Context, dir string, patterns []string) (stri
 // -- but on a hard-mounted export that has stopped answering it hangs exactly
 // as completely as a read, and this function runs a LOOP of them: one per
 // pattern plus one per alternate extension, so a single wedged directory
-// multiplies. It is on both registry-repair passes, inside a handler whose
-// singleton a request that never returns never releases.
+// multiplies. It is on both registry-repair passes, inside the
+// registry-repair job, whose singleton a run that never returns never releases.
 //
 // A canceled probe returns the context error, which lands in the same
 // "cannot tell -- skip and report" branch every non-ENOENT stat error already

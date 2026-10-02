@@ -822,8 +822,8 @@ func summarizeBlastRestore(items []blastRestoreItem) (eligible, restored, unchan
 // destroyed. POST {basePath}/api/v1/reports/blast-radius/restore.
 //
 // Admin-gated, singleton, and a PREVIEW unless the body sets commit:true.
-// Synchronous by design, matching the registry-repair and phash precedents:
-// the singleton flag, not a progress feed, is what keeps two runs apart, and
+// Synchronous by design, matching the phash precedent (registry repair was
+// synchronous too until #2678 made it an async job): the singleton flag, not a progress feed, is what keeps two runs apart, and
 // the request is bounded at blastRestoreMaxIDs rows.
 func (r *Router) handleBlastRadiusRestore(w http.ResponseWriter, req *http.Request) {
 	// Restoring writes to artist metadata, so it is admin-gated even though

@@ -297,7 +297,10 @@ type Router struct {
 	// filesystem and inserts/updates registry rows -- so it shares none of the
 	// on-disk fanart TOCTOU surface those destructive passes exclude each
 	// other over.
-	registryRepairMu      sync.Mutex
+	registryRepairMu sync.Mutex
+	// registryRepair is the status of the current or last async repair run
+	// (#2678), guarded by registryRepairMu. Nil until the first run.
+	registryRepair        *registryRepairStatus
 	registryRepairRunning bool
 	// blastRestoreRunning guards the singleton blast-radius restore run
 	// (#2750): only one restore may be in flight, so a concurrent
@@ -393,13 +396,14 @@ type Router struct {
 	// rate-limit cap.
 	setupRestoreMu sync.Mutex
 
-	// webhookWg tracks in-flight inbound webhook processing goroutines so
-	// DrainWebhooks can wait for them to finish before the DB is closed.
+	// webhookWg tracks in-flight inbound webhook processing goroutines, and the
+	// detached registry-repair job (#2678), so DrainWebhooks can wait for them
+	// to finish before the DB is closed.
 	webhookWg sync.WaitGroup
 	// webhookShutdownCtx is canceled by DrainWebhooks to signal in-flight
-	// webhook goroutines that a shutdown is in progress. Goroutines derive
-	// their processing context from this so they stop work promptly when
-	// the application is going down.
+	// webhook goroutines (and the registry-repair job) that a shutdown is in
+	// progress. They derive their context from this so they stop work promptly
+	// when the application is going down.
 	webhookShutdownCtx    context.Context
 	webhookShutdownCancel context.CancelFunc
 	// encryptor decrypts inbound webhook HMAC secrets stored encrypted-at-rest
@@ -1136,8 +1140,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// remediate endpoints above since the admin gate is enforced in-handler
 	// via requireForeignAdmin. Its own singleton (r.registryRepairRunning),
 	// NOT the destructive-fanart one -- see handlers_registry_repair.go.
-	// Previews unless the body sets commit:true.
+	// Previews unless the body sets commit:true. Async (#2678): returns 202.
 	mux.HandleFunc("POST "+bp+"/api/v1/reports/registry-repair/remediate", wrapAuth(r.handleRegistryRepairRemediate, authMw))
+	// Poll target for the async run above (#2678); admin-gated in-handler.
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/registry-repair/status", wrapAuth(r.handleRegistryRepairStatus, authMw))
 	mux.HandleFunc("GET "+bp+"/settings/artist-duplicates", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
 		target := r.basePath + "/reports/duplicates"
 		if raw := req.URL.RawQuery; raw != "" {

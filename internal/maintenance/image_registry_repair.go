@@ -458,8 +458,8 @@ func verifyImageFile(ctx context.Context, key slotKey, path string, withMetadata
 	// memory (#2689). This used to be a bare os.Open handed straight to the
 	// decoders, so a stalled network mount wedged the read inside
 	// GeneratePlaceholder with nothing able to abort it -- and this function
-	// runs inside the registry-repair handler, whose singleton is released by
-	// a deferred unlock that a never-returning handler never reaches.
+	// runs inside the registry-repair job, whose singleton is released only when
+	// the job goroutine returns, which a never-returning read would prevent.
 	//
 	// The split is what makes the bound real: only the read can hang on the
 	// mount, and the decode that follows is bounded CPU work over bytes

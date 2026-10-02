@@ -896,6 +896,13 @@
     "covered": true
   },
   {
+    "operationId": "getRegistryRepairStatus",
+    "method": "GET",
+    "path": "/reports/registry-repair/status",
+    "handler": "handleRegistryRepairStatus",
+    "covered": true
+  },
+  {
     "operationId": "getReportBlastRadius",
     "method": "GET",
     "path": "/reports/blast-radius",

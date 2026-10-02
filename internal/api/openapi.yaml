@@ -859,6 +859,198 @@ components:
                 DISCARDED because the envelope also carried the current name,
                 which wins. Counted separately from settings_renamed because
                 the operator loses a value here (the staler of the two).
+    RegistryRepairStatus:
+      type: object
+      description: Polled state of the async image registry repair job (#2678).
+      properties:
+        running:
+          type: boolean
+        status:
+          type: string
+          enum: [idle, running, completed, failed]
+        commit:
+          type: boolean
+        dry_run:
+          type: boolean
+        artist_id:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        error:
+          type: string
+          description: Set when status is failed.
+        error_code:
+          type: string
+          description: >-
+            library_unreachable when the media mount is down (nothing was
+            written), or timeout when the 30 minute work limit ended the run.
+        report:
+          $ref: "#/components/schemas/RegistryRepairReport"
+    RegistryRepairReport:
+      type: object
+      properties:
+        op_id:
+          type: string
+          description: >-
+            The rebuild pass's operation id, surfaced so a later
+            investigation can correlate this run's log lines.
+        commit:
+          type: boolean
+          description: The mode the request ran in, echoed back.
+        dry_run:
+          type: boolean
+          description: The negation of commit.
+        scanned:
+          type: integer
+          description: >-
+            Artists whose image directory the rebuild pass read
+            successfully. Excludes absent and unreadable artists.
+        rebuilt:
+          type: integer
+          description: >-
+            Registry rows inserted for files found on disk. Always 0
+            on a preview; rebuild.rows_planned is the preview count.
+        restored:
+          type: integer
+          description: >-
+            exists_flag values flipped 0 to 1. On a preview, what
+            WOULD be flipped.
+        absent:
+          type: integer
+          description: >-
+            Artists whose image directory is definitively gone
+            (ENOENT). A clean, expected no-op -- never an error to
+            investigate, and deliberately not folded into unreadable.
+        skipped:
+          type: integer
+          description: >-
+            Artists with no resolvable image directory at all: the
+            artist record has no path and there is no image-cache
+            fallback, so no filesystem location was ever derived to
+            examine. A registry data defect rather than a filesystem
+            condition, which is why it is neither absent nor
+            unreadable. Reported so that scanned + absent +
+            unreadable + skipped accounts for every artist in scope.
+        unreadable:
+          type: integer
+          description: >-
+            Artists whose image directory could not be examined at
+            all (permission denied, stale handle, unmounted share, or
+            a registry read failure). Nothing was touched for these
+            artists. Held apart from absent because "cannot tell" and
+            "not there" are different facts and only one of them is
+            safe to act on. This is a count of ARTISTS; the
+            corresponding count of ROWS is unverifiable_rows, and the
+            two are never summed.
+        unverifiable_rows:
+          type: integer
+          description: >-
+            Individual registry rows whose existence the restore pass
+            PROBED but could not settle either way -- permission
+            denied, or an I/O error while reading the directory. A
+            ROW count: one unreadable directory can account for many
+            unverifiable rows, which is why this is reported
+            separately from unreadable rather than added to it.
+            Rows belonging to an artist with no resolvable directory
+            are NOT counted here: nothing was probed, so no probe
+            failed. Those appear as restore.unresolvable, and their
+            artists in skipped. The distinction is deliberate --
+            an unverifiable row means "fix the permissions", an
+            unresolvable one means "fix the recorded path", and
+            summing them yields a number that implies neither.
+        write_failures:
+          type: integer
+          description: >-
+            Writes this run attempted and could not complete: restore
+            UPDATE statements that errored (leaving a confirmed-present slot
+            still flagged missing) plus rebuild inserts that were
+            planned but did not land. Always 0 on a preview, by
+            construction. Non-zero means the repair is INCOMPLETE and
+            should be re-run; the repair is idempotent, so re-running
+            is safe.
+        rebuild:
+          type: object
+          description: The rebuild pass's own full result.
+          properties:
+            op_id:
+              type: string
+            dry_run:
+              type: boolean
+            artists_scanned:
+              type: integer
+            artists_skipped:
+              type: integer
+              description: >-
+                Artists with no resolvable image directory at all
+                (pathless, no cache dir).
+            artists_absent:
+              type: integer
+            artists_failed:
+              type: integer
+            rows_planned:
+              type: integer
+            rows_inserted:
+              type: integer
+              description: >-
+                Counted from a re-read of the table after the writes,
+                not from a rows-affected tally, so a pass whose
+                inserts all silently no-op reports the divergence.
+            files_skipped:
+              type: integer
+            outcomes:
+              type: array
+              items:
+                type: object
+                properties:
+                  artist_id:
+                    type: string
+                  image_type:
+                    type: string
+                  slot_index:
+                    type: integer
+                  file_name:
+                    type: string
+                  action:
+                    type: string
+                    description: >-
+                      One of "would_insert", "inserted", "skipped",
+                      or "failed".
+                  reason:
+                    type: string
+        restore:
+          type: object
+          description: The restore pass's own full result.
+          properties:
+            dry_run:
+              type: boolean
+            checked:
+              type: integer
+              description: Cleared rows examined by the pass.
+            restored:
+              type: integer
+            skipped:
+              type: integer
+              description: >-
+                Rows whose on-disk probe was attempted and could not
+                answer (permission denied, I/O error). A row whose
+                file is CONFIRMED absent is not counted here -- that
+                is a clean outcome, counted only in checked.
+            unresolvable:
+              type: integer
+              description: >-
+                Rows whose artist has no resolvable image directory
+                at all (no path, no cache fallback), so no probe was
+                ever attempted. Held apart from skipped, which means
+                a probe was attempted and could not answer.
+            failed:
+              type: integer
+              description: >-
+                Confirmed-present rows whose UPDATE errored. Always 0
+                on a preview: no UPDATE is issued.
     Status:
       type: object
       properties:
@@ -3737,7 +3929,9 @@ paths:
       tags: [Reports]
       summary: Rebuild missing image registry rows and restore exists flags
       description: >-
-        Operator entry point for image registry repair (#2669). It composes the
+        Operator entry point for image registry repair (#2669), run as an async
+        job (#2678): returns 202 at once; poll the status endpoint for the
+        report. It composes the
         two already-shipped repair passes in one request, in this order:
         REBUILD (insert artist_images rows for files that are on disk but have
         no registry row -- insert-only, an existing row is never modified) and
@@ -3785,177 +3979,14 @@ paths:
                     Scope both passes to one artist. Omit (or empty) to run
                     library-wide.
       responses:
-        "200":
+        "202":
           description: >-
-            Repair completed. Per-artist and per-slot failures do not fail the
-            request; they are counted in the report. A non-zero write_failures
-            means the repair is INCOMPLETE: some writes were attempted and did
-            not land. The response is still 200 because the report body is the
-            actionable artifact; the repair is idempotent, so the remedy is to
-            re-run it once the underlying cause is fixed.
+            Repair started in the background; the body is the initial status.
+            Poll GET /reports/registry-repair/status for the report.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  op_id:
-                    type: string
-                    description: >-
-                      The rebuild pass's operation id, surfaced so a later
-                      investigation can correlate this run's log lines.
-                  commit:
-                    type: boolean
-                    description: The mode the request ran in, echoed back.
-                  dry_run:
-                    type: boolean
-                    description: The negation of commit.
-                  scanned:
-                    type: integer
-                    description: >-
-                      Artists whose image directory the rebuild pass read
-                      successfully. Excludes absent and unreadable artists.
-                  rebuilt:
-                    type: integer
-                    description: >-
-                      Registry rows inserted for files found on disk. Always 0
-                      on a preview; rebuild.rows_planned is the preview count.
-                  restored:
-                    type: integer
-                    description: >-
-                      exists_flag values flipped 0 to 1. On a preview, what
-                      WOULD be flipped.
-                  absent:
-                    type: integer
-                    description: >-
-                      Artists whose image directory is definitively gone
-                      (ENOENT). A clean, expected no-op -- never an error to
-                      investigate, and deliberately not folded into unreadable.
-                  skipped:
-                    type: integer
-                    description: >-
-                      Artists with no resolvable image directory at all: the
-                      artist record has no path and there is no image-cache
-                      fallback, so no filesystem location was ever derived to
-                      examine. A registry data defect rather than a filesystem
-                      condition, which is why it is neither absent nor
-                      unreadable. Reported so that scanned + absent +
-                      unreadable + skipped accounts for every artist in scope.
-                  unreadable:
-                    type: integer
-                    description: >-
-                      Artists whose image directory could not be examined at
-                      all (permission denied, stale handle, unmounted share, or
-                      a registry read failure). Nothing was touched for these
-                      artists. Held apart from absent because "cannot tell" and
-                      "not there" are different facts and only one of them is
-                      safe to act on. This is a count of ARTISTS; the
-                      corresponding count of ROWS is unverifiable_rows, and the
-                      two are never summed.
-                  unverifiable_rows:
-                    type: integer
-                    description: >-
-                      Individual registry rows whose existence the restore pass
-                      PROBED but could not settle either way -- permission
-                      denied, or an I/O error while reading the directory. A
-                      ROW count: one unreadable directory can account for many
-                      unverifiable rows, which is why this is reported
-                      separately from unreadable rather than added to it.
-                      Rows belonging to an artist with no resolvable directory
-                      are NOT counted here: nothing was probed, so no probe
-                      failed. Those appear as restore.unresolvable, and their
-                      artists in skipped. The distinction is deliberate --
-                      an unverifiable row means "fix the permissions", an
-                      unresolvable one means "fix the recorded path", and
-                      summing them yields a number that implies neither.
-                  write_failures:
-                    type: integer
-                    description: >-
-                      Writes this run attempted and could not complete: restore
-                      UPDATE statements that errored (leaving a confirmed-present slot
-                      still flagged missing) plus rebuild inserts that were
-                      planned but did not land. Always 0 on a preview, by
-                      construction. Non-zero means the repair is INCOMPLETE and
-                      should be re-run; the repair is idempotent, so re-running
-                      is safe.
-                  rebuild:
-                    type: object
-                    description: The rebuild pass's own full result.
-                    properties:
-                      op_id:
-                        type: string
-                      dry_run:
-                        type: boolean
-                      artists_scanned:
-                        type: integer
-                      artists_skipped:
-                        type: integer
-                        description: >-
-                          Artists with no resolvable image directory at all
-                          (pathless, no cache dir).
-                      artists_absent:
-                        type: integer
-                      artists_failed:
-                        type: integer
-                      rows_planned:
-                        type: integer
-                      rows_inserted:
-                        type: integer
-                        description: >-
-                          Counted from a re-read of the table after the writes,
-                          not from a rows-affected tally, so a pass whose
-                          inserts all silently no-op reports the divergence.
-                      files_skipped:
-                        type: integer
-                      outcomes:
-                        type: array
-                        items:
-                          type: object
-                          properties:
-                            artist_id:
-                              type: string
-                            image_type:
-                              type: string
-                            slot_index:
-                              type: integer
-                            file_name:
-                              type: string
-                            action:
-                              type: string
-                              description: >-
-                                One of "would_insert", "inserted", "skipped",
-                                or "failed".
-                            reason:
-                              type: string
-                  restore:
-                    type: object
-                    description: The restore pass's own full result.
-                    properties:
-                      dry_run:
-                        type: boolean
-                      checked:
-                        type: integer
-                        description: Cleared rows examined by the pass.
-                      restored:
-                        type: integer
-                      skipped:
-                        type: integer
-                        description: >-
-                          Rows whose on-disk probe was attempted and could not
-                          answer (permission denied, I/O error). A row whose
-                          file is CONFIRMED absent is not counted here -- that
-                          is a clean outcome, counted only in checked.
-                      unresolvable:
-                        type: integer
-                        description: >-
-                          Rows whose artist has no resolvable image directory
-                          at all (no path, no cache fallback), so no probe was
-                          ever attempted. Held apart from skipped, which means
-                          a probe was attempted and could not answer.
-                      failed:
-                        type: integer
-                        description: >-
-                          Confirmed-present rows whose UPDATE errored. Always 0
-                          on a preview: no UPDATE is issued.
+                $ref: "#/components/schemas/RegistryRepairStatus"
         "400":
           description: >-
             A malformed body, an unknown field, or trailing data after the JSON
@@ -3995,25 +4026,41 @@ paths:
                     type: string
                   message:
                     type: string
-        "503":
+        "500":
           description: >-
-            The mount-down guard fired: not one artist directory was readable
-            across the whole library, so the pass refused to report a total
-            outage as a clean no-op. Nothing was written.
+            The maintenance service is not wired. Plain text via http.Error. A
+            failing pass is reported by the status endpoint, not here.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+
+  /reports/registry-repair/status:
+    get:
+      tags: [Reports]
+      summary: Status of the image registry repair run
+      description: >-
+        Current or most recent repair run (#2678). Poll until running is false.
+        Always 200; a failed run is a status value. Admin-only. The status is
+        held in memory only: a restart or shutdown mid-run cancels the run and
+        the status then reads idle, so re-run (the repair is idempotent).
+      operationId: getRegistryRepairStatus
+      responses:
+        "200":
+          description: The run status.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                  message:
-                    type: string
-        "500":
-          description: >-
-            The maintenance service is not wired, or a repair pass failed. The
-            wrapped error is logged server-side; the response is plain text via
-            http.Error.
+                $ref: "#/components/schemas/RegistryRepairStatus"
+        "401":
+          description: Authentication required.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "403":
+          description: Administrator role required.
           content:
             text/plain:
               schema:

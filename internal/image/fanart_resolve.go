@@ -32,8 +32,8 @@ import (
 // registry rows this function exists to help rebuild.
 //
 // ctx bounds every directory read this performs (#2689). It sits directly on
-// the registry-repair rebuild path, inside a handler whose singleton a wedged
-// request never releases.
+// the registry-repair rebuild path, inside the registry-repair job, whose singleton a wedged
+// run never releases.
 func ResolveFanartFiles(ctx context.Context, dir string, candidates []string) ([]string, error) {
 	entries, err := readDirCtx(ctx, dir)
 	if err != nil {
