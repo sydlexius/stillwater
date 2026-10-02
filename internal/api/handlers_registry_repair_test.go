@@ -1210,3 +1210,15 @@ func TestRegistryRepair_CommitWithWriteFailuresSetsFailureCount(t *testing.T) {
 		t.Fatalf("Get() = %d, %v; want %d, true", c, ok, st.Report.WriteFailures)
 	}
 }
+
+func TestRegistryRepairRunning_ReflectsSingleton(t *testing.T) {
+	t.Parallel()
+	r := NewRouter(RouterDeps{SessionSecret: testSessionSecret, DB: newTestDB(t),
+		Logger: slog.New(slog.NewTextHandler(os.Stderr, nil)), StaticFS: os.DirFS("../../web/static")})
+	if r.RegistryRepairRunning() {
+		t.Fatal("idle router reports a repair running")
+	}
+	if _, ok := r.startRegistryRepair(registryRepairRequest{}); !ok || !r.RegistryRepairRunning() {
+		t.Fatal("a started repair must read as running")
+	}
+}

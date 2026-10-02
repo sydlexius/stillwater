@@ -5,6 +5,7 @@ package maintenance
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -108,5 +109,64 @@ func TestRegistryRepairCheck_RepairResultBeatsStaleScan(t *testing.T) {
 	svc.checkRegistryRepair(context.Background(), cache, func() bool { return false }, time.Second)
 	if count, _, ok := cache.Get(); !ok || count != 0 {
 		t.Fatalf("Get() = %d, %v; want the repair's 0, true", count, ok)
+	}
+}
+
+// The real detector (no fake) must report exactly what the dry-run passes
+// plan, and must not write.
+func TestScanRegistryRepair_MatchesDryRunPlan(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	applyFixture(t, db, t.TempDir())
+	svc := newRepairService(t, db, dbPath, "")
+	before := fullRows(t, db)
+
+	got, err := svc.scanRegistryRepair(context.Background())
+	if err != nil {
+		t.Fatalf("scanRegistryRepair: %v", err)
+	}
+	rebuild, err := svc.RepairImageRegistry(context.Background(), ImageRepairOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restore, err := svc.RestoreExistsFlags(context.Background(), ExistsFlagRestoreOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := rebuild.RowsPlanned + restore.Restored; got != want || got == 0 {
+		t.Fatalf("scan = %d, want %d (non-zero: fixture needs repair)", got, want)
+	}
+	if after := fullRows(t, db); strings.Join(after, "\n") != strings.Join(before, "\n") {
+		t.Fatal("the detector wrote to artist_images")
+	}
+}
+
+// The loop scans once after the startup delay, again on a tick, and stops on
+// cancel; a missing cache or repairRunning hook fails loudly and never scans.
+func TestStartRegistryRepairCheck_LoopAndGuards(t *testing.T) {
+	svc := newDupCountService(t)
+	var calls atomic.Int32
+	svc.registryScan = func(context.Context) (int, error) { calls.Add(1); return 1, nil }
+	idle := func() bool { return false }
+
+	svc.StartRegistryRepairCheck(context.Background(), nil, idle, time.Millisecond, time.Millisecond)
+	svc.StartRegistryRepairCheck(context.Background(), &RegistryRepairCache{}, nil, time.Millisecond, time.Millisecond)
+	if calls.Load() != 0 {
+		t.Fatal("an unwired detector scanned")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		svc.StartRegistryRepairCheck(ctx, &RegistryRepairCache{}, idle, 5*time.Millisecond, time.Millisecond)
+		close(done)
+	}()
+	if !waitFor(t, func() bool { return calls.Load() >= 2 }) {
+		t.Fatalf("expected startup scan plus a tick, got %d", calls.Load())
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(waitForTimeout):
+		t.Fatal("loop did not stop on cancel")
 	}
 }
