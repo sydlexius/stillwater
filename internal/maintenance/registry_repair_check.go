@@ -12,7 +12,9 @@ package maintenance
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -112,6 +114,15 @@ func (s *Service) checkRegistryRepair(ctx context.Context, cache *RegistryRepair
 		s.logger.Info("registry repair check skipped: a check is already running")
 		return
 	}
+	// A panic in the scan must not leave the single-flight latch held (every
+	// later tick would then skip forever) or take the process down; the repair
+	// endpoint wraps the same two passes in recover for the same reason.
+	defer func() {
+		if rv := recover(); rv != nil {
+			s.logger.Error("panic in registry repair check", "recover", rv, "stack", string(debug.Stack()))
+			cache.finish(gen, 0, fmt.Errorf("registry repair check panicked: %v", rv))
+		}
+	}()
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	scan := s.registryScan

@@ -108,8 +108,7 @@ succeeded. Re-run the operation; it is safe to repeat.
 ## Background Check
 
 Stillwater runs a preview in the background every 12 hours (the first one two minutes after startup) and
-remembers whether anything needed repair. A banner that reads this result is coming next; the check never
-runs on demand, so the answer can be up to 12 hours old. Completing a repair of the whole library updates
+remembers whether anything needed repair. The check never runs on demand, so the answer can be up to 12 hours old. Completing a repair of the whole library updates
 it immediately.
 
 ## What It Cannot Fix

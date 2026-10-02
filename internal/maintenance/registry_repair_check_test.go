@@ -79,7 +79,12 @@ func TestRegistryRepairCheck_SkipsWhileRepairRuns(t *testing.T) {
 func TestRegistryRepairCheck_DeadlineRespected(t *testing.T) {
 	svc := newDupCountService(t)
 	svc.registryScan = func(ctx context.Context) (int, error) {
-		<-ctx.Done()
+		// Exits on its own after 5s so an ignored deadline fails with a named
+		// --- FAIL (the 1s bound below) instead of hanging to the package timeout.
+		select {
+		case <-ctx.Done():
+		case <-time.After(5 * time.Second):
+		}
 		return 0, ctx.Err()
 	}
 	cache := &RegistryRepairCache{}
@@ -109,6 +114,25 @@ func TestRegistryRepairCheck_RepairResultBeatsStaleScan(t *testing.T) {
 	svc.checkRegistryRepair(context.Background(), cache, func() bool { return false }, time.Second)
 	if count, _, ok := cache.Get(); !ok || count != 0 {
 		t.Fatalf("Get() = %d, %v; want the repair's 0, true", count, ok)
+	}
+	if _, claimed := cache.begin(); !claimed {
+		t.Fatal("latch still held after a scan that lost to a repair result")
+	}
+}
+
+// A panicking scan must not crash the caller, must leave the cache not-ok, and
+// must free the single-flight latch.
+func TestRegistryRepairCheck_PanicFreesLatch(t *testing.T) {
+	svc := newDupCountService(t)
+	svc.registryScan = func(context.Context) (int, error) { panic("boom") }
+	cache := &RegistryRepairCache{}
+	cache.SetFromRepair(3)
+	svc.checkRegistryRepair(context.Background(), cache, func() bool { return false }, time.Second)
+	if count, _, ok := cache.Get(); ok || count != 0 {
+		t.Fatalf("after a panicking scan Get() = %d, ok=%v; want 0, false", count, ok)
+	}
+	if _, claimed := cache.begin(); !claimed {
+		t.Fatal("latch still held after a panicking scan")
 	}
 }
 
@@ -168,5 +192,14 @@ func TestStartRegistryRepairCheck_LoopAndGuards(t *testing.T) {
 	case <-done:
 	case <-time.After(waitForTimeout):
 		t.Fatal("loop did not stop on cancel")
+	}
+
+	// A long interval must still scan once at startup (no tick ever fires).
+	calls.Store(0)
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	go svc.StartRegistryRepairCheck(ctx2, &RegistryRepairCache{}, idle, time.Hour, time.Millisecond)
+	if !waitFor(t, func() bool { return calls.Load() == 1 }) {
+		t.Fatalf("startup scan with a 1h interval ran %d times, want 1", calls.Load())
 	}
 }
