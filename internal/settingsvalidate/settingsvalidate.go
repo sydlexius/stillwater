@@ -25,14 +25,35 @@ import (
 // caller; keep it user-readable and free of internal package details.
 type validator func(v string) (canonical string, err error)
 
+// Ceilings for the integer settings (#3006). Each is deliberately generous: it
+// exists to refuse a value the runtime would discard or that is nonsensical
+// (and to keep downstream arithmetic such as MB*1024*1024 or hours*time.Hour
+// far from int64 overflow), not to police a plausible operator choice.
+const (
+	// maxIntervalHours is one year. It matches the 24*365 cap in
+	// cmd/stillwater (resolveMBIDRevalidateSchedule), which silently falls back
+	// to the default past it, so a larger value would be stored then ignored.
+	maxIntervalHours = 24 * 365
+	// maxBackupRetentionCount: backups are whole-database files; 10000 of them
+	// is already far beyond any real disk budget.
+	maxBackupRetentionCount = 10000
+	// maxBackupMaxAgeDays is 100 years; 0 still means "no age limit".
+	maxBackupMaxAgeDays = 36500
+	// maxImageCacheMB is 16 TiB; 0 still means "unlimited".
+	maxImageCacheMB = 16 * 1024 * 1024
+	// maxMBIDPerPass: the sweep clamps to the remaining population, so this
+	// only needs to exceed any real library (one million artists).
+	maxMBIDPerPass = 1_000_000
+)
+
 // registry maps setting keys to their validation functions.
 // To add a new validated setting: add one entry here.
 // Keys absent from the map are accepted without validation (pass-through) --
 // see Validate's `ok` return, and #3005 for whether that default should change.
 var registry = map[string]validator{
-	"backup_retention_count":             validatePositiveInt("backup_retention_count"),
-	"backup_max_age_days":                validateNonNegativeInt("backup_max_age_days"),
-	"cache.image.max_size_mb":            validateNonNegativeInt("cache.image.max_size_mb"),
+	"backup_retention_count":             validateIntRange("backup_retention_count", 1, maxBackupRetentionCount),
+	"backup_max_age_days":                validateIntRange("backup_max_age_days", 0, maxBackupMaxAgeDays),
+	"cache.image.max_size_mb":            validateIntRange("cache.image.max_size_mb", 0, maxImageCacheMB),
 	"images.backdrop.target_count":       validateIntRange("images.backdrop.target_count", 1, 10),
 	"provider.name_similarity_threshold": validateIntRange("provider.name_similarity_threshold", 0, 100),
 	"rule_schedule.interval_minutes":     validateRuleScheduleMinutes,
@@ -44,7 +65,7 @@ var registry = map[string]validator{
 	"rule_engine.artist_workers": validateIntRange("rule_engine.artist_workers", 1, 64),
 	"scanner.exclusions":         validateCSV,
 	"scanner.mtime_fast_path":    validateBool("scanner.mtime_fast_path"),
-	"backup.interval_hours":      validatePositiveInt("backup.interval_hours"),
+	"backup.interval_hours":      validateIntRange("backup.interval_hours", 1, maxIntervalHours),
 	// MBID re-validation sweep (#2810, wired in #3003). These are read at boot
 	// by getDBIntSetting, which parses with fmt.Sscanf("%d") -- a parse that
 	// stops at the first non-digit and reports success. Without an entry here
@@ -53,8 +74,8 @@ var registry = map[string]validator{
 	// success while verifying nothing. Validating at the write boundary is what
 	// keeps that value from ever reaching the reader (#3004).
 	"mbid_revalidate.enabled":                   validateBool("mbid_revalidate.enabled"),
-	"mbid_revalidate.interval_hours":            validatePositiveInt("mbid_revalidate.interval_hours"),
-	"mbid_revalidate.max_per_pass":              validatePositiveInt("mbid_revalidate.max_per_pass"),
+	"mbid_revalidate.interval_hours":            validateIntRange("mbid_revalidate.interval_hours", 1, maxIntervalHours),
+	"mbid_revalidate.max_per_pass":              validateIntRange("mbid_revalidate.max_per_pass", 1, maxMBIDPerPass),
 	"mbid_revalidate.name_similarity_threshold": validateIntRange("mbid_revalidate.name_similarity_threshold", 0, 100),
 	"mbid_revalidate.catalogue_match_percent":   validateIntRange("mbid_revalidate.catalogue_match_percent", 0, 100),
 }
@@ -91,36 +112,41 @@ func validateBool(key string) validator {
 	}
 }
 
-// validatePositiveInt returns a validator that accepts integers >= 1.
+// validatePositiveInt returns a validator that accepts integers >= 1 and
+// canonicalises them with strconv.Itoa ("007" and "+5" store as "7" and "5").
+// It has no upper bound by design, so no registry entry uses it today; give a
+// setting a ceiling with validateIntRange unless unboundedness is intended.
 func validatePositiveInt(key string) validator {
 	return func(v string) (string, error) {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 {
 			return "", fmt.Errorf("%s must be a positive integer", key)
 		}
-		return v, nil
+		return strconv.Itoa(n), nil
 	}
 }
 
-// validateNonNegativeInt returns a validator that accepts integers >= 0.
+// validateNonNegativeInt returns a validator that accepts integers >= 0 and
+// canonicalises them (so "-0" stores as "0"). Unbounded above by design.
 func validateNonNegativeInt(key string) validator {
 	return func(v string) (string, error) {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 {
 			return "", fmt.Errorf("%s must be zero or a positive integer", key)
 		}
-		return v, nil
+		return strconv.Itoa(n), nil
 	}
 }
 
-// validateIntRange returns a validator that accepts integers in [lo, hi].
+// validateIntRange returns a validator that accepts integers in [lo, hi] and
+// canonicalises them with strconv.Itoa.
 func validateIntRange(key string, lo, hi int) validator {
 	return func(v string) (string, error) {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < lo || n > hi {
 			return "", fmt.Errorf("%s must be between %d and %d", key, lo, hi)
 		}
-		return v, nil
+		return strconv.Itoa(n), nil
 	}
 }
 

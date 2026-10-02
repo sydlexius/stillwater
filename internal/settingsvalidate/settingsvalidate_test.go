@@ -380,7 +380,7 @@ func TestValidate(t *testing.T) {
 		{"bool unparsable", "scanner.mtime_fast_path", "sometimes", "", true,
 			"scanner.mtime_fast_path must be true or false"},
 		{"positive int zero", "backup.interval_hours", "0", "", true,
-			"backup.interval_hours must be a positive integer"},
+			"backup.interval_hours must be between 1 and 8760"},
 		{"backdrop count below range", "images.backdrop.target_count", "0", "", true,
 			"images.backdrop.target_count must be between 1 and 10"},
 		{"backdrop count above range", "images.backdrop.target_count", "11", "", true,
@@ -616,5 +616,41 @@ func TestPolicyKeysHaveDataValidators(t *testing.T) {
 		t.Errorf("policyKeys has %d entries; it had 1 when this guard was written. "+
 			"Adding one is fine, but confirm the new key has no security-relevant "+
 			"runtime reader before updating this count", len(policyKeys))
+	}
+}
+
+// TestIntValidatorsCanonicaliseAndCeil covers #3006: every integer validator
+// stores the canonical decimal form, and each registered ceiling refuses the
+// value just past it.
+func TestIntValidatorsCanonicaliseAndCeil(t *testing.T) {
+	t.Parallel()
+	canon := []struct{ key, in, want string }{
+		{"mbid_revalidate.interval_hours", "007", "7"},
+		{"mbid_revalidate.interval_hours", "+5", "5"},
+		{"backup_retention_count", "007", "7"},
+		{"backup_max_age_days", "-0", "0"},
+		{"backup_max_age_days", "+30", "30"},
+		{"mbid_revalidate.name_similarity_threshold", "+05", "5"},
+		{"mbid_revalidate.interval_hours", "8760", "8760"},
+	}
+	for _, c := range canon {
+		got, ok, err := Validate(c.key, c.in)
+		if !ok || err != nil || got != c.want {
+			t.Errorf("Validate(%q, %q) = %q, ok=%v, err=%v; want %q", c.key, c.in, got, ok, err, c.want)
+		}
+	}
+	reject := []struct{ key, in string }{
+		{"mbid_revalidate.interval_hours", "8761"},
+		{"mbid_revalidate.interval_hours", "9223372036854775807"},
+		{"backup.interval_hours", "8761"},
+		{"backup_retention_count", "10001"},
+		{"backup_max_age_days", "36501"},
+		{"cache.image.max_size_mb", "16777217"},
+		{"mbid_revalidate.max_per_pass", "1000001"},
+	}
+	for _, c := range reject {
+		if got, ok, err := Validate(c.key, c.in); !ok || err == nil {
+			t.Errorf("Validate(%q, %q) = %q, err=%v; want rejection", c.key, c.in, got, err)
+		}
 	}
 }
