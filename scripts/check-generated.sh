@@ -2,6 +2,18 @@
 # check-generated.sh -- verify *_templ.go files were regenerated after .templ changes
 set -euo pipefail
 
+# Create temp files for generator logs; clean them up on exit (but after printing
+# on error). Temp files ensure concurrent runs don't collide in /tmp.
+TEMPL_LOG=""
+TAILWIND_LOG=""
+# The trap is installed before either file exists, so an interrupt between the
+# two mktemp calls cannot leak one. Single quotes defer expansion until the
+# trap fires (a $TMPDIR holding a quote cannot break or inject into it), and
+# the ${VAR:+...} guards skip a log that was never created.
+trap 'rm -f -- ${TEMPL_LOG:+"$TEMPL_LOG"} ${TAILWIND_LOG:+"$TAILWIND_LOG"}' EXIT
+TEMPL_LOG=$(mktemp)
+TAILWIND_LOG=$(mktemp)
+
 # Content freshness check: regenerate all *_templ.go in a clean state and fail
 # if anything differs. This catches a missing regeneration, stale content from
 # a wrong-version templ binary, and a hand-edited generated file alike -- it
@@ -9,9 +21,9 @@ set -euo pipefail
 # a diff, which is what the check needs (#3156: a .templ edit that produces
 # byte-identical generated output, e.g. a blank-line removal, has no changed
 # *_templ.go in the diff and is not a failure).
-if ! go tool templ generate 2>/tmp/check-generated-templ.log; then
+if ! go tool templ generate 2>"$TEMPL_LOG"; then
   echo "ERROR: 'go tool templ generate' failed:"
-  cat /tmp/check-generated-templ.log
+  cat "$TEMPL_LOG"
   exit 1
 fi
 dirty_templ=$(git diff --name-only -- '*_templ.go' || true)
@@ -32,9 +44,9 @@ fi
 # installed locally rather than failing, since CI's Generated Files job is
 # the authoritative enforcement point either way.
 if command -v tailwindcss >/dev/null 2>&1; then
-  if ! tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify 2>/tmp/check-generated-tailwind.log; then
+  if ! tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify 2>"$TAILWIND_LOG"; then
     echo "ERROR: 'tailwindcss' build failed:"
-    cat /tmp/check-generated-tailwind.log
+    cat "$TAILWIND_LOG"
     exit 1
   fi
   dirty_css=$(git diff --name-only -- web/static/css/styles.css || true)

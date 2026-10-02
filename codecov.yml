@@ -277,3 +277,7 @@ ignore:
   # binary; scripts/pre-push-gate.sh excludes the same directory from
   # patch coverage so this keeps gate and codecov aligned.
   - "scripts/**"
+  # README and docs are not code. "**/*.md" matches Markdown in
+  # subdirectories only, so the root README needs its own pattern.
+  - "*.md"
+  - "**/*.md"
