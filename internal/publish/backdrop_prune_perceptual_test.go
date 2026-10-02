@@ -18,13 +18,19 @@ import (
 // same picture with different bytes: one picture pushed at two resolutions,
 // the population the perceptual tier exists for.
 func fieldJPEG(t *testing.T, seed, scale int) []byte {
+	return blendJPEG(t, seed, seed, 0, scale)
+}
+
+// blendJPEG is fieldJPEG with seedB's field mixed in at weight mix: the same
+// picture perturbed to a chosen similarity. mix 0 is fieldJPEG exactly.
+func blendJPEG(t *testing.T, seed, seedB int, mix float64, scale int) []byte {
 	t.Helper()
 	const n = 64
-	state := uint32(seed)*2654435761 + 1
 	field := make([]uint8, n*n)
+	stateA, stateB := uint32(seed)*2654435761+1, uint32(seedB)*2654435761+1
 	for i := range field {
-		state = state*1664525 + 1013904223
-		field[i] = uint8(state >> 24)
+		stateA, stateB = stateA*1664525+1013904223, stateB*1664525+1013904223
+		field[i] = uint8(float64(stateA>>24)*(1-mix) + float64(stateB>>24)*mix)
 	}
 	w := n * scale
 	m := stdimage.NewRGBA(stdimage.Rect(0, 0, w, w))
@@ -46,14 +52,20 @@ func fieldJPEG(t *testing.T, seed, scale int) []byte {
 // assertion below pass or fail for the wrong reason.
 func mustSimilar(t *testing.T, a, b []byte, want bool) {
 	t.Helper()
+	if sim := similarity(t, a, b); (sim >= img.DefaultDuplicateTolerance) != want {
+		t.Fatalf("fixture precondition: sim %.3f, want similar=%v", sim, want)
+	}
+}
+
+// similarity is the measured perceptual similarity of two encoded images.
+func similarity(t *testing.T, a, b []byte) float64 {
+	t.Helper()
 	ha, errA := img.PerceptualHash(bytes.NewReader(a))
 	hb, errB := img.PerceptualHash(bytes.NewReader(b))
 	if errA != nil || errB != nil {
 		t.Fatalf("hashing fixture: %v / %v", errA, errB)
 	}
-	if got := img.Similarity(ha, hb) >= img.DefaultDuplicateTolerance; got != want {
-		t.Fatalf("fixture precondition: similar=%v (sim %.3f), want %v", got, img.Similarity(ha, hb), want)
-	}
+	return img.Similarity(ha, hb)
 }
 
 // fp builds a synthetic fingerprint, so non-transitivity can be pinned with

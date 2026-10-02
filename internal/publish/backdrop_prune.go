@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -136,9 +137,9 @@ const (
 	// PruneTierExact: byte-identical (sha256) to the survivor. Nothing can be
 	// lost, so this tier needs no survivor choice.
 	PruneTierExact = "exact"
-	// PruneTierPerceptual: the same picture by perceptual hash at
-	// image.DefaultDuplicateTolerance, but not byte-identical. A similarity
-	// judgement, so it is opt-in and its survivor is chosen deliberately.
+	// PruneTierPerceptual: the same picture by perceptual hash at the run's
+	// tolerance, but not byte-identical. A similarity judgement, so it is
+	// opt-in and its survivor is chosen deliberately.
 	PruneTierPerceptual = "perceptual"
 )
 
@@ -255,6 +256,11 @@ func preferSurvivor(a, b backdropFingerprint) bool {
 // a deleted twin would read to the reconciler as a missing local image and be
 // re-pushed.
 func perceptualRedundant(fps []backdropFingerprint, claimed map[int]bool) []redundantBackdrop {
+	return perceptualRedundantAt(fps, claimed, img.DefaultDuplicateTolerance)
+}
+
+// perceptualRedundantAt is perceptualRedundant at an explicit tolerance.
+func perceptualRedundantAt(fps []backdropFingerprint, claimed map[int]bool, tolerance float64) []redundantBackdrop {
 	byIndex := make(map[int]backdropFingerprint, len(fps))
 	cands := make([]backdropFingerprint, 0, len(fps))
 	for _, f := range fps {
@@ -271,7 +277,7 @@ func perceptualRedundant(fps []backdropFingerprint, claimed map[int]bool) []redu
 	}
 	absorbed := img.RepresentativeDeletionSet(order, func(rep, member int) bool {
 		m := byIndex[member]
-		return !m.localTwin && img.Similarity(byIndex[rep].phash, m.phash) >= img.DefaultDuplicateTolerance
+		return !m.localTwin && img.Similarity(byIndex[rep].phash, m.phash) >= tolerance
 	})
 	out := make([]redundantBackdrop, 0, len(absorbed))
 	for idx, survivor := range absorbed {
@@ -295,6 +301,16 @@ type perceptualPruneOpts struct {
 	// LocalTwins is the set of sha256 content hashes of the artist's local
 	// fanart files (see preferSurvivor and perceptualRedundant).
 	LocalTwins map[[32]byte]bool
+	// Tolerance: same picture when Similarity >= it. Zero means the default;
+	// PrunePlatformBackdropsForArtist validates any other value.
+	Tolerance float64
+}
+
+func (o perceptualPruneOpts) tolerance() float64 {
+	if o.Tolerance == 0 {
+		return img.DefaultDuplicateTolerance
+	}
+	return o.Tolerance
 }
 
 // platformBackdropDup holds one artist/connection's detection result.
@@ -369,7 +385,7 @@ func detectBackdropRedundancy(ctx context.Context, client backdropPruneClient, p
 	for _, rb := range redundant {
 		claimed[rb.Index] = true
 	}
-	redundant = append(redundant, perceptualRedundant(fps, claimed)...)
+	redundant = append(redundant, perceptualRedundantAt(fps, claimed, opts.tolerance())...)
 	sortRedundantDescending(redundant)
 	return redundant, count, nil, nil
 }
@@ -554,6 +570,10 @@ type PlatformBackdropPruneResult struct {
 	// deleted; a skip is not a failure, just a missed opportunity this run.
 	SkippedChanged int
 	Failures       []PlatformBackdropPruneFailure
+	// Skipped: the perceptual tier was declined by POLICY (the exact tier still
+	// ran), so a caller can tell that from a failure. For API compatibility each
+	// cause but the locked artist is ALSO still in Failures, as before.
+	Skipped []PlatformBackdropPruneSkip
 	// DryRun echoes the scope's DryRun so a caller cannot mistake a rehearsal
 	// for a run that actually deleted. On a dry run BackdropsRemoved stays 0
 	// and Plan carries what WOULD have been deleted.
@@ -563,6 +583,27 @@ type PlatformBackdropPruneResult struct {
 	// both dry and live runs: a plan is worth recording after the fact too.
 	Plan []PlatformBackdropPrunePlanEntry
 }
+
+// PlatformBackdropPruneSkip is one perceptual tier skipped by policy.
+// ConnectionID is empty when the skip covers every connection of the artist.
+type PlatformBackdropPruneSkip struct {
+	ArtistID, ConnectionID string
+	Reason                 string // a PruneSkip* constant
+}
+
+// Policy-skip reasons for PlatformBackdropPruneSkip.Reason.
+const (
+	PruneSkipLockedArtist     = "locked_artist"
+	PruneSkipProtectedFanart  = "protected_fanart"
+	PruneSkipNoLocalFolder    = "no_local_folder"
+	PruneSkipEmptyLocalFolder = "empty_local_folder"
+	PruneSkipUnreadableLocal  = "unreadable_local_fanart"
+)
+
+// pruneSkipError is a perceptualOptsFor refusal by policy, not a read failure.
+type pruneSkipError struct{ reason, msg string }
+
+func (e *pruneSkipError) Error() string { return e.msg }
 
 // PlatformBackdropPruneScope narrows a prune run.
 //
@@ -587,6 +628,9 @@ type PlatformBackdropPruneScope struct {
 	// operator sees which index survives each group BEFORE any artwork is
 	// removed, and no cache is invalidated because nothing changed.
 	DryRun bool
+	// tolerance: zero (every API-path scope) means the default. Only
+	// PrunePlatformBackdropsForArtist sets it, after validating it.
+	tolerance float64
 }
 
 // The scope-validation sentinels. Exported and distinguishable (via
@@ -695,7 +739,8 @@ func (p *Publisher) PrunePlatformBackdropDuplicates(ctx context.Context, scope P
 		if p.artistGetter == nil {
 			return result, fmt.Errorf("prune platform backdrop duplicates: artist lookup not wired; cannot resolve a scoped artist")
 		}
-		a, err := p.artistGetter.GetByID(ctx, scope.ArtistID)
+		// The prune reads base columns only (ID, Name, Locked, Path): no side-table hydration.
+		a, err := p.artistGetter.GetByID(ctx, scope.ArtistID, artist.HydrateOpts{})
 		if err != nil {
 			return result, fmt.Errorf("prune platform backdrop duplicates: loading artist %s: %w", scope.ArtistID, err)
 		}
@@ -726,6 +771,52 @@ func (p *Publisher) PrunePlatformBackdropDuplicates(ctx context.Context, scope P
 		}
 		page++
 	}
+	return result, nil
+}
+
+// ArtistBackdropPruneOptions configures PrunePlatformBackdropsForArtist.
+type ArtistBackdropPruneOptions struct {
+	Perceptual, DryRun bool // as on PlatformBackdropPruneScope
+	// Tolerance, in (0, 1], is required: zero is refused, not defaulted, so a
+	// caller that forgot its configured value fails loudly.
+	Tolerance float64
+}
+
+// ErrPruneToleranceInvalid is returned for a tolerance that is NaN, <= 0 or > 1.
+var ErrPruneToleranceInvalid = errors.New("prune tolerance must be in (0, 1]")
+
+// PrunePlatformBackdropsForArtist prunes one artist (the "No duplicate images"
+// rule, #3138) through pruneOneArtist, so every API-path invariant holds:
+// exact-only when locked, the fail-closed skips, lockPhashTarget, re-verify,
+// preferSurvivor, descending deletes. Only a.ID is trusted: the artist is
+// re-loaded first, as the scoped API path does, so a lock set after the
+// caller's snapshot still holds.
+//
+// Concurrency: the API singleton lives on the Router and is not taken here.
+// lockPhashTarget serializes each target's detect-to-delete, so a concurrent
+// API prune and rule fix each re-detect after the other; a publisher-wide
+// singleton would just fail a rule fix during an unrelated library prune.
+func (p *Publisher) PrunePlatformBackdropsForArtist(ctx context.Context, a *artist.Artist, opts ArtistBackdropPruneOptions) (PlatformBackdropPruneResult, error) {
+	result := PlatformBackdropPruneResult{DryRun: opts.DryRun}
+	if t := opts.Tolerance; math.IsNaN(t) || t <= 0 || t > 1 { // as image's validTolerance
+		return result, fmt.Errorf("prune platform backdrops for artist: %w (got %v)", ErrPruneToleranceInvalid, opts.Tolerance)
+	}
+	if p == nil || p.artistService == nil || p.connectionService == nil || p.artistGetter == nil {
+		return result, fmt.Errorf("prune platform backdrops for artist: publisher not fully wired")
+	}
+	if a == nil || a.ID == "" {
+		return result, fmt.Errorf("prune platform backdrops for artist: artist is required")
+	}
+	// The prune reads base columns only (ID, Name, Locked, Path): no side-table hydration.
+	fresh, err := p.artistGetter.GetByID(ctx, a.ID, artist.HydrateOpts{})
+	if err != nil {
+		return result, fmt.Errorf("prune platform backdrops for artist: loading artist %s: %w", a.ID, err)
+	}
+	if fresh == nil {
+		return result, fmt.Errorf("prune platform backdrops for artist: artist %s not found", a.ID)
+	}
+	scope := PlatformBackdropPruneScope{ArtistID: fresh.ID, Perceptual: opts.Perceptual, DryRun: opts.DryRun, tolerance: opts.Tolerance}
+	p.pruneOneArtist(ctx, fresh, scope, &result)
 	return result, nil
 }
 
@@ -782,7 +873,7 @@ func (p *Publisher) perceptualOptsFor(ctx context.Context, a *artist.Artist) (pe
 	twins := make(map[[32]byte]bool)
 	dir := p.ImageDir(a)
 	if dir == "" {
-		return perceptualPruneOpts{}, fmt.Errorf("perceptual tier skipped: artist has no local image folder")
+		return perceptualPruneOpts{}, &pruneSkipError{PruneSkipNoLocalFolder, "perceptual tier skipped: artist has no local image folder"}
 	}
 	paths, err := img.DiscoverFanart(ctx, dir, p.getActiveFanartPrimary(ctx))
 	if err != nil {
@@ -793,11 +884,11 @@ func (p *Publisher) perceptualOptsFor(ctx context.Context, a *artist.Artist) (pe
 	// strip the twin protection exactly when the local copy cannot be seen, so
 	// it is treated as unknown and the tier is skipped.
 	if len(paths) == 0 {
-		return perceptualPruneOpts{}, fmt.Errorf("perceptual tier skipped: no local fanart found in the artist folder")
+		return perceptualPruneOpts{}, &pruneSkipError{PruneSkipEmptyLocalFolder, "perceptual tier skipped: no local fanart found in the artist folder"}
 	}
 	local, unreadable := p.localFanartHashes(ctx, paths)
 	if unreadable > 0 {
-		return perceptualPruneOpts{}, fmt.Errorf("perceptual tier skipped: %d local fanart file(s) could not be hashed", unreadable)
+		return perceptualPruneOpts{}, &pruneSkipError{PruneSkipUnreadableLocal, fmt.Sprintf("perceptual tier skipped: %d local fanart file(s) could not be hashed", unreadable)}
 	}
 	for h := range local {
 		var sum [32]byte
@@ -822,7 +913,7 @@ func (p *Publisher) checkNoProtectedFanart(ctx context.Context, artistID string)
 	}
 	for i := range imgs {
 		if im := &imgs[i]; im.ImageType == "fanart" && (im.Locked || im.Source == artist.ImageSourceUser) {
-			return fmt.Errorf("perceptual tier skipped: artist has locked or user-set fanart")
+			return &pruneSkipError{PruneSkipProtectedFanart, "perceptual tier skipped: artist has locked or user-set fanart"}
 		}
 	}
 	return nil
@@ -841,13 +932,22 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, scope 
 	// it removes only byte-identical copies, so nothing the operator chose is
 	// lost.
 	var opts perceptualPruneOpts
+	if scope.Perceptual && a.Locked && len(platformIDs) > 0 {
+		// Skipped only: the API never reported a locked artist in Failures.
+		result.Skipped = append(result.Skipped, PlatformBackdropPruneSkip{ArtistID: a.ID, Reason: PruneSkipLockedArtist})
+	}
 	if scope.Perceptual && !a.Locked && len(platformIDs) > 0 {
 		var optsErr error
 		if opts, optsErr = p.perceptualOptsFor(ctx, a); optsErr != nil {
 			p.logger.Warn("platform backdrop prune: perceptual tier skipped for artist",
 				slog.String("artist_id", a.ID), slog.String("error", optsErr.Error()))
 			result.Failures = append(result.Failures, PlatformBackdropPruneFailure{ArtistID: a.ID, Err: optsErr.Error()})
+			var skip *pruneSkipError
+			if errors.As(optsErr, &skip) {
+				result.Skipped = append(result.Skipped, PlatformBackdropPruneSkip{ArtistID: a.ID, Reason: skip.reason})
+			}
 		}
+		opts.Tolerance = scope.tolerance
 	}
 	for _, pid := range platformIDs {
 		conn, connErr := p.connectionService.GetByID(ctx, pid.ConnectionID)
@@ -873,9 +973,9 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, scope 
 // LockBackdropTarget). A write by the platform itself is outside it, so each
 // delete still re-verifies. Detect-to-delete is one read-modify-verify, and the
 // perceptual tier's per-backdrop decode widens the window a concurrent resync
-// could otherwise interleave with. Re-entrancy: the only caller chain is the
-// prune handler -> PrunePlatformBackdropDuplicates -> pruneOneArtist, none of
-// which holds the lock, and nothing below takes it.
+// could otherwise interleave with. Re-entrancy: no caller of pruneOneArtist
+// (the prune handler, PrunePlatformBackdropsForArtist) holds the lock, and
+// nothing below takes it.
 func (p *Publisher) pruneOneTarget(ctx context.Context, a *artist.Artist, conn *connection.Connection, pid artist.PlatformID, client backdropPruneClient, scope PlatformBackdropPruneScope, opts perceptualPruneOpts, result *PlatformBackdropPruneResult) {
 	unlock := p.lockPhashTarget(pid.ConnectionID, pid.PlatformArtistID)
 	defer unlock()
