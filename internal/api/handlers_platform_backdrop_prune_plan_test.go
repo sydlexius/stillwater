@@ -82,22 +82,26 @@ func TestPlatformPruneSpec_TierEnumMatchesThePublisher(t *testing.T) {
 		t.Fatalf("loading the embedded spec: %v", err)
 	}
 	op := doc.Paths.Find("/reports/platform-backdrop-duplicates/prune").Post
-	plan := op.Responses.Status(200).Value.Content.Get("application/json").Schema.Value.Properties["plan"].Value
-	tier := plan.Items.Value.Properties["tier"]
-	if tier == nil {
-		t.Fatal("plan items carry no `tier` property in the spec")
-	}
-	got := map[any]bool{}
-	for _, v := range tier.Value.Enum {
-		got[v] = true
-	}
-	want := map[any]bool{publish.PruneTierExact: true, publish.PruneTierPerceptual: true}
-	if len(got) != len(want) {
-		t.Fatalf("tier enum %v, want exactly %v", tier.Value.Enum, want)
-	}
-	for v := range want {
-		if !got[v] {
-			t.Errorf("tier enum %v is missing %q", tier.Value.Enum, v)
+	// The 500 body carries the same plan as the 200 (#3328 review), so both
+	// declare the same tier enum.
+	for _, status := range []int{200, 500} {
+		plan := op.Responses.Status(status).Value.Content.Get("application/json").Schema.Value.Properties["plan"].Value
+		tier := plan.Items.Value.Properties["tier"]
+		if tier == nil {
+			t.Fatalf("%d: plan items carry no `tier` property in the spec", status)
+		}
+		got := map[any]bool{}
+		for _, v := range tier.Value.Enum {
+			got[v] = true
+		}
+		want := map[any]bool{publish.PruneTierExact: true, publish.PruneTierPerceptual: true}
+		if len(got) != len(want) {
+			t.Fatalf("%d: tier enum %v, want exactly %v", status, tier.Value.Enum, want)
+		}
+		for v := range want {
+			if !got[v] {
+				t.Errorf("%d: tier enum %v is missing %q", status, tier.Value.Enum, v)
+			}
 		}
 	}
 }

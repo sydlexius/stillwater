@@ -289,10 +289,14 @@ func decodePlatformPruneRequest(w http.ResponseWriter, req *http.Request, logger
 			{"dry_run", &body.DryRun},
 			{"perceptual", &body.Perceptual},
 		} {
-			raw := req.PostFormValue(f.name)
-			if raw == "" {
+			// Only an ABSENT key takes the default. PostFormValue reads a
+			// present-but-empty `dry_run=` as "" too, which would quietly turn
+			// a rehearsal into a real delete; so presence is checked on the
+			// parsed form and an empty value goes to the strict parse (400).
+			if _, present := req.PostForm[f.name]; !present {
 				continue
 			}
+			raw := req.PostForm.Get(f.name)
 			v, err := strconv.ParseBool(raw)
 			if err != nil {
 				// The offending VALUE goes to the log, never to the response:

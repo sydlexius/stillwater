@@ -181,6 +181,11 @@ func TestPlatformBackdropDuplicatesPrune_RejectsAMalformedFormBoolean(t *testing
 		// A malformed perceptual must not silently read as false either: the
 		// operator asked for a different run than the one that would happen.
 		{"all_artists=true&perceptual=maybe", "invalid boolean for perceptual"},
+		// PRESENT BUT EMPTY is not absent (#3328 review): each must 400, never
+		// fall back to the default, which for dry_run means a real delete.
+		{"all_artists=true&perceptual=", "invalid boolean for perceptual"},
+		{"all_artists=true&dry_run=", "invalid boolean for dry_run"},
+		{"artist_id=a1&all_artists=", "invalid boolean for all_artists"},
 	} {
 		t.Run(tc.body, func(t *testing.T) {
 			t.Parallel()

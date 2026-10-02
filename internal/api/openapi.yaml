@@ -95,11 +95,13 @@ components:
             and a desaturated or tinted copy of it count as the same picture. Off unless set; the exact tier always
             runs. The kept copy is, in order: one byte-identical to a local
             fanart file, the larger image, the larger file, the lower index.
-            A copy matching a local fanart file is never removed by this tier,
-            and a locked artist gets the exact tier only. An unreadable backdrop skips this tier for
-            that artist on that connection; an unreadable local fanart file, or
-            an artist folder holding no fanart, skips it for that artist on
-            every connection. Each skip is reported in failures. Declared at
+            A copy matching a local fanart file is never removed by this tier.
+            A locked artist, or one with any locked or hand-set fanart slot,
+            gets the exact tier only, as does an artist whose lock state cannot
+            be read. An unreadable backdrop skips this tier for that artist on
+            that connection; an artist with no local image folder, an artist
+            folder holding no fanart, or an unreadable local fanart file skips
+            it for that artist on every connection. Each skip is reported in failures. Declared at
             the root only, like dry_run.
       oneOf:
         - title: One artist
@@ -4202,7 +4204,10 @@ paths:
         /reports/platform-backdrop-duplicates report (#2540 remote prune):
         for every in-scope artist and connection, deletes redundant
         exact-duplicate backdrops already pushed out to the platform,
-        high-index-first. Re-detects from the platform on every call rather
+        high-index-first. Exact pruning is the default; setting perceptual
+        additionally enables the near-duplicate tier (#3138), which also
+        removes copies that are the same picture without being
+        byte-identical. Re-detects from the platform on every call rather
         than trusting a prior scan result, since it may be stale by the time
         an operator triggers the prune.
 
@@ -4416,6 +4421,9 @@ paths:
                           type: integer
                         survivor:
                           type: integer
+                        tier:
+                          type: string
+                          enum: [exact, perceptual]
                         outcome:
                           type: string
                           enum: [planned, deleted, skipped, failed]
