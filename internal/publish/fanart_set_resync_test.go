@@ -370,6 +370,29 @@ func TestSyncAllFanart_JellyfinResyncWaitsForTargetLock(t *testing.T) {
 	}
 }
 
+// #3138 review: the Emby indexed upload holds the per-target lock the backdrop
+// prune deletes under. Without it the held hook fires while the lock is taken.
+func TestSyncAllFanart_EmbyIndexedUploadWaitsForTargetLock(t *testing.T) {
+	peer := &resyncPeer{fakeEmbyPeer: &fakeEmbyPeer{}}
+	seedPeer(peer, 3)
+	p, a, _ := setResyncHarness(t, connection.TypeEmby, peer)
+	waiting, held := lockHooks(t)
+	unlock := p.lockPhashTarget("c1", "p1")
+	done := make(chan struct{})
+	go func() { defer close(done); p.SyncAllFanartToPlatforms(context.Background(), a) }()
+	awaitClosed(t, waiting, "the push to reach the target lock")
+	select {
+	case <-held:
+		t.Error("the Emby upload acquired the target lock while another operation held it")
+	case <-time.After(300 * time.Millisecond):
+	}
+	unlock()
+	awaitClosed(t, done, "the sync to finish")
+	if peer.ups != 3 {
+		t.Errorf("uploads after release = %d, want 3", peer.ups)
+	}
+}
+
 // #3145 review: the local set must be re-read UNDER the lock. A full-set sync
 // snapshots set A, then blocks on the lock while another operation publishes
 // set B; once it wins the lock it must push B, never the stale A.

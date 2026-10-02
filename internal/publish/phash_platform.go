@@ -104,6 +104,13 @@ func (p *Publisher) lockPhashTarget(connectionID, platformArtistID string) func(
 	return mu.Unlock
 }
 
+// LockBackdropTarget exposes lockPhashTarget to an indexed backdrop writer
+// outside this package (#3138 review). Not reentrant: the caller must not hold
+// it or call a Publisher method that takes it while holding it.
+func (p *Publisher) LockBackdropTarget(connectionID, platformArtistID string) func() {
+	return p.lockPhashTarget(connectionID, platformArtistID)
+}
+
 // matchingBackdropIndices reads every backdrop for the item, perceptually
 // hashes it, and returns the indices within tolerance of want, sorted
 // DESCENDING so a caller deleting them does not shift the ordinals of the ones
