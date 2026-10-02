@@ -282,6 +282,20 @@ func DecodePathMappings(s string) ([]PathMapping, error) {
 	return m, nil
 }
 
+// SupportsPlatformState reports whether connType exposes per-artist platform
+// state (ArtistStateGetter in state.go). Emby and Jellyfin do; Lidarr has no
+// such endpoint. A POSITIVE allow-list like SupportsFeatureToggles: an
+// unrecognized or future type defaults to unsupported. The Providers and Debug
+// sections and the platform-state handler all consult this so they agree.
+func SupportsPlatformState(connType string) bool {
+	switch connType {
+	case TypeEmby, TypeJellyfin:
+		return true
+	default:
+		return false
+	}
+}
+
 // SupportsFeatureToggles reports whether connType has the three per-feature
 // write toggles (image write, metadata push, trigger refresh) at all.
 //

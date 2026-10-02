@@ -40,3 +40,25 @@ func TestSupportsFeatureToggles(t *testing.T) {
 		})
 	}
 }
+
+// TestSupportsPlatformState pins the positive allow-list for platform state
+// (#2487): Lidarr has no platform-state endpoint and unknown types default to
+// unsupported.
+func TestSupportsPlatformState(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		connType string
+		want     bool
+	}{
+		{TypeEmby, true},
+		{TypeJellyfin, true},
+		{TypeLidarr, false},
+		{"", false},
+		{"plex", false},
+	}
+	for _, tc := range cases {
+		if got := SupportsPlatformState(tc.connType); got != tc.want {
+			t.Errorf("SupportsPlatformState(%q) = %v, want %v", tc.connType, got, tc.want)
+		}
+	}
+}
