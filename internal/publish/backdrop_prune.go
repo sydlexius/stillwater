@@ -280,6 +280,10 @@ func perceptualRedundant(fps []backdropFingerprint, claimed map[int]bool) []redu
 			Tier: PruneTierPerceptual,
 		})
 	}
+	// absorbed is a map, so out's order is random until sorted. Sorted here as
+	// well as by the caller, so this function's own result honors the delete
+	// order contract rather than relying on every caller to remember it.
+	sortRedundantDescending(out)
 	return out
 }
 

@@ -120,6 +120,92 @@ func TestPerceptualRedundant_SurvivorIsTheBestCopyEvenAboveItsCandidates(t *test
 	}
 }
 
+// Rule 2 (area) outranks rule 3 (bytes): a bigger, smaller-file copy is kept
+// over a smaller, bigger-file one.
+// perceptualRedundant's own result honors the delete-order contract; its
+// internal map would otherwise hand entries back in random order.
+func TestPerceptualRedundant_ReturnsDescending(t *testing.T) {
+	t.Parallel()
+	fps := []backdropFingerprint{fp(0, phA, 900, 10, false)}
+	for i := 1; i <= 6; i++ {
+		fps = append(fps, fp(i, phA, 100, 10, false))
+	}
+	for run := 0; run < 50; run++ {
+		got := perceptualRedundant(fps, nil)
+		for i := 1; i < len(got); i++ {
+			if got[i].Index >= got[i-1].Index {
+				t.Fatalf("run %d: not descending: %+v", run, got)
+			}
+		}
+	}
+}
+
+func TestPerceptualRedundant_AreaBeatsByteSize(t *testing.T) {
+	t.Parallel()
+	got := indexSurvivor(perceptualRedundant([]backdropFingerprint{
+		fp(0, phA, 400, 10, false),
+		fp(1, phA, 100, 20, false),
+	}, nil))
+	if want := [][2]int{{1, 0}}; !equalPairs(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+// Two-sided threshold: 6 differing bits (similarity 58/64 = 0.906) clears the
+// shared 0.90 tolerance, 7 bits (57/64 = 0.891) does not. Pins the number from
+// both sides, so moving it either way is caught.
+func TestPerceptualRedundant_ThresholdBoundary(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		flip  uint64
+		match bool
+	}{
+		{"6 bits apart matches", 0x3F, true},
+		{"7 bits apart does not", 0x7F, false},
+	} {
+		got := perceptualRedundant([]backdropFingerprint{
+			fp(0, phA, 100, 10, false), fp(1, phA^tc.flip, 100, 10, false),
+		}, nil)
+		if (len(got) == 1) != tc.match {
+			t.Errorf("%s: got %v", tc.name, got)
+		}
+	}
+}
+
+// Many interleaved exact and perceptual deletions come back strictly
+// descending on every run, whatever order the internal map yields them in.
+func TestDetectBackdropRedundancy_MergedPlanIsStrictlyDescending(t *testing.T) {
+	t.Parallel()
+	big := fieldJPEG(t, 7, 3)
+	small := fieldJPEG(t, 7, 1)
+	mid := fieldJPEG(t, 7, 2)
+	other := fieldJPEG(t, 99, 1)
+	otherBig := fieldJPEG(t, 99, 2)
+	mustSimilar(t, big, small, true)
+	mustSimilar(t, other, otherBig, true)
+	mustSimilar(t, big, other, false)
+	// Exact deletions 9,8,7,6,4; perceptual deletions 5,3,2 (survivors 0 and
+	// 1). Concatenated without the merge sort that is ...,6,4,5,... -- so the
+	// tiers genuinely interleave and the order cannot be right by accident.
+	backdrops := [][]byte{big, otherBig, small, other, small, mid, other, mid, small, other}
+	for run := 0; run < 50; run++ {
+		fake := &fakeBackdropClient{backdrops: backdrops, failAt: -1, failDeleteAt: -1}
+		got, _, pErr, err := detectBackdropRedundancy(context.Background(), fake, "p1", perceptualPruneOpts{Enabled: true})
+		if err != nil || pErr != nil {
+			t.Fatalf("detect: %v / %v", err, pErr)
+		}
+		if len(got) != 8 {
+			t.Fatalf("got %d entries, want 8 (all but the two biggest copies)", len(got))
+		}
+		for i := 1; i < len(got); i++ {
+			if got[i].Index >= got[i-1].Index {
+				t.Fatalf("run %d: not strictly descending at %d: %+v", run, i, got)
+			}
+		}
+	}
+}
+
 func TestPerceptualRedundant_LocalTwinIsKeptAndPreferred(t *testing.T) {
 	t.Parallel()
 	got := indexSurvivor(perceptualRedundant([]backdropFingerprint{
