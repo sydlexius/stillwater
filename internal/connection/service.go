@@ -16,6 +16,10 @@ import (
 // errDecrypt is a sentinel indicating an API key decryption failure.
 var errDecrypt = errors.New("decrypt")
 
+// ErrNotFound is wrapped by Delete when no connection has the given ID, so
+// callers can tell a missing row from a database failure with errors.Is.
+var ErrNotFound = errors.New("connection not found")
+
 // Service provides connection data operations.
 type Service struct {
 	db        *sql.DB
@@ -246,7 +250,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	}
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
-		return fmt.Errorf("connection not found: %s", id)
+		return fmt.Errorf("%w: %s", ErrNotFound, id)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("committing connection delete: %w", err)
