@@ -476,14 +476,19 @@ func TestSortCandidatesByRank_MusicBrainzTierBeatsScoreAndOverlap(t *testing.T) 
 		t.Fatal("fixture: Discogs candidate must carry measured overlap")
 	}
 
-	for name, in := range map[string][]templates.DisambiguationCandidate{
-		"mb first in input": {mb, dc},
-		"dc first in input": {dc, mb},
+	for _, tc := range []struct {
+		name string
+		in   []templates.DisambiguationCandidate
+	}{
+		{"mb first in input", []templates.DisambiguationCandidate{mb, dc}},
+		{"dc first in input", []templates.DisambiguationCandidate{dc, mb}},
 	} {
-		got := append([]templates.DisambiguationCandidate(nil), in...)
-		sortCandidatesByRank("Query", got)
-		if got[0].Result.Source != string(provider.NameMusicBrainz) {
-			t.Errorf("%s: first = %s, want musicbrainz", name, got[0].Result.Source)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			got := append([]templates.DisambiguationCandidate(nil), tc.in...)
+			sortCandidatesByRank("Query", got)
+			if got[0].Result.Source != string(provider.NameMusicBrainz) || got[1].Result.Source != string(provider.NameDiscogs) {
+				t.Errorf("order = %s, %s; want musicbrainz, discogs", got[0].Result.Source, got[1].Result.Source)
+			}
+		})
 	}
 }
