@@ -340,9 +340,12 @@ worktree:
 ## remove-worktree: Remove a sibling worktree (via cleanup-worktree.sh) and delete its Active-table row
 ##   Usage: make remove-worktree NAME=<slug>
 ##   Example: make remove-worktree NAME=m49.5-merge-policy
+# Test seam only: REMOVE_WORKTREE_TEST_DIR overrides the worktree path for testing.
+# The real cleanup-worktree.sh derives the path from NAME; this variable is not used in production.
+REMOVE_WORKTREE_TEST_DIR ?= ../stillwater-$(NAME)
 remove-worktree:
 	@test -n "$(NAME)" || (echo "error: NAME is required (e.g. make remove-worktree NAME=my-feature)"; exit 1)
-	@wt="../stillwater-$(NAME)"; \
+	@wt="$(REMOVE_WORKTREE_TEST_DIR)"; \
 	if [ -d "$$wt" ]; then \
 		cur=$$(git -C "$$wt" symbolic-ref --quiet --short HEAD 2>/dev/null || true); \
 		def=$$(git -C "$$wt" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##'); \
@@ -354,8 +357,14 @@ remove-worktree:
 			echo "!!! continuing with worktree + tracker cleanup only."; \
 		fi; \
 	fi
-	@$(HOME)/.claude/scripts/cleanup-worktree.sh "$(NAME)" || \
-		echo "warning: cleanup-worktree.sh exited non-zero (worktree or branch may already be gone); continuing with tracker row removal"
+	@$(HOME)/.claude/scripts/cleanup-worktree.sh "$(NAME)" && cleanup_rc=0 || cleanup_rc=$$?; \
+	if [ -d "$(REMOVE_WORKTREE_TEST_DIR)" ]; then \
+		echo "error: worktree $(REMOVE_WORKTREE_TEST_DIR) still present after cleanup-worktree.sh (exit $$cleanup_rc); keeping tracker row"; \
+		exit 1; \
+	fi; \
+	if [ "$$cleanup_rc" -ne 0 ]; then \
+		echo "warning: cleanup-worktree.sh exited $$cleanup_rc (worktree or branch may already be gone); continuing with tracker row removal"; \
+	fi
 	@if [ -f "$(WORKTREES_MD)" ]; then \
 		if grep -q '^| stillwater-$(NAME) ' "$(WORKTREES_MD)"; then \
 			awk -v prefix='| stillwater-$(NAME) ' 'index($$0, prefix) != 1' \

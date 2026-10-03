@@ -31,7 +31,7 @@ if [ ! -f "$env_file" ]; then
 fi
 if [ -f "$env_file" ]; then
   set -a
-  # shellcheck disable=SC1091
+  # shellcheck source=/dev/null
   . "$env_file"
   set +a
 else
