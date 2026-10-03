@@ -80,6 +80,10 @@ func open(dbPath, dsnParams string) (*sql.DB, error) {
 	//
 	// So this is not purely a performance knob. If you raise it, revisit that
 	// guard and decide what the busy case should surface.
+	//
+	// A second dependent: the artists write generation (artists_generation.go)
+	// counts a write when the row changes, not when it commits. With one
+	// connection no reader can query in between; with more, one could.
 	db.SetMaxOpenConns(1)
 
 	return db, nil

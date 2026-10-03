@@ -4,8 +4,9 @@ package api
 // fragment endpoint GET /api/v1/reports/compliance/count (#1715). The endpoint
 // is admin-only and returns either an empty body (count=0 or all artists
 // compliant) or an <a> link populated with the non-compliant-artist count.
-// A short-TTL module-level cache memoizes the result so per-tab polling
-// collapses to at most one DB query per TTL window.
+// A module-level cache memoizes the result so per-tab polling does not query
+// on every poll: it is served until an artists row is written (#2395), with
+// the TTL only as a backstop.
 
 import (
 	"context"
@@ -186,9 +187,9 @@ func TestHandleComplianceCount_CountError(t *testing.T) {
 	}
 }
 
-// TestHandleComplianceCount_CachedResult exercises the TTL-fresh branch of
-// complianceCountState.get: a second request within the TTL window returns the
-// cached count without re-querying the DB.
+// TestHandleComplianceCount_CachedResult exercises the fresh-cache branch of
+// complianceCountState.get: with no artists write in between, a second request
+// returns the cached count without re-querying the DB.
 func TestHandleComplianceCount_CachedResult(t *testing.T) {
 	r, db := complianceCountTestRouter(t)
 	seedNonCompliantArtist(t, db)
@@ -203,23 +204,20 @@ func TestHandleComplianceCount_CachedResult(t *testing.T) {
 		t.Fatal("first call: expected non-empty body (count pill) after seeding non-compliant artist")
 	}
 
-	// Mutate the DB so all artists become compliant. If the second handler call
-	// re-queries the DB it will see count=0 and return an empty body; if it
-	// uses the in-memory cache it returns the previously stored count (same
-	// non-empty body as the first call).
-	if _, err := db.ExecContext(context.Background(),
-		`UPDATE artists SET health_score = 100`,
-	); err != nil {
-		t.Fatalf("DB mutation: %v", err)
+	// Close the DB so any re-query fails, which the handler turns into an
+	// empty body. (Before #2395 this test changed health_score instead; an
+	// artists write now drops the cache on purpose, so the probe has to be one
+	// that writes nothing.)
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing DB: %v", err)
 	}
 
-	// Second call: must hit the TTL-fresh cache path, not re-query the DB.
+	// Second call: must be served from the cache, not from the dead DB.
 	rec2 := httptest.NewRecorder()
 	r.handleComplianceCount(rec2, withI18nCtx(t, adminComplianceCountReq()))
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("second call: status = %d", rec2.Code)
 	}
-	// The cached (pre-mutation) body must be served unchanged.
 	if rec1.Body.String() != rec2.Body.String() {
 		t.Errorf("cache not served: first=%q second=%q (second call re-queried the DB instead of using the cache)",
 			rec1.Body.String(), rec2.Body.String())
