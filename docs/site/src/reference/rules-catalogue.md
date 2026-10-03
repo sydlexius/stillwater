@@ -807,10 +807,7 @@ Before: Artist A holds fanart2.jpg that is 94% similar to Artist B's fanart.jpg
 After:  Artist A's fanart2.jpg is quarantined and removed (locally and on platforms); survivors renumbered. Restorable from quarantine if it was a false positive.
 ```
 
-**Configurable:**
-
-- Tolerance (default 0.90)
-- Severity (default: warning)
+**Configurable:** Severity only.
 
 **Caveats:**
 

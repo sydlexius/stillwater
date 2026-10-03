@@ -334,9 +334,13 @@ var defaultRules = []Rule{
 		// auto-resolves -- these event-driven violations. Manual automation keeps
 		// the destructive back-out operator-triggered (one click), which is the
 		// safety valve on the ambiguous symmetric collision signal.
+		// The collision tolerance is governed by collision.DefaultTolerance
+		// (internal/collision/notifier.go) and is not configurable per-rule.
+		// The Config field is omitempty, so any existing rows in the database
+		// carrying the old Tolerance key are still parsed but unused.
 		Enabled:        false,
 		AutomationMode: AutomationModeManual,
-		Config:         RuleConfig{Severity: "warning", Tolerance: 0.90},
+		Config:         RuleConfig{Severity: "warning"},
 	},
 	{
 		ID:          RuleMBIDResolves,
