@@ -8633,8 +8633,9 @@ paths:
         exists, returns a populated <a> link element with the count and the
         chart-bar glyph (three ascending bars). Admin-only; the
         sidebar omits the placeholder for non-admin viewers so a healthy session
-        never makes the call. The handler memoizes the count for five minutes so
-        per-tab sidebar polling collapses to at most one query per window.
+        never makes the call. The handler memoizes the count so per-tab sidebar
+        polling does not query on every poll; the memoized count is dropped as
+        soon as any artist row is written, and after five minutes regardless.
         Non-administrators receive a 403 JSON response.
       operationId: getComplianceCountBadge
       parameters:
