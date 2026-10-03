@@ -10,6 +10,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -284,14 +285,14 @@ func pngChunk(t *testing.T, chunkType string, payload []byte) []byte {
 // values can only ever confirm the map matches itself. Add cases HERE, with a
 // real encoded fixture, rather than to any list of models.
 //
-// One known case is NOT covered here: a lossy WebP carrying an alpha chunk.
-// golang.org/x/image/webp has the same divergence -- decode.go's fccVP8 branch
-// reports color.YCbCrModel when configOnly is set, but allocates
-// *image.NYCbCrA when an alpha chunk is present. It is not a live
-// under-estimate (both YCbCrModel and NYCbCrAModel estimate 4, and NYCbCrA at
-// 4:4:4 is exactly 3 + 1 = 4), and x/image ships no WebP ENCODER, so no
-// fixture can be built here without either a checked-in binary blob or a
-// hand-rolled encoder. Tracked as #2935.
+// Lossy WebP carrying an alpha chunk is covered by a checked-in fixture
+// (testdata/lossy_alpha_16x16.webp, made with cwebp; x/image ships no WebP
+// encoder), #2935. #2935 feared the fccVP8 config path reports YCbCr while the
+// decode allocates *image.NYCbCrA. In the pinned x/image the VP8X path reports
+// color.NYCbCrAModel when the alpha flag is set (and a stray alpha chunk without
+// the flag is rejected), so header and allocation agree today. This case keeps
+// that true, and keeps the safety from resting on two table rows coinciding:
+// the YCbCr and NYCbCrA rows both say 4.
 func TestBytesPerPixel_NeverUnderestimatesRealDecodes(t *testing.T) {
 	// 64x64 is deliberate. The model/type mismatch is a property of the
 	// FORMAT, not of the size, so it reproduces identically at 64x64 and at
@@ -378,6 +379,13 @@ func TestBytesPerPixel_NeverUnderestimatesRealDecodes(t *testing.T) {
 		// The assertion with teeth for it lives in
 		// TestGreyscaleJPEG_ReportsGrayModel below.
 		{"JPEG 1-component greyscale (header says Gray)", grayJPEGBuf.Bytes()},
+
+		// Lossy WebP with alpha.
+		{"WebP lossy WITH alpha (decodes NYCbCrA)", mustReadTestdata(t, "lossy_alpha_16x16.webp")},
+		{"WebP lossless WITH alpha", mustReadTestdata(t, "lossless_alpha_16x16.webp")},
+		// VP8X header with the alpha flag CLEAR wrapping a VP8L chunk: the
+		// config path reports YCbCrModel, but VP8L always decodes to NRGBA.
+		{"WebP lossless in VP8X, alpha flag clear (header says YCbCr, decodes NRGBA)", mustReadTestdata(t, "lossless_vp8x_noalpha_16x16.webp")},
 	}
 
 	for _, tc := range cases {
@@ -401,6 +409,66 @@ func TestBytesPerPixel_NeverUnderestimatesRealDecodes(t *testing.T) {
 			if estimate < actual {
 				t.Errorf("header-derived estimate is %d B/px but the decoder allocated %T at %d B/px -- a %.1fx UNDER-estimate, which is exactly the defect the footprint guard exists to prevent",
 					estimate, img, actual, float64(actual)/float64(estimate))
+			}
+		})
+	}
+}
+
+func mustReadTestdata(t *testing.T, name string) []byte {
+	t.Helper()
+	data, err := os.ReadFile("testdata/" + name)
+	if err != nil {
+		t.Fatalf("reading fixture %s: %v", name, err)
+	}
+	return data
+}
+
+// TestWebPFixtures_Preconditions pins what each WebP case above relies on, so
+// swapping a fixture for a different one cannot leave the case green while
+// verifying nothing: the alpha fixtures must carry a pixel with alpha < 255,
+// the lossy one must decode to *image.NYCbCrA with NYCbCrAModel in the header,
+// and the VP8X/no-alpha one must really disagree (YCbCr header, NRGBA decode).
+func TestWebPFixtures_Preconditions(t *testing.T) {
+	hasTranslucent := func(img image.Image) bool {
+		b := img.Bounds()
+		for y := b.Min.Y; y < b.Max.Y; y++ {
+			for x := b.Min.X; x < b.Max.X; x++ {
+				if _, _, _, a := img.At(x, y).RGBA(); a < 0xffff {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	cases := []struct {
+		file      string
+		wantModel color.Model
+		wantType  string
+		wantAlpha bool
+	}{
+		{"lossy_alpha_16x16.webp", color.NYCbCrAModel, "*image.NYCbCrA", true},
+		{"lossless_alpha_16x16.webp", color.NRGBAModel, "*image.NRGBA", true},
+		{"lossless_vp8x_noalpha_16x16.webp", color.YCbCrModel, "*image.NRGBA", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			data := mustReadTestdata(t, tc.file)
+			cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+			if err != nil {
+				t.Fatalf("DecodeConfig: %v", err)
+			}
+			img, _, err := image.Decode(bytes.NewReader(data))
+			if err != nil {
+				t.Fatalf("Decode: %v", err)
+			}
+			if cfg.ColorModel != tc.wantModel {
+				t.Errorf("DecodeConfig reports %v, want %v", cfg.ColorModel, tc.wantModel)
+			}
+			if got := fmt.Sprintf("%T", img); got != tc.wantType {
+				t.Errorf("Decode returned %s, want %s", got, tc.wantType)
+			}
+			if tc.wantAlpha && !hasTranslucent(img) {
+				t.Errorf("fixture has no pixel with alpha < 255; it no longer exercises alpha")
 			}
 		})
 	}
