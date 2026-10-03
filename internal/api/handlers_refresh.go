@@ -649,7 +649,11 @@ func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*prov
 		}
 	}
 
-	if err := r.artistService.Update(writeCtx, a); err != nil {
+	// #3078: record which provider supplied each field. The per-field overlay
+	// names the provider from result.Sources; the scalar bare "provider:" covers
+	// every other field this write moves (a clear-on-empty has no FieldSource),
+	// so a refresh row is never left looking operator-authored.
+	if err := r.artistService.Update(refreshProducerContext(writeCtx, result.Sources), a); err != nil {
 		r.logger.Error("saving refreshed metadata failed",
 			"artist_id", a.ID,
 			"error", err)
@@ -663,6 +667,18 @@ func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*prov
 	r.applyMemberRefresh(writeCtx, a.ID, result, a.LockedFields)
 
 	return result, nil
+}
+
+// refreshProducerContext stamps a refresh write with its producers (#3078):
+// "provider:<name>" per field from sources, and the bare "provider:" for any
+// field with no FieldSource.
+func refreshProducerContext(ctx context.Context, sources []provider.FieldSource) context.Context {
+	perField := make(map[string]string, len(sources))
+	for _, src := range sources {
+		perField[src.Field] = "provider:" + string(src.Provider)
+	}
+	ctx = artist.ContextWithProducer(ctx, "provider:")
+	return artist.ContextWithFieldProducers(ctx, perField)
 }
 
 // applyMemberRefresh upserts provider-returned members for an artist when the
@@ -1065,7 +1081,10 @@ func (r *Router) applyProviderName(ctx context.Context, a *artist.Artist, meta *
 		a.SortName = newSort
 	}
 
-	writeCtx := context.WithoutCancel(ctx)
+	// #3078: the bare "provider:" producer. Which provider supplied a promoted
+	// name is not recoverable here (the MusicBrainz authoritative override
+	// appends no FieldSource), so naming one would be a guess.
+	writeCtx := artist.ContextWithProducer(context.WithoutCancel(ctx), "provider:")
 	if err := r.artistService.Update(writeCtx, a); err != nil {
 		r.logger.Error("updating artist name from provider",
 			"artist_id", a.ID,

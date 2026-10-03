@@ -16,11 +16,13 @@ import (
 // other, and collapsing them into one column is exactly the design this file
 // avoids -- see migration 029's header for the full argument.
 //
-// THIS FILE SHIPS THE VOCABULARY ONLY. Nothing in this PR (#3078 PR 1) calls
-// ContextWithProducer or ContextWithFieldProducers from any write-path call
-// site. Every row this PR writes carries producer="". Stamping the real
-// producer at each write path (refresh, platform pull, field-update modal,
-// rule engine, scanner, restore) is #3078's PR 2 and PR 3.
+// Stamped today (PR 2, internal/api): provider refresh ("provider:<name>" per
+// field, bare "provider:" for a moved field with no credited source), platform
+// pull, and field clear ("operator"). A field EDIT records the producer the
+// client claims, an optional claim honored only when it is on the allow-list
+// (operator or provider:<known provider>), otherwise ""; a provider-modal
+// merge sends no claim, so it records "". Not stamped yet, so still "": the
+// rule engine, the scanner and the restore paths, which land in PR 3.
 //
 // THE EMPTY STRING IS THE DEFAULT, AND IT IS NOT "operator". This is the
 // single most load-bearing decision in this file. "" means "the writer did
@@ -40,8 +42,8 @@ import (
 // row with a post-029-deploy created_at and producer = "" is a write path
 // nobody stamped yet.
 const (
-	// ProducerUnrecorded is the default and the only value this PR ever
-	// writes. "The writer did not say." Never treat it as "the operator", nor
+	// ProducerUnrecorded is the default for any write path that does not stamp
+	// a producer. "The writer did not say." Never treat it as "the operator", nor
 	// as "automated" -- it is neither claim.
 	ProducerUnrecorded = ""
 
@@ -129,10 +131,8 @@ func ContextWithFieldProducers(ctx context.Context, producers map[string]string)
 // names this field, then the scalar (ContextWithProducer), then
 // ProducerUnrecorded when neither is set.
 //
-// This PR (#3078 PR 1) adds no caller that puts either value on a context, so
-// every call in this PR's tree returns ProducerUnrecorded. The resolution
-// order exists now so PR 2/PR 3 can stamp real producers without touching
-// this function or any of its callers again.
+// A write path that puts neither value on its context resolves to
+// ProducerUnrecorded; the stamped paths are listed in the file doc block.
 func producerForField(ctx context.Context, field string) string {
 	if overlay, ok := ctx.Value(fieldProducersKey).(map[string]string); ok {
 		if p, ok := overlay[field]; ok {
@@ -146,13 +146,12 @@ func producerForField(ctx context.Context, field string) string {
 }
 
 // validHistoryProducer reports whether producer is one of the recognized
-// metadata-change producer values. Allows the empty string (the only value
-// this PR writes), the four named constants above, and the "provider:",
+// metadata-change producer values. Allows the empty string, the four named constants above, and the "provider:",
 // "platform:" and "rule:" prefixes (including the bare "provider:" prefix
 // with no suffix -- see the doc block above).
 //
 // An invalid producer is NOT a reason to fail a write. Callers that validate
-// (PR 2's untrusted-input path) must degrade an unrecognized value to "" and
+// (the field-update handler's untrusted-input path) must degrade an unrecognized value to "" and
 // log the rejected token, never reject the whole write -- a history row lost
 // because someone typo'd a producer is a worse outcome than an unattributed
 // one. This function only answers the yes/no question; degrading on "no" is

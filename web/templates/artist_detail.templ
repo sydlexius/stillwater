@@ -1170,6 +1170,7 @@ templ artistDetailPageScript() {
 			// failed) does not re-PATCH an already-persisted value.
 			function swMarkCommitted(input) {
 				if (!input) return;
+				delete input.dataset.swStaged;
 				if ((input.tagName || '').toLowerCase() === 'select') {
 					Array.prototype.forEach.call(input.options, function (o) { o.defaultSelected = o.selected; });
 				} else {
@@ -1248,6 +1249,25 @@ templ artistDetailPageScript() {
 			// clock popover into the field's live input/select/textarea. The existing
 			// fieldChanged() dirty detection marks it for save automatically because
 			// input.value will differ from input.defaultValue after staging.
+			// Typing over a staged value makes it operator-authored again, so clear
+			// the staged flag on TRUSTED user input only: swStageHistoryValue's own
+			// synthetic input event (isTrusted === false) must not clear it.
+			function swClearStagedOnUserEdit(e) {
+				var t = e.target;
+				if (e.isTrusted && t && t.dataset && t.dataset.swStaged) { delete t.dataset.swStaged; }
+			}
+			document.addEventListener('input', swClearStagedOnUserEdit, true);
+			document.addEventListener('change', swClearStagedOnUserEdit, true);
+			// A per-field form submit (htmx) of a still-staged value must not claim
+			// producer=operator either; mirror saveAllEditors by dropping the claim.
+			document.addEventListener('htmx:configRequest', function (e) {
+				var form = e.detail && e.detail.elt;
+				if (!form || !form.querySelector || !form.hasAttribute('hx-patch')) { return; }
+				var input = form.querySelector('[name="value"]');
+				if (input && input.dataset && input.dataset.swStaged && e.detail.parameters) {
+					delete e.detail.parameters.producer;
+				}
+			});
 			window.swStageHistoryValue = function (btn) {
 				var v = btn.getAttribute('data-sw-stage-value') || '';
 				var sel = btn.getAttribute('data-sw-container-sel');
@@ -1258,6 +1278,9 @@ templ artistDetailPageScript() {
 						var input = container.querySelector('[name="value"]');
 						if (input) {
 							input.value = v;
+							// #3078: a staged prior value may be provider text, so it must
+							// NOT be committed as operator-authored. Done reads this flag.
+							input.dataset.swStaged = '1';
 							input.dispatchEvent(new Event('input', { bubbles: true }));
 						}
 					}
@@ -1297,7 +1320,7 @@ templ artistDetailPageScript() {
 					var url = form.getAttribute('hx-patch');
 					var input = form.querySelector('[name="value"]');
 					if (url && fieldChanged(input)) {
-						jobs.push({ url: bp + url, rawUrl: url, value: input.value, input: input });
+						jobs.push({ url: bp + url, rawUrl: url, value: input.value, input: input, staged: input.dataset.swStaged === '1' });
 					}
 				});
 				// Nothing dirty, but every editor is still open: swap the sections
@@ -1323,7 +1346,7 @@ templ artistDetailPageScript() {
 							method: 'PATCH',
 							headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrf },
 							credentials: 'same-origin',
-							body: 'value=' + encodeURIComponent(job.value)
+							body: 'value=' + encodeURIComponent(job.value) + (job.staged ? '' : '&producer=operator')
 						}).then(function (r) {
 							if (r.ok) { swMarkCommitted(job.input); return undefined; }
 							return r.text().then(function (body) {
