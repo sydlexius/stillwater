@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	img "github.com/sydlexius/stillwater/internal/image"
 )
 
 // onlyCopyBytes stands in for real artwork stranded at a tomb path by a hard
@@ -316,5 +317,74 @@ func TestSweepOrphanedDupTombs_NonRegularEntryDoesNotBlockOthers(t *testing.T) {
 	requireBytesUnderOrphan(t, dir, "zzz.orphan-*.jpg", onlyCopyBytes)
 	if !strings.Contains(buf.String(), "sweeping orphaned duplicate-fanart tomb") {
 		t.Errorf("the refused entry was not logged: %s", buf.String())
+	}
+}
+
+// TestIsQuarantinedOrphan_OnlyGeneratedShape pins the predicate to the name
+// the producers generate, so an ordinary file that merely contains ".orphan-"
+// is still judged by the extraneous-images rule.
+func TestIsQuarantinedOrphan_OnlyGeneratedShape(t *testing.T) {
+	const stamp = "20260102T030405.000000000Z"
+	for name, want := range map[string]bool{
+		"holiday.orphan-draft.jpg":               false,
+		"x.orphan-.jpg":                          false,
+		"x.orphan-" + stamp:                      false, // no extension
+		"x.orphan-20260102T030405.00000000Z.jpg": false, // 8 fractional digits
+		".orphan-" + stamp + ".jpg":              false, // empty stem
+		"fanart7.orphan-" + stamp + ".jpg":       true,
+		"fanart7.orphan-" + stamp + "-3.jpg":     true,
+	} {
+		if got := isQuarantinedOrphan(name); got != want {
+			t.Errorf("isQuarantinedOrphan(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+// TestIsQuarantinedOrphan_MatchesRealProducers feeds the predicate names built
+// by the real producers, so predicate and producers cannot drift apart: the
+// rule package's quarantineStrandedTomb, and internal/image's
+// quarantineStrandedTemp (reached through RenumberFanart's stale-temp sweep).
+func TestIsQuarantinedOrphan_MatchesRealProducers(t *testing.T) {
+	dir := t.TempDir()
+	writeStrandedTomb(t, filepath.Join(dir, "fanart7.jpg"+dupTombSuffix), onlyCopyBytes)
+	if err := quarantineStrandedTomb(filepath.Join(dir, "fanart7.jpg"+dupTombSuffix), dupTombSuffix, nil, testLogger()); err != nil {
+		t.Fatalf("quarantineStrandedTomb: %v", err)
+	}
+
+	imgDir := t.TempDir()
+	createGradientJPEG(t, filepath.Join(imgDir, "fanart.jpg"), 0)
+	writeStrandedTomb(t, filepath.Join(imgDir, "fanart_renumber_0.jpg.tmp"), onlyCopyBytes)
+	if err := img.RenumberFanart(t.Context(), &fakeHashRecorder{}, "art-x", imgDir, "fanart.jpg",
+		[]string{filepath.Join(imgDir, "fanart.jpg")}, false); err != nil {
+		t.Fatalf("RenumberFanart: %v", err)
+	}
+
+	for _, d := range []string{dir, imgDir} {
+		entries, _ := os.ReadDir(d)
+		found := false
+		for _, e := range entries {
+			if strings.Contains(e.Name(), ".orphan-") {
+				found = true
+				if !isQuarantinedOrphan(e.Name()) {
+					t.Errorf("predicate rejects a real producer's orphan name %q", e.Name())
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("precondition failed: no orphan was produced in %s", d)
+		}
+	}
+}
+
+// TestCheckExtraneousImages_ReportsLookalikeOrphanName: a user file that only
+// resembles an orphan name must be reported, not skipped forever.
+func TestCheckExtraneousImages_ReportsLookalikeOrphanName(t *testing.T) {
+	dir := t.TempDir()
+	createGradientJPEG(t, filepath.Join(dir, "fanart.jpg"), 0)
+	createGradientJPEG(t, filepath.Join(dir, "holiday.orphan-draft.jpg"), 1)
+	e := &Engine{}
+	v := e.makeExtraneousImagesChecker()(t.Context(), &artist.Artist{Name: "L", Path: dir}, RuleConfig{Severity: "warning"})
+	if v == nil || !strings.Contains(v.Message, "holiday.orphan-draft.jpg") {
+		t.Fatalf("the lookalike file was not reported: %+v", v)
 	}
 }

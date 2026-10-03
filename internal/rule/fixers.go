@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -2523,9 +2524,18 @@ const orphanMarker = ".orphan-"
 // extraneous-images rule must skip these: they keep a terminal image extension
 // (so #2954 can classify them) and so look like unexpected images, but may be
 // the only copy of real artwork.
+//
+// Only the GENERATED shape matches, "<stem>.orphan-<stamp>[-<n>]<ext>", so an
+// ordinary file such as "holiday.orphan-draft.jpg" is still judged normally.
+// internal/image's quarantineStrandedTemp uses the same marker and stamp
+// layout, so its orphans match too.
 func isQuarantinedOrphan(name string) bool {
-	return strings.Contains(name, orphanMarker)
+	return orphanNameRE.MatchString(name)
 }
+
+// orphanNameRE matches the stamp layout 20060102T150405.000000000Z, an
+// optional "-<n>" collision counter, then one terminal extension.
+var orphanNameRE = regexp.MustCompile(`^.+` + regexp.QuoteMeta(orphanMarker) + `\d{8}T\d{6}\.\d{9}Z(-\d+)?\.[^.]+$`)
 
 // quarantineStrandedTomb moves a regular file sitting at a tomb path aside
 // instead of deleting it, and is a no-op when nothing is there (#2956). It is
