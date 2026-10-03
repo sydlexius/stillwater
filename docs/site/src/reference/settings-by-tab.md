@@ -175,7 +175,7 @@ The community list Stillwater uses to hide AI-generated results in web image sea
 
 ### Provider Priorities  {#settings-providers-priorities}
 
-For each metadata field (biography, genres, image URLs, and so on) Stillwater queries providers in a specific order and uses the first non-empty answer. This list is that order: drag to rearrange, click the checkmark or X to include or skip a provider for a given field. Only providers you have configured appear here.
+For each metadata field (biography, genres, image URLs, and so on) Stillwater queries providers in a specific order and uses the first non-empty answer. This list is that order: drag to rearrange, click the checkmark or X to include or skip a provider for a given field. Only providers you have configured and that can supply the field appear here.
 
 - **Restore defaults**
 {: #settings-providers-priorities-restore-defaults }
@@ -185,7 +185,7 @@ For each metadata field (biography, genres, image URLs, and so on) Stillwater qu
 {: #settings-providers-priorities-disable-provider }
 - **Enable this provider**
 {: #settings-providers-priorities-enable-provider }
-- **No configured providers for this field.**
+- **No configured provider can supply this field.**
 {: #settings-providers-priorities-no-providers }
 
 ### Tag Sources  {#settings-providers-tag-sources}

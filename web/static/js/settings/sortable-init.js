@@ -11,7 +11,10 @@
 //   [data-provider]          -- enabled provider chip; dataset.provider is sent.
 //   [data-disabled-provider] -- disabled provider chip; preserved in the saved
 //                              order so it is not dropped from the list.
-//   [id^="priority-row-"]    -- the row wrapper used to find disabled chips.
+//   [data-hidden-provider]   -- hidden marker for a stored provider rendered as no
+//                              chip (capability-filtered or no key); preserved in the
+//                              saved order so a reorder does not delete it (#3190).
+//   [id^="priority-row-"]    -- the row wrapper used to find disabled/hidden entries.
 //
 // Cross-script contract: depends on the global Sortable (Sortable.min.js, loaded
 // before this module) and the optional global showToast (probed with typeof).
@@ -62,6 +65,10 @@
           if (row) {
             row.querySelectorAll('[data-disabled-provider]').forEach(function(chip) {
               providers.push(chip.dataset.disabledProvider);
+            });
+            // Hidden stored providers go last, in stored order, so they survive the save.
+            row.querySelectorAll('[data-hidden-provider]').forEach(function(marker) {
+              providers.push(marker.dataset.hiddenProvider);
             });
           }
           var csrfToken;

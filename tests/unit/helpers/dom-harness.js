@@ -22,6 +22,7 @@ export const MODULE_PATHS = {
   sectionRefresh: join(REPO_ROOT, 'web/static/js/settings/section-refresh.js'),
   heroPathSync: join(REPO_ROOT, 'web/static/js/artist-detail/hero-path-sync.js'),
   nextSettings: join(REPO_ROOT, 'web/static/js/settings/next-settings.js'),
+  sortableInit: join(REPO_ROOT, 'web/static/js/settings/sortable-init.js'),
 };
 
 /**

@@ -52,7 +52,15 @@ var twoProviderKeys = []provider.ProviderKeyStatus{
 		AccessTier:  provider.TierFree,
 	},
 	{
-		Name:        "fanart",
+		Name:        "lastfm",
+		DisplayName: "Last.fm",
+		RequiresKey: true,
+		HasKey:      true,
+		Status:      "ok",
+		AccessTier:  provider.TierFreeKey,
+	},
+	{
+		Name:        "fanarttv",
 		DisplayName: "Fanart.tv",
 		RequiresKey: true,
 		HasKey:      true,
@@ -70,8 +78,8 @@ var twoWebSearchProviders = []provider.WebSearchProviderStatus{
 // twoPriorities provides populated Priorities data for the Provider Priorities
 // card.
 var twoPriorities = []provider.FieldPriority{
-	{Field: "genres", Providers: []provider.ProviderName{"musicbrainz", "fanart"}},
-	{Field: "images", Providers: []provider.ProviderName{"fanart"}, Disabled: []provider.ProviderName{"musicbrainz"}},
+	{Field: "genres", Providers: []provider.ProviderName{"musicbrainz", "lastfm"}},
+	{Field: "fanart", Providers: []provider.ProviderName{"fanarttv"}, Disabled: []provider.ProviderName{"fanarttv"}},
 }
 
 // vocabFull is a populated VocabConfig for the Tag Sources card.
