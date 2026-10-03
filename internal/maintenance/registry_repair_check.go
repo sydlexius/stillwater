@@ -101,14 +101,23 @@ func (s *Service) scanRegistryRepair(ctx context.Context) (int, error) {
 	return rebuild.RowsPlanned + restore.Restored, nil
 }
 
-// checkRegistryRepair runs ONE detector pass: skipped while repairRunning
-// reports a user-started repair, a no-op while another scan holds the latch,
-// and bounded by timeout.
-func (s *Service) checkRegistryRepair(ctx context.Context, cache *RegistryRepairCache, repairRunning func() bool, timeout time.Duration) {
-	if repairRunning() {
+// RegistryRepairClaim atomically claims the repair/detector exclusion shared
+// with the user-started repair: ok=false means a repair is running (the caller
+// must not scan); ok=true means the repair endpoint now refuses to start until
+// release is called. Check-then-act on a bool snapshot is not enough, since a
+// repair could start between the check and the scan.
+type RegistryRepairClaim func() (release func(), ok bool)
+
+// checkRegistryRepair runs ONE detector pass: skipped while claim refuses (a
+// user-started repair is running), a no-op while another scan holds the latch,
+// and bounded by timeout. The claim is held for the whole scan.
+func (s *Service) checkRegistryRepair(ctx context.Context, cache *RegistryRepairCache, claim RegistryRepairClaim, timeout time.Duration) {
+	release, ok := claim()
+	if !ok {
 		s.logger.Info("registry repair check skipped: a repair is running")
 		return
 	}
+	defer release()
 	gen, claimed := cache.begin()
 	if !claimed {
 		s.logger.Info("registry repair check skipped: a check is already running")
@@ -140,14 +149,15 @@ func (s *Service) checkRegistryRepair(ctx context.Context, cache *RegistryRepair
 // interval until ctx is canceled. Blocking; run it in a goroutine. interval
 // and startupDelay default to 12h and 2m when non-positive.
 //
-// repairRunning is how the detector respects a user-started repair: the API
-// router owns that singleton (registryRepairRunning under registryRepairMu),
-// and a dry run racing a real run would read half-written state, so a tick
+// claim is how the detector excludes a user-started repair: the API router owns
+// that singleton (registryRepairRunning under registryRepairMu) and hands out
+// an atomic claim that also blocks a repair from starting while a scan is in
+// flight. A dry run racing a real run would read half-written state, so a tick
 // that finds a repair running is skipped; the next tick (or the repair's own
 // SetFromRepair) supplies the answer.
-func (s *Service) StartRegistryRepairCheck(ctx context.Context, cache *RegistryRepairCache, repairRunning func() bool, interval, startupDelay time.Duration) {
-	if cache == nil || repairRunning == nil {
-		s.logger.Error("registry repair check not started: cache or repairRunning not provided")
+func (s *Service) StartRegistryRepairCheck(ctx context.Context, cache *RegistryRepairCache, claim RegistryRepairClaim, interval, startupDelay time.Duration) {
+	if cache == nil || claim == nil {
+		s.logger.Error("registry repair check not started: cache or claim not provided")
 		return
 	}
 	if interval <= 0 {
@@ -161,7 +171,7 @@ func (s *Service) StartRegistryRepairCheck(ctx context.Context, cache *RegistryR
 		return
 	case <-time.After(startupDelay):
 	}
-	s.checkRegistryRepair(ctx, cache, repairRunning, registryRepairCheckTimeout)
+	s.checkRegistryRepair(ctx, cache, claim, registryRepairCheckTimeout)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -169,7 +179,7 @@ func (s *Service) StartRegistryRepairCheck(ctx context.Context, cache *RegistryR
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.checkRegistryRepair(ctx, cache, repairRunning, registryRepairCheckTimeout)
+			s.checkRegistryRepair(ctx, cache, claim, registryRepairCheckTimeout)
 		}
 	}
 }

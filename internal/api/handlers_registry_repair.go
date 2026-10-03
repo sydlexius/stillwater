@@ -192,11 +192,12 @@ type registryRepairStatus struct {
 }
 
 // startRegistryRepair claims the singleton and publishes a "running" status,
-// or returns ok=false when a run is already in flight.
+// or returns ok=false when a run is already in flight or the background
+// detector's scan holds the claim (TryClaimRegistryRepairCheck).
 func (r *Router) startRegistryRepair(body registryRepairRequest) (registryRepairStatus, bool) {
 	r.registryRepairMu.Lock()
 	defer r.registryRepairMu.Unlock()
-	if r.registryRepairRunning {
+	if r.registryRepairRunning || r.registryRepairChecking {
 		return registryRepairStatus{}, false
 	}
 	r.registryRepairRunning = true
@@ -399,13 +400,24 @@ func writeFailures(commit bool, rebuild *maintenance.ImageRepairResult, restore 
 	return shortfall + restore.Failed
 }
 
-// RegistryRepairRunning reports whether a user-started repair is in flight. The
-// background detector (maintenance.StartRegistryRepairCheck) polls it so a
-// scheduled dry run never overlaps a real run.
-func (r *Router) RegistryRepairRunning() bool {
+// TryClaimRegistryRepairCheck is the detector's side of the repair/detector
+// mutual exclusion (maintenance.RegistryRepairClaim). Under registryRepairMu it
+// refuses (ok=false) while a user repair is running, and otherwise marks the
+// detector's scan in flight so startRegistryRepair refuses until release is
+// called. One critical section on each side makes check-then-scan atomic: a
+// repair can neither start mid-scan nor be mid-run when a scan begins.
+func (r *Router) TryClaimRegistryRepairCheck() (release func(), ok bool) {
 	r.registryRepairMu.Lock()
 	defer r.registryRepairMu.Unlock()
-	return r.registryRepairRunning
+	if r.registryRepairRunning || r.registryRepairChecking {
+		return nil, false
+	}
+	r.registryRepairChecking = true
+	return func() {
+		r.registryRepairMu.Lock()
+		defer r.registryRepairMu.Unlock()
+		r.registryRepairChecking = false
+	}, true
 }
 
 // registryRepairBanner is the banner endpoint body. ok=false means never

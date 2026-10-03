@@ -1211,14 +1211,49 @@ func TestRegistryRepair_CommitWithWriteFailuresSetsFailureCount(t *testing.T) {
 	}
 }
 
-func TestRegistryRepairRunning_ReflectsSingleton(t *testing.T) {
-	t.Parallel()
-	r := NewRouter(RouterDeps{SessionSecret: testSessionSecret, DB: newTestDB(t),
+func newClaimTestRouter(t *testing.T) *Router {
+	t.Helper()
+	return NewRouter(RouterDeps{SessionSecret: testSessionSecret, DB: newTestDB(t),
 		Logger: slog.New(slog.NewTextHandler(os.Stderr, nil)), StaticFS: os.DirFS("../../web/static")})
-	if r.RegistryRepairRunning() {
-		t.Fatal("idle router reports a repair running")
+}
+
+// With a user repair running, the detector's claim is refused; once the repair
+// finishes the claim succeeds.
+func TestTryClaimRegistryRepairCheck_RefusedWhileRepairRunning(t *testing.T) {
+	t.Parallel()
+	r := newClaimTestRouter(t)
+	if _, ok := r.startRegistryRepair(registryRepairRequest{}); !ok {
+		t.Fatal("could not start a repair on an idle router")
 	}
-	if _, ok := r.startRegistryRepair(registryRepairRequest{}); !ok || !r.RegistryRepairRunning() {
-		t.Fatal("a started repair must read as running")
+	if rel, ok := r.TryClaimRegistryRepairCheck(); ok {
+		rel()
+		t.Fatal("detector claim granted while a user repair is running")
+	}
+	r.finishRegistryRepair(&registryRepairReport{}, "", "")
+	rel, ok := r.TryClaimRegistryRepairCheck()
+	if !ok {
+		t.Fatal("detector claim refused on an idle router")
+	}
+	rel()
+}
+
+// While the detector holds its claim, the real start path refuses a user
+// repair, and the repair can start again once the claim is released.
+func TestStartRegistryRepair_RefusedWhileDetectorClaimed(t *testing.T) {
+	t.Parallel()
+	r := newClaimTestRouter(t)
+	rel, ok := r.TryClaimRegistryRepairCheck()
+	if !ok {
+		t.Fatal("claim refused on an idle router")
+	}
+	if _, ok := r.startRegistryRepair(registryRepairRequest{Commit: true}); ok {
+		t.Fatal("user repair started while the detector scan held the claim")
+	}
+	if _, ok := r.TryClaimRegistryRepairCheck(); ok {
+		t.Fatal("a second detector claim was granted")
+	}
+	rel()
+	if _, ok := r.startRegistryRepair(registryRepairRequest{Commit: true}); !ok {
+		t.Fatal("user repair refused after the claim was released")
 	}
 }

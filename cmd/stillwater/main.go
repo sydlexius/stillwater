@@ -229,6 +229,11 @@ type Application struct {
 	// that will never close. See drainLockDamageRepair.
 	lockDamageRepairDone chan struct{}
 
+	// registryRepairCheckDone is closed when the registry-repair detector
+	// loop (#2678) returns; nil until startRegistryRepairCheck runs. See
+	// drainRegistryRepairCheck.
+	registryRepairCheckDone chan struct{}
+
 	// aiBlocklist is the runtime-fetched AI-image blocklist (#2310), built in
 	// wireProviders; aiBlocklistDone closes when its refresh loop exits and
 	// stays nil when the loop never started. See newAIBlocklist and
@@ -1403,7 +1408,7 @@ func (a *Application) startListeners() error {
 
 	// Registry-repair detector (#2678): cached dry run behind the banner
 	// endpoint, same 12h/2m cadence. Skips ticks while a repair is running.
-	go a.maintenanceService.StartRegistryRepairCheck(ctx, a.registryRepairCache, a.router.RegistryRepairRunning, 0, 0)
+	a.startRegistryRepairCheck(ctx)
 
 	// One-shot repair of locked fields a past rule run overwrote (#3038).
 	a.startLockDamageRepair(ctx, db, logger)
@@ -1567,6 +1572,10 @@ func (a *Application) startListeners() error {
 	// the drains above; the helper owns its bound and logs a timeout.
 	a.drainAIBlocklistOnShutdown()
 
+	// Drain the registry-repair detector (#2678): its dry run reads the DB, so
+	// it must finish (or be abandoned at the bound) before run closes it.
+	a.drainRegistryRepairCheckOnShutdown()
+
 	// Stop the scanner -- the listener layer has drained, so no new scan
 	// requests can race with the scanner's WaitGroup.
 	a.scannerService.Shutdown()
@@ -1612,6 +1621,43 @@ func (a *Application) startAIBlocklist(ctx context.Context) {
 		return
 	}
 	a.aiBlocklistDone = a.aiBlocklist.Start(ctx)
+}
+
+// startRegistryRepairCheck launches the detector loop and records its done
+// channel so shutdown can wait for a scan in flight (it queries the DB, which
+// run closes right after startListeners returns).
+func (a *Application) startRegistryRepairCheck(ctx context.Context) {
+	done := make(chan struct{})
+	a.registryRepairCheckDone = done
+	go func() {
+		defer close(done)
+		a.maintenanceService.StartRegistryRepairCheck(ctx, a.registryRepairCache, a.router.TryClaimRegistryRepairCheck, 0, 0)
+	}()
+}
+
+// drainRegistryRepairCheck waits for the detector loop to exit after the
+// shared ctx is canceled, or for ctx to expire. A loop never started has
+// nothing to wait on.
+func (a *Application) drainRegistryRepairCheck(ctx context.Context) error {
+	if a.registryRepairCheckDone == nil {
+		return nil
+	}
+	select {
+	case <-a.registryRepairCheckDone:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// drainRegistryRepairCheckOnShutdown runs drainRegistryRepairCheck with a 30s
+// bound and warns on timeout.
+func (a *Application) drainRegistryRepairCheckOnShutdown() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := a.drainRegistryRepairCheck(ctx); err != nil {
+		a.logger.Warn("registry repair check drain did not complete cleanly", slog.String("error", err.Error()))
+	}
 }
 
 // drainAIBlocklistOnShutdown runs drainAIBlocklist with a 10s bound and logs

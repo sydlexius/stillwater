@@ -301,6 +301,10 @@ type Router struct {
 	// (#2678), guarded by registryRepairMu. Nil until the first run.
 	registryRepair        *registryRepairStatus
 	registryRepairRunning bool
+	// registryRepairChecking is set while the background detector's dry run
+	// holds the claim from TryClaimRegistryRepairCheck, guarded by
+	// registryRepairMu; startRegistryRepair refuses while it is set.
+	registryRepairChecking bool
 	// registryRepairCache is the detector's cached count (#2678); never nil.
 	registryRepairCache *maintenance.RegistryRepairCache
 	// blastRestoreRunning guards the singleton blast-radius restore run
