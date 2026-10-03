@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 // TestListIDs_Empty verifies that ListIDs returns an empty slice (not nil) and
@@ -296,5 +298,79 @@ func TestListIDs_RepoError(t *testing.T) {
 	}
 	if capped {
 		t.Error("capped = true, want false on error")
+	}
+}
+
+// TestListIDs_TypeFacetsNormalizeStoredType runs the type facets against real
+// SQLite with non-canonical stored types (#3333): "Group", " group " and "Solo"
+// must land in the same facet as their canonical forms, while an unknown and an
+// empty type stay in Other.
+func TestListIDs_TypeFacetsNormalizeStoredType(t *testing.T) {
+	t.Parallel()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	stored := []string{"group", "Group", " group ", "Solo", "solo", "banana", "",
+		// Padded with non-space whitespace; SQL TRIM(X) alone would miss these.
+		"\tgroup", "group\n", "\u00a0Solo", "\u3000group\u3000"}
+	for i, typ := range stored {
+		a := testArtist(fmt.Sprintf("TypeFacet%d", i), fmt.Sprintf("/music/TypeFacet%d", i))
+		a.Type = typ
+		if err := svc.Create(ctx, a); err != nil {
+			t.Fatalf("Create %q: %v", typ, err)
+		}
+		// Precondition: the raw value was stored exactly, not canonicalized.
+		got, err := svc.GetByID(ctx, a.ID)
+		if err != nil || got.Type != typ {
+			t.Fatalf("precondition: stored type = %q (err %v), want %q", got.Type, err, typ)
+		}
+	}
+
+	// 11 rows: group x6, person(solo) x3, other x2 (banana, empty).
+	want := map[string][2]int{ // facet -> {include, exclude}
+		"type_group":  {6, 5},
+		"type_person": {3, 8},
+		"type_other":  {2, 9},
+	}
+	for facet, w := range want {
+		for i, state := range []string{"include", "exclude"} {
+			_, total, _, err := svc.ListIDs(ctx, CountParams{Filters: map[string]string{facet: state}})
+			if err != nil {
+				t.Fatalf("%s=%s: %v", facet, state, err)
+			}
+			if total != w[i] {
+				t.Errorf("%s=%s: total = %d, want %d", facet, state, total, w[i])
+			}
+		}
+	}
+}
+
+// TestTypeTrimCharsMatchGoTrimSpace pins that the SQL trim set equals Go's
+// strings.TrimSpace set: every listed code point is trimmed by Go, and its
+// non-whitespace neighbors are not.
+func TestTypeTrimCharsMatchGoTrimSpace(t *testing.T) {
+	t.Parallel()
+	inner := strings.TrimSuffix(strings.TrimPrefix(typeTrimChars, "char("), ")")
+	for _, f := range strings.Split(inner, ",") {
+		n, err := strconv.Atoi(f)
+		if err != nil {
+			t.Fatalf("bad code point %q: %v", f, err)
+		}
+		r := rune(n)
+		if got := strings.TrimSpace(string(r) + "x" + string(r)); got != "x" {
+			t.Errorf("U+%04X is in typeTrimChars but TrimSpace left %q", r, got)
+		}
+	}
+	// Completeness: no whitespace code point Go knows is missing from the list.
+	for r := rune(0); r <= unicode.MaxRune; r++ {
+		if unicode.IsSpace(r) && !strings.Contains(","+inner+",", ","+strconv.Itoa(int(r))+",") {
+			t.Errorf("U+%04X is whitespace to Go but missing from typeTrimChars", r)
+		}
+	}
+	for _, r := range []rune{8, 14, 31, 33, 134, 159, 161, 8191, 8203, 8231, 8234, 12287, 12289} {
+		if got := strings.TrimSpace(string(r) + "x"); got != string(r)+"x" {
+			t.Errorf("U+%04X is not whitespace but TrimSpace trimmed it", r)
+		}
 	}
 }

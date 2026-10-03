@@ -582,12 +582,25 @@ func applyFields(a *Artist, u *MetadataUpdate, strategy MergeStrategy, locked ma
 	return changed
 }
 
+// NormalizeType returns the canonical comparison form of a stored artist type
+// (lowercased, whitespace-trimmed). Stored types are not always canonical (a
+// hand-written NFO can carry "Group" or " group "), so Go comparisons against a
+// type name go through this. It only produces a comparison value; the stored
+// Type is never rewritten.
+//
+// provider/orchestrator.go keeps its own normalizers because importing this
+// package there would be an import cycle. The SQL type facets in scan.go use the
+// same whitespace set (typeTrimChars, kept in step with strings.TrimSpace).
+func NormalizeType(t string) string {
+	return strings.ToLower(strings.TrimSpace(t))
+}
+
 // IsIndividualType returns true for artist types that represent a single person
 // who can have a gender field (solo, person, character). Group-like types
 // (group, orchestra, choir) do not carry gender. Callers should check for
 // empty type separately before using this to clear gender.
 func IsIndividualType(t string) bool {
-	switch t {
+	switch NormalizeType(t) {
 	case "solo", "person", "character":
 		return true
 	default:
@@ -608,7 +621,7 @@ func IsIndividualType(t string) bool {
 // string let "Group" or " group " lose its gender yet keep born/died (#2767).
 // Only the comparison value is normalized; a.Type itself is never rewritten.
 func FilterDatesByArtistType(a *Artist) {
-	switch strings.ToLower(strings.TrimSpace(a.Type)) {
+	switch NormalizeType(a.Type) {
 	case "solo", "person", "character":
 		a.Formed = ""
 		a.Disbanded = ""
@@ -670,7 +683,7 @@ func FilterDatesByArtistType(a *Artist) {
 // FilterGenderByArtistType clears gender and FilterDatesByArtistType clears
 // born/died, both matching the type identically (lowercased, trimmed).
 func IsGenderlessType(t string) bool {
-	switch strings.ToLower(strings.TrimSpace(t)) {
+	switch NormalizeType(t) {
 	case "group", "orchestra", "choir":
 		return true
 	default:

@@ -153,3 +153,32 @@ func TestBuildArtistPushData_SortNameDerivation_Propagation(t *testing.T) {
 		}
 	})
 }
+
+// TestBuildArtistPushData_DatesFollowNormalizedType pins that a non-canonical
+// stored type (case, padding) picks the same date branch as the canonical one
+// (#3333). Before, "Group" fell into the default branch and published Born/Died.
+func TestBuildArtistPushData_DatesFollowNormalizedType(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		typ                                string
+		wantBorn, wantDied, wantFormed, wD bool
+	}{
+		{"group", false, false, true, true},
+		{"Group", false, false, true, true},
+		{"  ORCHESTRA ", false, false, true, true},
+		{"solo", true, true, false, false},
+		{" Solo ", true, true, false, false},
+		{"person", true, true, true, true},    // person is not "solo": default branch, pinned not endorsed
+		{"character", true, true, true, true}, // likewise default branch
+		{"other", true, true, true, true},     // unknown type: all four, unchanged
+		{"", true, true, true, true},          // empty type: all four, unchanged
+	}
+	for _, tc := range cases {
+		a := &artist.Artist{Name: "A", Type: tc.typ, Born: "1970", Died: "2020", Formed: "1990", Disbanded: "2000"}
+		got := BuildArtistPushData(a, nil)
+		if (got.Born != "") != tc.wantBorn || (got.Died != "") != tc.wantDied ||
+			(got.Formed != "") != tc.wantFormed || (got.Disbanded != "") != tc.wD {
+			t.Errorf("type %q: born=%q died=%q formed=%q disbanded=%q", tc.typ, got.Born, got.Died, got.Formed, got.Disbanded)
+		}
+	}
+}

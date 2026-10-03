@@ -961,7 +961,7 @@ func roundTripOverlapHTML(ctx context.Context, aName, bName, path, nameColorClas
 // case/normalization sweep is #1843). Unknown/empty falls back to "Other",
 // matching the artists list.
 func ArtistTypeLabel(ctx context.Context, rawType string) string {
-	switch strings.ToLower(strings.TrimSpace(rawType)) {
+	switch artist.NormalizeType(rawType) {
 	case "person", "solo", "solo act":
 		return t(ctx, "artists.filter.person")
 	case "group":

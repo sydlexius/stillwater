@@ -170,7 +170,7 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 
 	// Mirror push logic: write to born/died for persons, formed/disbanded for groups.
 	premiereField, endField := "formed", "disbanded"
-	if a.Type == "person" {
+	if artist.NormalizeType(a.Type) == "person" {
 		premiereField, endField = "born", "died"
 	}
 

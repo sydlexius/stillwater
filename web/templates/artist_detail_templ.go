@@ -688,7 +688,7 @@ func artistHero(assets AssetPaths, data ArtistDetailPageData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if a.Type != "" {
+		if artist.NormalizeType(a.Type) != "" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<span class=\"rounded-full px-2 py-0.5 tracking-wide\" style=\"border:1px solid var(--swd-line)\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -1650,7 +1650,7 @@ func artistStickyHeader(assets AssetPaths, data ArtistDetailPageData) templ.Comp
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if a.Type != "" {
+		if artist.NormalizeType(a.Type) != "" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "<span class=\"text-xs\" style=\"color:var(--swd-ink-3)\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
