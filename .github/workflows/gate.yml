@@ -861,13 +861,14 @@ jobs:
           # never required). The same flags are also appended to the action's
           # second (suggestion, github-pr-review) pass, so that label becomes
           # "shellcheck-annotations" too.
-          reviewdog_flags: -name=shellcheck-annotations
-          # level (#3283): reviewdog computes the check-run conclusion from
-          # -level, not -fail-level, and the action defaults level to error,
-          # so ANY annotation (even info-level) concluded `failure`. With
-          # info, an annotation-bearing run concludes `neutral`. fail_level
-          # below still controls only the step's exit code.
-          level: info
+          # -level= (empty) is also passed (#3283). The action defaults -level
+          # to error, and with any non-empty level reviewdog concludes the
+          # check-run from that level alone, so even an info-level finding
+          # concluded `failure`. With an empty level the conclusion follows
+          # each finding's own severity: error -> failure, warning or
+          # info/style -> neutral, none -> success. (`level: ''` as an input
+          # may be swapped back to the default, so the flag is used.)
+          reviewdog_flags: -name=shellcheck-annotations -level=
           fail_level: error
           # .githooks/pre-commit and .githooks/pre-push have no .sh extension
           # (standard hook naming); reviewdog's default *.sh pattern would
