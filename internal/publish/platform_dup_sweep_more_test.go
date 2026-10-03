@@ -306,6 +306,16 @@ func TestPlatformDupSweep_RunsAgainAfterTheInterval(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { defer close(done); fx.sweep.Start(ctx) }()
+	// Registered before any fatal assertion, so a failure below still stops and
+	// joins the loop; bounded, so a shutdown regression fails instead of hanging.
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("Start did not return after ctx was canceled")
+		}
+	})
 	for n := 1; n <= 3; n++ {
 		select {
 		case <-passes:
@@ -313,17 +323,25 @@ func TestPlatformDupSweep_RunsAgainAfterTheInterval(t *testing.T) {
 			t.Fatalf("pass %d never ran", n)
 		}
 	}
-	cancel()
-	<-done
 }
 
+// The constructor refuses a nil publisher and a nil policy with its OWN panic,
+// not whatever nil dereference would follow later.
 func TestNewPlatformDupSweep_RefusesMissingWiring(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Error("a nil policy was accepted")
-		}
-	}()
-	NewPlatformDupSweep(New(Deps{Logger: silentLogger()}), nil, PlatformDupSweepConfig{}, nil)
+	policy := func(context.Context) (float64, bool, error) { return 0, false, nil }
+	for name, build := range map[string]func(){
+		"nil policy":    func() { NewPlatformDupSweep(New(Deps{Logger: silentLogger()}), nil, PlatformDupSweepConfig{}, nil) },
+		"nil publisher": func() { NewPlatformDupSweep(nil, policy, PlatformDupSweepConfig{}, nil) },
+	} {
+		func() {
+			defer func() {
+				if msg, _ := recover().(string); !strings.Contains(msg, "nil publisher or policy") {
+					t.Errorf("%s: recovered %q, want the constructor's own refusal", name, msg)
+				}
+			}()
+			build()
+		}()
+	}
 }
 
 // A read that panics is still an attempted read and a failure: both pass
