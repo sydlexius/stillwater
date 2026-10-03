@@ -3399,7 +3399,7 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 // DB so that exists_flag=1 stays accurate without a separate cleanup pass.
 // GET /api/v1/images/random-backdrop
 //
-//nolint:gocognit // Each failure path (query, lookup, stat, flag clear) needs its own request-canceled check so a hung-up client is not logged as a fault; extracting them would hide the per-path ordering.
+//nolint:gocognit // Each failure path (query, scan, rows iteration, lookup, stat, flag clear) needs its own request-canceled check so a hung-up client is not logged as a fault; extracting them would hide the per-path ordering.
 func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) {
 	// Resolve naming patterns before opening the rows cursor. Drain the cursor
 	// into a slice before doing per-artist lookups so that the single-connection
@@ -3412,9 +3412,9 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 		 ORDER BY RANDOM()`)
 	if err != nil {
 		// A client that hung up is not a server error (see the loop below).
-		// This is the only pre-loop cancel point: ORDER BY RANDOM() makes the
-		// driver materialize every row here, so rows.Scan and rows.Err() never
-		// see the cancellation.
+		// database/sql also closes the Rows when the request context ends
+		// after this call returns, so rows.Scan and rows.Err() below can
+		// surface the cancellation too and carry the same check.
 		if req.Context().Err() != nil {
 			return
 		}
@@ -3433,6 +3433,9 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
+			if req.Context().Err() != nil {
+				return
+			}
 			r.logger.Error("random backdrop scan failed", slog.String("error", err.Error()))
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
@@ -3440,6 +3443,9 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 		artistIDs = append(artistIDs, id)
 	}
 	if err := rows.Err(); err != nil {
+		if req.Context().Err() != nil {
+			return
+		}
 		r.logger.Error("random backdrop iteration failed", slog.String("error", err.Error()))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
@@ -3452,9 +3458,9 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 			// event, not a server fault: stop walking the pool instead of
 			// logging one warning per remaining artist. The request context
 			// is checked rather than the error type so that any error the
-			// cancellation produces is treated the same way. The query path
-			// returns on the same check, the flag-clear path breaks on it, and the
-			// stat path skips its Warn on it.
+			// cancellation produces is treated the same way. The query,
+			// scan and iteration paths return on the same check, the flag-clear
+			// path breaks on it, and the stat path skips its Warn on it.
 			if req.Context().Err() != nil {
 				break
 			}

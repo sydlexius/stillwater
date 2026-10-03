@@ -2,13 +2,16 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -94,14 +97,21 @@ func seedStaleBackdropPool(t *testing.T, r *Router, svc *artist.Service, n int) 
 
 // TestHandleRandomBackdrop_CancelMidLoopIsQuiet cancels the request after the
 // first artist is processed. The handler must not warn for the artists it never
-// reached and must not report a server error. (Whether the loop breaks or keeps
-// walking the pool is not observable without a production seam, so this test
-// does not claim the loop stops early.)
+// reached and must not report a server error. It also proves the walk STOPS: a
+// counting wrapper around the artist repository sees exactly two GetByID calls
+// (the first succeeds, the second fails on the canceled context and ends the
+// loop). With a continue instead of a break it would see all five.
 func TestHandleRandomBackdrop_CancelMidLoopIsQuiet(t *testing.T) {
 	t.Parallel()
 	r, svc := testRouterWithPlatform(t)
 	const poolSize = 5
 	seedStaleBackdropPool(t, r, svc, poolSize)
+	counter := &countingArtistRepo{Repository: nil}
+	{
+		ar, pr, mr, al, im, pl, co := artist.NewDefaultRepos(r.db)
+		counter.Repository = ar
+		r.artistService = artist.NewServiceWithRepos(counter, pr, mr, al, im, pl, co)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -128,6 +138,155 @@ func TestHandleRandomBackdrop_CancelMidLoopIsQuiet(t *testing.T) {
 	}
 	if got := rec.countLevel(slog.LevelWarn); got != 0 {
 		t.Errorf("got %d Warn records for a canceled request, want 0", got)
+	}
+	if got := counter.calls.Load(); got != 2 {
+		t.Errorf("GetByID called %d times, want 2 (the walk must stop at the first canceled lookup)", got)
+	}
+}
+
+// countingArtistRepo counts GetByID calls and delegates everything else.
+type countingArtistRepo struct {
+	artist.Repository
+	calls atomic.Int32
+}
+
+func (c *countingArtistRepo) GetByID(ctx context.Context, id string) (*artist.Artist, error) {
+	c.calls.Add(1)
+	return c.Repository.GetByID(ctx, id)
+}
+
+// faultDriver wraps the real SQLite driver. For the random-backdrop pool query
+// only, it replaces the returned rows with ones that misbehave on the first
+// Next call, which is how a failure after QueryContext returns is produced
+// deterministically.
+type faultDriver struct {
+	inner  driver.Driver
+	onNext func(dest []driver.Value) error // runs on the first Next
+}
+
+func (d *faultDriver) Open(name string) (driver.Conn, error) {
+	c, err := d.inner.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return &faultConn{Conn: c, d: d}, nil
+}
+
+type faultConn struct {
+	driver.Conn
+	d *faultDriver
+}
+
+func (c *faultConn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
+	qc, ok := c.Conn.(driver.QueryerContext)
+	if !ok {
+		return nil, driver.ErrSkip
+	}
+	rows, err := qc.QueryContext(ctx, q, args)
+	if err != nil || !strings.Contains(q, "ORDER BY RANDOM()") {
+		return rows, err
+	}
+	return &faultRows{Rows: rows, d: c.d}, nil
+}
+
+type faultRows struct {
+	driver.Rows
+	d *faultDriver
+}
+
+func (f *faultRows) Next(dest []driver.Value) error { return f.d.onNext(dest) }
+
+// withFaultyPoolRows points r.db at the same database file through faultDriver
+// and returns nothing; onNext decides how the pool read fails.
+func withFaultyPoolRows(t *testing.T, r *Router, onNext func(dest []driver.Value) error) {
+	t.Helper()
+	var path string
+	if err := r.db.QueryRowContext(context.Background(),
+		`SELECT file FROM pragma_database_list WHERE name = 'main'`).Scan(&path); err != nil {
+		t.Fatalf("db path: %v", err)
+	}
+	probe, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("probe open: %v", err)
+	}
+	inner := probe.Driver()
+	_ = probe.Close()
+	db := sql.OpenDB(dsnConnector{d: &faultDriver{inner: inner, onNext: onNext}, dsn: path})
+	t.Cleanup(func() { _ = db.Close() })
+	r.db = db
+}
+
+type dsnConnector struct {
+	d   driver.Driver
+	dsn string
+}
+
+func (c dsnConnector) Connect(context.Context) (driver.Conn, error) { return c.d.Open(c.dsn) }
+func (c dsnConnector) Driver() driver.Driver                        { return c.d }
+
+// TestHandleRandomBackdrop_FailureAfterQueryReturns drives the two pool-drain
+// failure paths (rows.Err after a failing Next, and rows.Scan on a NULL id)
+// with the request canceled at that exact point, and with a live request as the
+// control. Canceled: no 500, no Error, no Warn. Live: Error log and 500.
+func TestHandleRandomBackdrop_FailureAfterQueryReturns(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		cancel  bool
+		nullID  bool // true: Next yields a NULL id (Scan fails); false: Next fails (rows.Err)
+		wantMsg string
+	}{
+		{"iteration error, canceled", true, false, ""},
+		{"iteration error, live", false, false, "random backdrop iteration failed"},
+		{"scan error, canceled", true, true, ""},
+		{"scan error, live", false, true, "random backdrop scan failed"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r, svc := testRouterWithPlatform(t)
+			seedStaleBackdropPool(t, r, svc, 2)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var fired atomic.Int32
+			withFaultyPoolRows(t, r, func(dest []driver.Value) error {
+				fired.Add(1)
+				if tc.cancel {
+					cancel()
+				}
+				if tc.nullID {
+					dest[0] = nil
+					return nil
+				}
+				return errors.New("injected iteration failure")
+			})
+			rec := &backdropLogRecorder{}
+			r.logger = slog.New(rec)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/images/random-backdrop", nil).WithContext(ctx)
+			w := httptest.NewRecorder()
+			r.handleRandomBackdrop(w, req)
+
+			if fired.Load() == 0 {
+				t.Fatal("precondition: the injected Next never ran")
+			}
+			if tc.cancel {
+				if w.Code == http.StatusInternalServerError {
+					t.Error("status = 500 for a request canceled mid-drain")
+				}
+				if got := rec.countLevel(slog.LevelError) + rec.countLevel(slog.LevelWarn); got != 0 {
+					t.Errorf("got %d Error/Warn records, want 0", got)
+				}
+				return
+			}
+			if w.Code != http.StatusInternalServerError {
+				t.Errorf("status = %d, want 500", w.Code)
+			}
+			if got := rec.count(slog.LevelError, tc.wantMsg); got != 1 {
+				t.Errorf("got %d %q Error records, want 1", got, tc.wantMsg)
+			}
+		})
 	}
 }
 
