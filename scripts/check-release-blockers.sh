@@ -9,9 +9,14 @@
 # in the milestone are ignored. The milestone is matched by title PREFIX (never a number); the
 # legacy per-patch form `v<X.Y.Z> Release Blockers` is matched too.
 #
-# With no argument the target is derived as /push-release step 3 defaults it: a patch bump of
-# the latest stable `v*` tag reachable from origin/main (exit 2 if none). This is what lets the
-# script run as a `.claude/release.toml` pre_check, which never receives the version.
+# With no argument the target is RELEASE_TARGET_VERSION when set (explicit beats derived), else
+# derived as /push-release step 3 defaults it: a patch bump of the latest stable `v*` tag
+# reachable from origin/main (exit 2 if none). This is what lets the script run as a
+# `.claude/release.toml` pre_check, which never receives the version. LIMIT: a derived target
+# is only right for a patch release. For any other release run
+# `RELEASE_TARGET_VERSION=<v> bash scripts/check-release-blockers.sh` (or pass the version)
+# before tagging. As a backstop, a derived target with no blockers milestone of its own fails
+# closed (2) when a HIGHER <MAJOR>.<MINOR> blockers milestone holds open labelled issues.
 #
 # Exit: 0 nothing labelled is open (or override) | 1 labelled blockers open, listed |
 #   2 fail closed: no derivable/unparsable version, no/ambiguous matching milestone, gh failure.
@@ -24,15 +29,22 @@ LABEL="release-blocker"
 die() { echo "check-release-blockers: $*" >&2; exit 2; }
 
 [ $# -le 1 ] || die "usage: $0 [<version>]"
+derived=0
 if [ $# -eq 1 ]; then
   arg="$1"
+elif [ -n "${RELEASE_TARGET_VERSION:-}" ]; then
+  arg="$RELEASE_TARGET_VERSION"
+  echo "check-release-blockers: using RELEASE_TARGET_VERSION=$arg"
 else
+  derived=1
   last=$(git tag --list 'v[0-9]*' --merged origin/main --sort=-v:refname 2>/dev/null \
     | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1) || true
   [ -n "$last" ] || die "no version given and no stable v* tag reachable from origin/main"
   IFS=. read -r a b c <<<"${last#v}"
   arg="$a.$b.$((c + 1))"
   echo "check-release-blockers: no version given; derived $arg (patch bump of $last)"
+  echo "check-release-blockers: NOTE pre_checks receive no version. If this release is not a patch" \
+    "bump, run: RELEASE_TARGET_VERSION=<v> bash scripts/check-release-blockers.sh" >&2
 fi
 ver="${arg#v}"
 [[ "$ver" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?$ ]] || die "cannot parse version '$arg'"
@@ -46,6 +58,19 @@ rows=$(gh api "repos/$REPO/milestones?state=all&per_page=100" --paginate \
   --jq '.[] | "\(.number)\t\(.title)"') || die "gh failed listing milestones"
 match=$(printf '%s\n' "$rows" | awk -F'\t' -v a="v$major.$minor.x blockers" -v b="v${ver%%-*} Release Blockers" \
   'index($2, a) == 1 || index($2, b) == 1')
+if [ -z "$match" ] && [ "$derived" -eq 1 ]; then
+  # Backstop: the derived patch target has no bucket; a higher minor with open blockers
+  # means the operator is probably cutting that release, which this check cannot know.
+  while IFS=$'\t' read -r hn ht; do
+    [[ "$ht" =~ ^v([0-9]+)\.([0-9]+)\.x\ blockers ]] || continue
+    { [ "${BASH_REMATCH[1]}" -gt "$major" ] || { [ "${BASH_REMATCH[1]}" -eq "$major" ] && [ "${BASH_REMATCH[2]}" -gt "$minor" ]; }; } || continue
+    hopen=$(gh api "repos/$REPO/issues?milestone=$hn&state=open&labels=$LABEL&per_page=100" --paginate \
+      --jq '.[] | select(has("pull_request") | not) | "  #\(.number) \(.title)"') \
+      || die "gh failed listing issues for '$ht'"
+    [ -z "$hopen" ] || die "derived target $ver has no blockers milestone, but the HIGHER milestone '$ht' has open '$LABEL' issues (are you releasing that version? rerun with RELEASE_TARGET_VERSION=<v>):
+$hopen"
+  done <<<"$rows"
+fi
 [ -n "$match" ] || die "no milestone matches 'v$major.$minor.x blockers*' or 'v${ver%%-*} Release Blockers'; refusing to treat a missing milestone as clean"
 [ "$(printf '%s\n' "$match" | wc -l)" -eq 1 ] || die "ambiguous: several milestones match: $(printf '%s' "$match" | tr '\n' ';')"
 num="${match%%$'\t'*}"; title="${match#*$'\t'}"

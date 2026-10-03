@@ -20,8 +20,12 @@ case "$*" in
   *"/milestones"*) [ -z "${STUB_API_FAIL:-}" ] || exit 1; printf '%b' "${STUB_TITLES:-}" ;;
   *"/issues"*)
     [ -z "${STUB_ISSUE_FAIL:-}" ] || exit 1
-    # Honour the label filter the way the real API does.
-    case "$*" in *labels=release-blocker*) printf '%b' "${STUB_LABELED:-}" ;; *) printf '%b' "${STUB_ALL:-}" ;; esac ;;
+    # Honour the label filter the way the real API does; STUB_LABELED_<n> answers one milestone.
+    all="$*"; ms=${all#*milestone=}; ms=${ms%%&*}; per="STUB_LABELED_$ms"; pv="${!per}"
+    case "$*" in
+      *labels=release-blocker*) if [ -n "$pv" ]; then printf '%b' "$pv"; else printf '%b' "${STUB_LABELED:-}"; fi ;;
+      *) printf '%b' "${STUB_ALL:-}" ;;
+    esac ;;
 esac
 STUB
 chmod +x "$TMP/bin/gh"
@@ -47,7 +51,7 @@ expect() {
   local out status args=()
   [ "$ver" = - ] || args=("$ver")
   : > "$TMP/gh.log"
-  out=$(cd "${CWD:-$FIX}" && env PATH="$TMP/bin:$PATH" STUB_LOG="$TMP/gh.log" STUB_TITLES="$TITLES" "$@" \
+  out=$(cd "${CWD:-$FIX}" && env -u RELEASE_BLOCKERS_OVERRIDE -u RELEASE_TARGET_VERSION PATH="$TMP/bin:$PATH" STUB_LOG="$TMP/gh.log" STUB_TITLES="$TITLES" "$@" \
     bash "$GUARD" ${args[@]+"${args[@]}"} 2>&1) && status=0 || status=$?
   if [ "$status" -eq "$want" ] && grep -qF -- "$needle" <<<"$out"; then
     pass=$((pass + 1)); echo "PASS: $name"
@@ -82,9 +86,26 @@ expect v1.7.2 0 "leading v accepted" "no open"
 expect - 0 "no argument derives 1.7.2 from v1.7.1 on origin/main" "derived 1.7.2 (patch bump of v1.7.1)"
 expect - 1 "derived version still enforces blockers" "#9 x" STUB_LABELED='  #9 x\n'
 CWD=$EMPTY expect - 2 "no derivable version fails closed" "no stable v* tag"
+expect - 1 "RELEASE_TARGET_VERSION beats derivation" "#44 y" \
+  RELEASE_TARGET_VERSION=1.8.0 STUB_TITLES='2\tv1.7.x blockers - a\n4\tv1.8.x blockers - b\n' STUB_LABELED_4='  #44 y\n'
+expect 1.7.2 0 "an explicit version never triggers the higher-milestone guard" "no open" \
+  STUB_TITLES='2\tv1.7.x blockers - a\n4\tv1.8.x blockers - b\n' STUB_LABELED_4='  #44 y\n'
+TITLES='4\tv1.8.x blockers - b\n' expect - 2 "derived target with no bucket but a HIGHER one with blockers fails closed" "HIGHER milestone" STUB_LABELED_4='  #44 y\n'
+TITLES='4\tv1.8.x blockers - b\n' expect - 2 "higher bucket with no labelled issues: still no-milestone" "no milestone matches"
 # Prefix match must be anchored: with ONLY the decoy title present nothing matches.
 TITLES='3\tx v1.7.x blockers - decoy\n' expect 1.7.2 2 "decoy title with the prefix mid-string is not matched" "no milestone matches"
 TITLES='2\tv1.7.x blockers - a\n3\tv1.7.x blockers - b\n' expect 1.7.2 2 "ambiguous milestones fail closed" "ambiguous"
+
+# An exported override (e.g. from /push-release) must not leak into the cases: run the whole
+# suite again with one exported. SELFTEST_NESTED stops the recursion.
+if [ -z "${SELFTEST_NESTED:-}" ]; then
+  if RELEASE_BLOCKERS_OVERRIDE="leaked" SELFTEST_NESTED=1 bash "$0" >"$TMP/nested.log" 2>&1; then
+    pass=$((pass + 1)); echo "PASS: suite is immune to an exported RELEASE_BLOCKERS_OVERRIDE"
+  else
+    fail=$((fail + 1)); echo "FAIL: suite is not immune to an exported RELEASE_BLOCKERS_OVERRIDE"
+    grep '^FAIL' "$TMP/nested.log" | sed 's/^/      /'
+  fi
+fi
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
