@@ -460,6 +460,18 @@ var artistFilterPredicates = map[string]filterPredicate{
 	},
 }
 
+// typeTrimChars is the SQLite char(...) list of exactly the code points Go's
+// strings.TrimSpace strips (unicode.IsSpace). It MUST stay in step with that
+// set; TestTypeTrimCharsMatchGoTrimSpace guards it. SQL TRIM(X, Y) strips any
+// character in Y, so using it keeps the SQL facets and NormalizeType on the same
+// whitespace set (plain TRIM(X) strips spaces only).
+const typeTrimChars = "char(9,10,11,12,13,32,133,160,5760,8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288)"
+
+// typeNormExpr is the SQL form of artist.NormalizeType, shared by every type
+// facet fragment. Constant text only; the compared values stay bound parameters.
+// LOWER is ASCII-only in SQLite, which covers every real type name.
+const typeNormExpr = "LOWER(TRIM(type, " + typeTrimChars + "))"
+
 // typeFilterKeys maps flyout type-filter keys to the database type values each
 // facet matches. type_person maps to two values because MusicBrainz stores
 // Person as "solo" while legacy imports may use "person". type_orchestra backs
@@ -599,19 +611,17 @@ func buildWhereClause(params ListParams) (string, []any) {
 		}
 	}
 
-	// Aggregate type filters. The column is compared as LOWER(TRIM(type)) so a
+	// Aggregate type filters. The column is compared via typeNormExpr, so a
 	// stored "Group" or " group " matches like the canonical value, agreeing with
-	// artist.NormalizeType (#3333). Caveat: SQL TRIM strips spaces only, while Go
-	// strings.TrimSpace strips all Unicode whitespace (tabs, newlines), so a type
-	// padded with those still differs between SQL and Go; not closed here. The
-	// expression cannot use an index on type (none exists today). Multiple INCLUDE facets are OR'd (an artist may be
+	// artist.NormalizeType (#3333). The expression cannot use an index on type
+	// (none exists today). Multiple INCLUDE facets are OR'd (an artist may be
 	// any of the chosen types); the "Other" facet contributes the complement
 	// (type NOT IN namedTypeValues, plus NULL for untyped artists). EXCLUDE facets
 	// are AND'd as separate NOT conditions; excluding "Other" keeps only the named
 	// types.
 	var typeIncludeClauses []string
 	if len(typeIncludes) > 0 {
-		typeIncludeClauses = append(typeIncludeClauses, "LOWER(TRIM(type)) IN ("+buildPlaceholders(len(typeIncludes))+")")
+		typeIncludeClauses = append(typeIncludeClauses, typeNormExpr+" IN ("+buildPlaceholders(len(typeIncludes))+")")
 		for _, t := range typeIncludes {
 			args = append(args, t)
 		}
@@ -619,7 +629,7 @@ func buildWhereClause(params ListParams) (string, []any) {
 	if otherInclude {
 		// SQLite evaluates `NULL NOT IN (...)` as NULL (not true), so untyped
 		// artists stored as NULL need an explicit OR; '' is caught by NOT IN.
-		typeIncludeClauses = append(typeIncludeClauses, "(LOWER(TRIM(type)) NOT IN ("+buildPlaceholders(len(namedTypeValues))+") OR type IS NULL)")
+		typeIncludeClauses = append(typeIncludeClauses, "("+typeNormExpr+" NOT IN ("+buildPlaceholders(len(namedTypeValues))+") OR type IS NULL)")
 		for _, t := range namedTypeValues {
 			args = append(args, t)
 		}
@@ -630,7 +640,7 @@ func buildWhereClause(params ListParams) (string, []any) {
 		conditions = append(conditions, "("+strings.Join(typeIncludeClauses, " OR ")+")")
 	}
 	if len(typeExcludes) > 0 {
-		conditions = append(conditions, "LOWER(TRIM(type)) NOT IN ("+buildPlaceholders(len(typeExcludes))+")")
+		conditions = append(conditions, typeNormExpr+" NOT IN ("+buildPlaceholders(len(typeExcludes))+")")
 		for _, t := range typeExcludes {
 			args = append(args, t)
 		}
@@ -638,7 +648,7 @@ func buildWhereClause(params ListParams) (string, []any) {
 	if otherExclude {
 		// Excluding "Other" == keep only the named types. NULL / '' rows fail
 		// `type IN (named)` and are correctly dropped.
-		conditions = append(conditions, "LOWER(TRIM(type)) IN ("+buildPlaceholders(len(namedTypeValues))+")")
+		conditions = append(conditions, typeNormExpr+" IN ("+buildPlaceholders(len(namedTypeValues))+")")
 		for _, t := range namedTypeValues {
 			args = append(args, t)
 		}

@@ -435,3 +435,43 @@ func TestArtistDetailPage_CollapsibleSortableChrome(t *testing.T) {
 		t.Error("findings body should not be hidden when not collapsed")
 	}
 }
+
+// TestArtistDetailPage_TypePillGuardsNormalize pins that the hero pill and the
+// sticky-header label gate on the normalized type (#3333): a whitespace-only
+// type means "no type" and renders neither, while a padded " Group " renders the
+// Group label in both.
+func TestArtistDetailPage_TypePillGuardsNormalize(t *testing.T) {
+	t.Parallel()
+	const hero = `tracking-wide" style="border:1px solid var(--swd-line)">`
+	// The sticky label shares its span markup with the findings text, so key on
+	// the label itself: Group when typed, "Other" is what an empty pill would show.
+	const sticky = `<span class="text-xs" style="color:var(--swd-ink-3)">Group</span>`
+	const other = `<span class="text-xs" style="color:var(--swd-ink-3)">Other</span>`
+	cases := []struct {
+		typ      string
+		wantPill bool
+	}{
+		{"   ", false},
+		{" Group ", true},
+	}
+	for _, tc := range cases {
+		data := detailPageData(nil, nil)
+		data.Detail.Artist.Type = tc.typ
+		var buf bytes.Buffer
+		if err := ArtistDetailPage(AssetPaths{}, data).Render(testCtx(t), &buf); err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		out := buf.String()
+		gotHero := strings.Contains(out, hero)
+		gotSticky := strings.Contains(out, sticky)
+		if gotHero != tc.wantPill || gotSticky != tc.wantPill {
+			t.Errorf("type %q: hero pill=%v sticky label=%v, want both %v", tc.typ, gotHero, gotSticky, tc.wantPill)
+		}
+		if strings.Contains(out, other) || strings.Contains(out, hero+"Other</span>") {
+			t.Errorf("type %q: rendered an empty-type Other label", tc.typ)
+		}
+		if tc.wantPill && !strings.Contains(out, hero+"Group</span>") {
+			t.Errorf("type %q: hero pill does not carry the Group label", tc.typ)
+		}
+	}
+}

@@ -588,11 +588,9 @@ func applyFields(a *Artist, u *MetadataUpdate, strategy MergeStrategy, locked ma
 // type name go through this. It only produces a comparison value; the stored
 // Type is never rewritten.
 //
-// Two places do not use it. provider/orchestrator.go keeps its own normalizers
-// because importing this package there would be an import cycle. The SQL type
-// facets in scan.go use LOWER(TRIM(type)); SQL TRIM strips spaces only, while
-// strings.TrimSpace here strips all Unicode whitespace, so a type padded with
-// tabs or newlines can still differ between the two.
+// provider/orchestrator.go keeps its own normalizers because importing this
+// package there would be an import cycle. The SQL type facets in scan.go use the
+// same whitespace set (typeTrimChars, kept in step with strings.TrimSpace).
 func NormalizeType(t string) string {
 	return strings.ToLower(strings.TrimSpace(t))
 }
