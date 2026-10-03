@@ -129,6 +129,12 @@ func (r *Router) handleSetupRestore(w http.ResponseWriter, req *http.Request) {
 		fmt.Fprintf(w, `<div class="text-sm text-green-600 dark:text-green-400">Restore complete. Redirecting to sign in.</div>`) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
 		return
 	}
+	// A nil slice would encode as null, which the (non-nullable) array schema
+	// rejects; send an empty array on a clean restore.
+	rejectedKeys := result.SettingsRejectedKeys
+	if rejectedKeys == nil {
+		rejectedKeys = []string{}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":         "restored",
 		"redirect":       loginPath,
@@ -141,7 +147,7 @@ func (r *Router) handleSetupRestore(w http.ResponseWriter, req *http.Request) {
 		"api_tokens_skipped":          result.APITokensSkipped,
 		"connection_features_ignored": result.ConnectionFeaturesIgnored,
 		"settings_rejected":           result.SettingsRejected,
-		"settings_rejected_keys":      result.SettingsRejectedKeys,
+		"settings_rejected_keys":      rejectedKeys,
 		"settings_renamed_dropped":    result.SettingsRenamedDropped,
 	})
 }

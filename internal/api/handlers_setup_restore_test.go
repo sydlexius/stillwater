@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -409,5 +411,84 @@ func TestRestoreOOBE_JSONReportsDroppedRows(t *testing.T) {
 		if string(got[k]) != v {
 			t.Errorf("%s = %s, want %s", k, got[k], v)
 		}
+	}
+}
+
+// restoreOnce posts a sealed payload to the real restore handler (JSON mode,
+// validated against the spec) with the router's logger captured.
+func restoreOnce(t *testing.T, p settingsio.Payload) (*httptest.ResponseRecorder, []map[string]any) {
+	t.Helper()
+	const passphrase = "restore-log-pass"
+	router, _, _ := settingsIOTestDeps(t)
+	readLogs := captureLogs(t, router)
+	body, contentType := restoreMultipart(t, sealImportPayload(t, p, passphrase), passphrase)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/setup/restore", body)
+	req.Header.Set("Content-Type", contentType)
+	w := serveValidated(t, http.HandlerFunc(router.handleSetupRestore), req)
+	return w, readLogs()
+}
+
+// TestRestoreOOBE_CleanRestoreEmitsEmptyRejectedKeys (#3012): a clean restore
+// has no rejected keys, and the array schema is not nullable, so the field
+// must be [] and never null. The response is also spec-validated.
+func TestRestoreOOBE_CleanRestoreEmitsEmptyRejectedKeys(t *testing.T) {
+	t.Parallel()
+	w, _ := restoreOnce(t, settingsio.Payload{Settings: map[string]string{}})
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if string(got["settings_rejected_keys"]) != "[]" {
+		t.Errorf("settings_rejected_keys = %s, want []", got["settings_rejected_keys"])
+	}
+}
+
+// TestRestoreOOBE_CompletionLogLevel (#3012): a partial restore logs the
+// completion line at Warn with the drop counters (names and counts only, never
+// setting values); a clean restore logs it at Info with no Warn.
+func TestRestoreOOBE_CompletionLogLevel(t *testing.T) {
+	t.Parallel()
+	const secretValue = "0.5-secret-value-marker"
+	_, recs := restoreOnce(t, settingsio.Payload{
+		Settings: map[string]string{"mbid_revalidate.name_similarity_threshold": secretValue},
+		Libraries: []settingsio.LibraryExport{
+			{Name: "", Path: "/a", Type: "regular", Source: "manual"},
+			{Name: "", Path: "/b", Type: "regular", Source: "manual"},
+		},
+	})
+	var done map[string]any
+	for _, rec := range recs {
+		if m, _ := rec["msg"].(string); strings.HasPrefix(m, "setup restore complete") {
+			done = rec
+		}
+	}
+	if done == nil {
+		t.Fatalf("no completion log record in %v", recs)
+	}
+	if done["level"] != slog.LevelWarn.String() || done["msg"] != "setup restore complete with dropped rows" {
+		t.Errorf("partial restore: level=%v msg=%v, want WARN with dropped rows", done["level"], done["msg"])
+	}
+	if done["libraries_skipped"] != float64(2) || done["settings_rejected"] != float64(1) {
+		t.Errorf("counters wrong: libraries_skipped=%v settings_rejected=%v", done["libraries_skipped"], done["settings_rejected"])
+	}
+	if keys, _ := done["settings_rejected_keys"].([]any); len(keys) != 1 || keys[0] != "mbid_revalidate.name_similarity_threshold" {
+		t.Errorf("settings_rejected_keys = %v", done["settings_rejected_keys"])
+	}
+	if raw, _ := json.Marshal(recs); strings.Contains(string(raw), secretValue) {
+		t.Error("a setting value leaked into the log")
+	}
+
+	_, clean := restoreOnce(t, settingsio.Payload{Settings: map[string]string{}})
+	var sawInfo bool
+	for _, rec := range clean {
+		if rec["level"] == slog.LevelWarn.String() {
+			t.Errorf("clean restore logged a warning: %v", rec)
+		}
+		if rec["msg"] == "setup restore complete" && rec["level"] == slog.LevelInfo.String() {
+			sawInfo = true
+		}
+	}
+	if !sawInfo {
+		t.Errorf("clean restore: no Info completion record in %v", clean)
 	}
 }
