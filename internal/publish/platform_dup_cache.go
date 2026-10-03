@@ -75,7 +75,11 @@ type platformDupCached struct {
 //
 // ONE SWEEPER. begin/store share a single cache-wide window (written), so the
 // cache supports one serial writer: begin, read the platform, store, repeat.
-// A store with no window open is refused.
+// begin returns a token naming the window it opened, and store is accepted
+// only for the window that is open NOW: a store whose window was closed, or
+// replaced by a later begin or a Clear, is refused and leaves the current
+// window untouched. So a read that began before a Clear can never land after
+// it, even if a newer read has begun since.
 //
 // WHAT A READER MUST NOT ASSUME. Lookup enforces no age bound; ComputedAt is
 // there for the reader to judge. Invalidation covers platform backdrop WRITES
@@ -89,6 +93,7 @@ type PlatformDupCache struct {
 	// written collects the targets a writer locked while a sweep read is in
 	// flight (nil when none is), so a result that raced a write is discarded.
 	written map[string]struct{}
+	window  uint64 // token of the newest window; bumped by begin and Clear
 }
 
 func newPlatformDupCache() *PlatformDupCache {
@@ -129,6 +134,7 @@ func (c *PlatformDupCache) Clear() {
 	defer c.mu.Unlock()
 	c.entries, c.byTarget = map[string]platformDupCached{}, map[string]string{}
 	c.written = nil // a read still in flight predates the clear: refuse its store
+	c.window++
 }
 
 // Len is the number of artists with an entry.
@@ -163,25 +169,29 @@ func (c *PlatformDupCache) invalidateTarget(connectionID, platformArtistID strin
 	}
 }
 
-// begin starts tracking writes for the sweep's next platform read.
-func (c *PlatformDupCache) begin() {
+// begin starts tracking writes for the sweep's next platform read and returns
+// the token that read must pass to store.
+func (c *PlatformDupCache) begin() uint64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.written = map[string]struct{}{}
+	c.window++
+	return c.window
 }
 
 // store records the entry unless a writer locked one of its targets since
 // begin: that result may describe the platform as it was BEFORE the write, and
 // storing it would resurrect what the write just invalidated. It closes the
-// window, and refuses when none is open (no begin, or a Clear since).
-func (c *PlatformDupCache) store(artistID string, e PlatformDupEntry, targets []string) bool {
+// window, and refuses when none is open (no begin, or a Clear since). A token
+// from an earlier window is refused WITHOUT closing the current one.
+func (c *PlatformDupCache) store(token uint64, artistID string, e PlatformDupEntry, targets []string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	written := c.written
-	c.written = nil
-	if written == nil {
+	if token != c.window || c.written == nil {
 		return false
 	}
+	written := c.written
+	c.written = nil
 	for _, k := range targets {
 		if _, raced := written[k]; raced {
 			return false

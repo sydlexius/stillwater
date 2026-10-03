@@ -41,12 +41,10 @@ func TestPlatformDupCache_LookupStates(t *testing.T) {
 	if e := c.Lookup("a1", 0.90); e.State != PlatformDupUnknown || !e.ComputedAt.IsZero() || len(e.Reasons) != 0 {
 		t.Fatalf("never-swept artist reads %+v, want the zero (Unknown) entry", e)
 	}
-	c.begin()
-	if !c.store("a1", foundEntry(at), []string{backdropTargetKey("c1", "p1"), backdropTargetKey("c2", "q1")}) {
+	if !c.store(c.begin(), "a1", foundEntry(at), []string{backdropTargetKey("c1", "p1"), backdropTargetKey("c2", "q1")}) {
 		t.Fatal("store refused with no write in flight")
 	}
-	c.begin()
-	c.store("a2", PlatformDupEntry{State: PlatformDupClean, ComputedAt: at, Tolerance: 0.90}, []string{backdropTargetKey("c1", "p2")})
+	c.store(c.begin(), "a2", PlatformDupEntry{State: PlatformDupClean, ComputedAt: at, Tolerance: 0.90}, []string{backdropTargetKey("c1", "p2")})
 
 	got := c.Lookup("a1", 0.90)
 	if got.State != PlatformDupFound || got.Redundant() != 3 || len(got.Findings) != 2 || !got.ComputedAt.Equal(at) {
@@ -77,10 +75,8 @@ func TestPlatformDupCache_LookupStates(t *testing.T) {
 func TestPlatformDupCache_TargetWriteDropsTheOwningArtist(t *testing.T) {
 	c := newPlatformDupCache()
 	at := time.Now()
-	c.begin()
-	c.store("a1", foundEntry(at), []string{backdropTargetKey("c1", "p1"), backdropTargetKey("c2", "q1")})
-	c.begin()
-	c.store("a2", foundEntry(at), []string{backdropTargetKey("c1", "p2")})
+	c.store(c.begin(), "a1", foundEntry(at), []string{backdropTargetKey("c1", "p1"), backdropTargetKey("c2", "q1")})
+	c.store(c.begin(), "a2", foundEntry(at), []string{backdropTargetKey("c1", "p2")})
 
 	c.invalidateTarget("c9", "unknown-target") // nobody's target: nothing happens
 	if c.Len() != 2 {
@@ -92,8 +88,7 @@ func TestPlatformDupCache_TargetWriteDropsTheOwningArtist(t *testing.T) {
 	}
 	// a1's other target no longer points at it: re-storing under a new target
 	// set must not leave the old key able to drop the new entry.
-	c.begin()
-	c.store("a1", foundEntry(at), []string{backdropTargetKey("c1", "p1-relinked")})
+	c.store(c.begin(), "a1", foundEntry(at), []string{backdropTargetKey("c1", "p1-relinked")})
 	c.invalidateTarget("c1", "p1")
 	if c.Lookup("a1", 0.90).State != PlatformDupFound {
 		t.Error("a stale target key dropped the re-stored entry")
@@ -107,15 +102,15 @@ func TestPlatformDupCache_StoreRefusesAResultRacedByAWrite(t *testing.T) {
 	c := newPlatformDupCache()
 	mine := []string{backdropTargetKey("c1", "p1")}
 
-	c.begin()
+	w := c.begin()
 	c.invalidateTarget("c1", "p1")
-	if c.store("a1", foundEntry(time.Now()), mine) || c.Lookup("a1", 0.90).State != PlatformDupUnknown {
+	if c.store(w, "a1", foundEntry(time.Now()), mine) || c.Lookup("a1", 0.90).State != PlatformDupUnknown {
 		t.Fatalf("a raced result was stored: %+v", c.Lookup("a1", 0.90))
 	}
 	// The window closed with that store: the same write does not poison the next read.
-	c.begin()
+	w = c.begin()
 	c.invalidateTarget("c1", "someone-else")
-	if !c.store("a1", foundEntry(time.Now()), mine) || c.Lookup("a1", 0.90).State != PlatformDupFound {
+	if !c.store(w, "a1", foundEntry(time.Now()), mine) || c.Lookup("a1", 0.90).State != PlatformDupFound {
 		t.Errorf("an unrelated write refused the result: %+v", c.Lookup("a1", 0.90))
 	}
 }
@@ -126,10 +121,8 @@ func TestPlatformDupCache_Fresh(t *testing.T) {
 	c := newPlatformDupCache()
 	at := time.Now()
 	ttl, retry := 7*24*time.Hour, 6*time.Hour
-	c.begin()
-	c.store("found", foundEntry(at), nil)
-	c.begin()
-	c.store("undecided", PlatformDupEntry{State: PlatformDupUndetermined, ComputedAt: at, Tolerance: 0.90, Reasons: []string{PlatformDupReasonReadFailed}}, nil)
+	c.store(c.begin(), "found", foundEntry(at), nil)
+	c.store(c.begin(), "undecided", PlatformDupEntry{State: PlatformDupUndetermined, ComputedAt: at, Tolerance: 0.90, Reasons: []string{PlatformDupReasonReadFailed}}, nil)
 
 	for _, tc := range []struct {
 		id    string
@@ -201,8 +194,7 @@ func TestPruneForArtist_OnlyALiveRunInvalidatesTheCache(t *testing.T) {
 	p := perceptualPublisher(t, fake)
 	c := observedCache(p)
 	a := &fixtureArtist(t, p).artists[0]
-	c.begin()
-	c.store("a1", foundEntry(time.Now()), []string{backdropTargetKey("c-emby", "p1")})
+	c.store(c.begin(), "a1", foundEntry(time.Now()), []string{backdropTargetKey("c-emby", "p1")})
 
 	opts := ArtistBackdropPruneOptions{Perceptual: true, DryRun: true, Tolerance: img.DefaultDuplicateTolerance}
 	res, err := pruneFor(p, a, opts)
@@ -277,10 +269,8 @@ func TestPruneForArtist_ReportsWhatWasRead(t *testing.T) {
 func TestPlatformDupCache_MovedTargetStaysInvalidatable(t *testing.T) {
 	c := newPlatformDupCache()
 	k := []string{backdropTargetKey("c1", "p1")}
-	c.begin()
-	c.store("a1", foundEntry(time.Now()), k)
-	c.begin()
-	c.store("a2", foundEntry(time.Now()), k)
+	c.store(c.begin(), "a1", foundEntry(time.Now()), k)
+	c.store(c.begin(), "a2", foundEntry(time.Now()), k)
 	if c.Lookup("a1", 0.90).State != PlatformDupUnknown || c.Lookup("a2", 0.90).State != PlatformDupFound {
 		t.Errorf("after the target moved: a1 %+v a2 %+v, want a1 dropped and a2 Found", c.Lookup("a1", 0.90), c.Lookup("a2", 0.90))
 	}
@@ -297,19 +287,19 @@ func TestPlatformDupCache_MovedTargetStaysInvalidatable(t *testing.T) {
 func TestPlatformDupCache_StoreNeedsAnOpenWindow(t *testing.T) {
 	c := newPlatformDupCache()
 	k := []string{backdropTargetKey("c1", "p1")}
-	if c.store("a1", foundEntry(time.Now()), k) || c.Len() != 0 {
+	if c.store(0, "a1", foundEntry(time.Now()), k) || c.Len() != 0 {
 		t.Fatal("store with no begin was accepted")
 	}
-	c.begin()
-	if !c.store("a1", foundEntry(time.Now()), k) {
+	w := c.begin()
+	if !c.store(w, "a1", foundEntry(time.Now()), k) {
 		t.Fatal("precondition: store inside a window was refused")
 	}
-	if c.store("a2", foundEntry(time.Now()), nil) {
+	if c.store(w, "a2", foundEntry(time.Now()), nil) {
 		t.Error("the window stayed open after a store: a second store was accepted")
 	}
-	c.begin()
+	w = c.begin()
 	c.Clear()
-	if c.store("a1", foundEntry(time.Now()), k) || c.Len() != 0 || len(c.byTarget) != 0 {
+	if c.store(w, "a1", foundEntry(time.Now()), k) || c.Len() != 0 || len(c.byTarget) != 0 {
 		t.Errorf("after Clear: store accepted or state left behind (%d entries, %d index keys)", c.Len(), len(c.byTarget))
 	}
 }
@@ -360,6 +350,8 @@ func TestPruneForArtist_DryRunReadsUnderTheTargetLock(t *testing.T) {
 		backdropPruneClient: &fakeBackdropClient{backdrops: [][]byte{f.small, f.big}, failAt: -1, failDeleteAt: -1}}
 	p := perceptualPublisher(t, probe)
 	probe.p = p
+	prev := backdropPruneClientFactory
+	t.Cleanup(func() { backdropPruneClientFactory = prev })
 	backdropPruneClientFactory = func(*connection.Connection, *slog.Logger) backdropPruneClient { return probe }
 	res, err := pruneFor(p, &fixtureArtist(t, p).artists[0],
 		ArtistBackdropPruneOptions{Perceptual: true, DryRun: true, Tolerance: img.DefaultDuplicateTolerance})
@@ -387,12 +379,28 @@ func TestPlatformDupCache_ConcurrentUse(t *testing.T) {
 		}()
 	}
 	for i := 0; i < 200; i++ { // the single sweeper
-		c.begin()
-		c.store("a1", foundEntry(time.Now()), []string{backdropTargetKey("c1", "p1")})
+		c.store(c.begin(), "a1", foundEntry(time.Now()), []string{backdropTargetKey("c1", "p1")})
 	}
 	wg.Wait()
 	c.invalidateTarget("c1", "p1")
 	if e := c.Lookup("a1", 0.90); e.State != PlatformDupUnknown {
 		t.Errorf("after a final write the entry reads %+v, want Unknown", e)
+	}
+}
+
+// A store belongs to the begin that opened it. Read R1 begins, Clear runs, a
+// new read R2 begins: R1's late store must neither publish its pre-Clear
+// result nor use up R2's window.
+func TestPlatformDupCache_LateStoreCannotUseALaterWindow(t *testing.T) {
+	c := newPlatformDupCache()
+	k := []string{backdropTargetKey("c1", "p1")}
+	r1 := c.begin()
+	c.Clear()
+	r2 := c.begin()
+	if c.store(r1, "a1", foundEntry(time.Now()), k) || c.Len() != 0 {
+		t.Errorf("R1's store landed after Clear: %d entries", c.Len())
+	}
+	if !c.store(r2, "a2", PlatformDupEntry{State: PlatformDupClean, Tolerance: 0.90}, nil) || c.Lookup("a2", 0.90).State != PlatformDupClean {
+		t.Errorf("R2's own store was refused: a2 reads %+v", c.Lookup("a2", 0.90))
 	}
 }
