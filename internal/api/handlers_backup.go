@@ -121,7 +121,7 @@ func (r *Router) renderBackupList(w http.ResponseWriter, backups []backup.Backup
 		w.Write([]byte(`<p class="text-sm text-gray-500 dark:text-gray-400 italic">No backups yet.</p>`)) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
 		return
 	}
-	out := `<table class="w-full text-sm"><thead><tr class="text-left text-xs text-gray-500 dark:text-gray-400"><th class="py-2">Filename</th><th class="py-2">Size</th><th class="py-2">Date</th><th class="py-2"></th></tr></thead><tbody>`
+	out := `<table class="w-full text-sm"><thead><tr class="text-left text-xs text-gray-500 dark:text-gray-400"><th class="py-2">Filename</th><th class="py-2">Size</th><th class="py-2">Date</th><th class="py-2"><span class="sr-only">Actions</span></th></tr></thead><tbody>`
 	for _, b := range backups {
 		out += fmt.Sprintf(
 			`<tr class="border-t border-gray-200 dark:border-gray-700">`+

@@ -10,6 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/net/html"
 
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/backup"
@@ -414,5 +417,114 @@ func TestFormatBytes(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("formatBytes(%d) = %q, want %q", tc.input, got, tc.want)
 		}
+	}
+}
+
+// TestRenderBackupList_HeadersHaveText guards axe's empty-table-header rule:
+// every <th> in the backup list must carry non-empty text content (the
+// actions column uses a visually hidden label) and must not have aria-hidden="true".
+func TestRenderBackupList_HeadersHaveText(t *testing.T) {
+	tests := []struct {
+		name     string
+		backups  []backup.BackupInfo
+		wantRows int
+		wantText []string // expected header texts in order, or nil to skip
+	}{
+		{
+			name: "populated",
+			backups: []backup.BackupInfo{
+				{Filename: "backup1.db", Size: 1024, CreatedAt: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)},
+				{Filename: "backup2.db", Size: 2048, CreatedAt: time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)},
+			},
+			wantRows: 4,
+			wantText: []string{"Filename", "Size", "Date", "Actions"},
+		},
+		{
+			name:     "empty",
+			backups:  []backup.BackupInfo{},
+			wantRows: 0,
+			wantText: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a minimal Router with just basePath set
+			r := &Router{basePath: ""}
+
+			w := httptest.NewRecorder()
+			r.renderBackupList(w, tt.backups)
+
+			doc, err := html.Parse(strings.NewReader(w.Body.String()))
+			if err != nil {
+				t.Fatalf("parsing HTML: %v", err)
+			}
+
+			// Helper to extract text content from a node
+			var getText func(n *html.Node) string
+			getText = func(n *html.Node) string {
+				if n.Type == html.TextNode {
+					return n.Data
+				}
+				var sb strings.Builder
+				for c := n.FirstChild; c != nil; c = c.NextSibling {
+					sb.WriteString(getText(c))
+				}
+				return sb.String()
+			}
+
+			// Helper to check if a node or any descendant has aria-hidden="true"
+			var hasAriaHidden func(n *html.Node) bool
+			hasAriaHidden = func(n *html.Node) bool {
+				if n.Type == html.ElementNode {
+					for _, attr := range n.Attr {
+						if attr.Key == "aria-hidden" && attr.Val == "true" {
+							return true
+						}
+					}
+				}
+				for c := n.FirstChild; c != nil; c = c.NextSibling {
+					if hasAriaHidden(c) {
+						return true
+					}
+				}
+				return false
+			}
+
+			// Collect all <th> elements and their text
+			var headers []*html.Node
+			var walk func(n *html.Node)
+			walk = func(n *html.Node) {
+				if n.Type == html.ElementNode && n.Data == "th" {
+					headers = append(headers, n)
+				}
+				for c := n.FirstChild; c != nil; c = c.NextSibling {
+					walk(c)
+				}
+			}
+			walk(doc)
+
+			if len(headers) != tt.wantRows {
+				t.Errorf("found %d <th> elements, want %d", len(headers), tt.wantRows)
+			}
+
+			if tt.wantText != nil {
+				if len(headers) != len(tt.wantText) {
+					t.Fatalf("header count mismatch: got %d, want %d", len(headers), len(tt.wantText))
+				}
+				for i, h := range headers {
+					text := strings.TrimSpace(getText(h))
+					if text == "" {
+						t.Errorf("header #%d has empty text content", i)
+					}
+					if text != tt.wantText[i] {
+						t.Errorf("header #%d text = %q, want %q", i, text, tt.wantText[i])
+					}
+					if hasAriaHidden(h) {
+						t.Errorf("header #%d (%q) or its descendants have aria-hidden=\"true\"", i, text)
+					}
+				}
+			}
+		})
 	}
 }
