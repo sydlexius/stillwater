@@ -234,6 +234,7 @@ func (r *Router) syncNFORuleToActiveProfile(ctx context.Context, w http.Response
 		r.logger.WarnContext(ctx, "failed toggling nfo_exists rule on profile activation", "error", err, "enabled", want)
 		return
 	}
+	r.invalidateRuleCaches()
 	profileName := "the active profile"
 	if prof != nil && prof.Name != "" {
 		profileName = prof.Name

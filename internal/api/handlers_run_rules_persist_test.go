@@ -55,6 +55,7 @@ func (p *persistFailPipeline) FixViolation(context.Context, string) (*rule.FixRe
 	return nil, nil
 }
 func (p *persistFailPipeline) SetArtistWorkers(int) {}
+func (p *persistFailPipeline) ClearRuleCache()      {}
 func (p *persistFailPipeline) ArtistWorkers() int   { return 1 }
 
 // seedArtistForRunRules creates an artist the run-rules handler can resolve.

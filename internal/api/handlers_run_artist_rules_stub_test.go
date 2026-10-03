@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"log/slog"
@@ -27,6 +28,7 @@ type stubPipeline struct {
 	runRuleFn       func(ctx context.Context, ruleID string) (*rule.RunResult, error)
 	fixViolationFn  func(ctx context.Context, violationID string) (*rule.FixResult, error)
 	artistWorkers   int
+	ruleCacheClears *atomic.Int32 // counts ClearRuleCache calls when set (#3138)
 }
 
 func (s *stubPipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*rule.RunResult, error) {
@@ -73,6 +75,11 @@ func (s *stubPipeline) FixViolation(ctx context.Context, violationID string) (*r
 }
 
 func (s *stubPipeline) SetArtistWorkers(n int) { s.artistWorkers = n }
+func (s *stubPipeline) ClearRuleCache() {
+	if s.ruleCacheClears != nil {
+		s.ruleCacheClears.Add(1)
+	}
+}
 
 func (s *stubPipeline) ArtistWorkers() int {
 	if s.artistWorkers < 1 {

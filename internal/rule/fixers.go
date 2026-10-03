@@ -2268,6 +2268,7 @@ type ImageDuplicateFixer struct {
 	fsCheck           *SharedFSCheck
 	imageHashRecorder imageHashRecorder
 	logger            *slog.Logger
+	platformPrune     platformPruneSlot // #3138; see SetPlatformPruner
 }
 
 // NewImageDuplicateFixer creates an ImageDuplicateFixer.
@@ -2314,20 +2315,32 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 	if v != nil && v.RuleID != "" {
 		ruleID = v.RuleID
 	}
+	fr, local, err := f.fixLocal(ctx, a, v, ruleID)
+	if err != nil || local == localNotRun || ruleID != RuleImageDuplicate || v == nil || !v.Config.PrunePlatformCopies || v.Config.DiscoveryOnly {
+		return fr, err
+	}
+	f.runPlatformPhase(ctx, a, v.Config.Tolerance, local, fr)
+	return fr, nil
+}
+
+// fixLocal is the local-folder half of Fix (the whole of it before #3138).
+// local reports how far it got; the platform phase follows only once
+// detection has run (anything but localNotRun).
+func (f *ImageDuplicateFixer) fixLocal(ctx context.Context, a *artist.Artist, v *Violation, ruleID string) (fr *FixResult, local localOutcome, err error) {
 
 	if f.fsCheck.IsShared(ctx, a) {
 		return &FixResult{
 			RuleID:  ruleID,
 			Fixed:   false,
 			Message: "skipped: shared-filesystem library",
-		}, nil
+		}, localNotRun, nil
 	}
 
 	if a.Path == "" {
-		return &FixResult{RuleID: ruleID, Fixed: false, Message: "artist has no path"}, nil
+		return &FixResult{RuleID: ruleID, Fixed: false, Message: "artist has no path"}, localNotRun, nil
 	}
 	if f.db == nil {
-		return &FixResult{RuleID: ruleID, Fixed: false, Message: "no database connection"}, nil
+		return &FixResult{RuleID: ruleID, Fixed: false, Message: "no database connection"}, localNotRun, nil
 	}
 
 	var profile *platform.Profile
@@ -2339,7 +2352,7 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 			// convention: deleting files under the wrong convention is
 			// destructive and not safely reversible (mirrors
 			// BackdropSequencingFixer).
-			return nil, fmt.Errorf("loading active platform profile: %w", profErr)
+			return nil, localNotRun, fmt.Errorf("loading active platform profile: %w", profErr)
 		}
 	}
 	var fanartNames []string
@@ -2358,7 +2371,7 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 			RuleID:  ruleID,
 			Fixed:   false,
 			Message: "skipped: no fanart naming convention available",
-		}, nil
+		}, localNotRun, nil
 	}
 	kodiNumbering := profile != nil && strings.EqualFold(profile.ID, "kodi")
 
@@ -2377,7 +2390,7 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 	// staleness it refuses to trust. See findImageDuplicates.
 	res, err := findImageDuplicates(ctx, f.db, a, primaryName, tolerance, f.imageHashRecorder, true, f.logger)
 	if err != nil {
-		return nil, fmt.Errorf("re-detecting image duplicates for %s: %w", a.Name, err)
+		return nil, localNotRun, fmt.Errorf("re-detecting image duplicates for %s: %w", a.Name, err)
 	}
 
 	toDelete := deletionSetFor(ruleID, res)
@@ -2387,7 +2400,7 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 			RuleID:  ruleID,
 			Fixed:   false,
 			Message: "no removable within-type fanart duplicates found",
-		}, nil
+		}, localClean, nil
 	}
 
 	// #2533 carve-out: never delete a fanart slot the operator set by hand.
@@ -2400,7 +2413,7 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 	// connection, so in practice this errors only if that one already did).
 	protected, protErr := f.protectedFanartSlots(ctx, a.ID)
 	if protErr != nil {
-		return nil, fmt.Errorf("reading fanart lock state for %s: %w", a.Name, protErr)
+		return nil, localNotRun, fmt.Errorf("reading fanart lock state for %s: %w", a.Name, protErr)
 	}
 	for slot := range protected {
 		delete(toDelete, slot)
@@ -2410,12 +2423,12 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 			RuleID:  ruleID,
 			Fixed:   false,
 			Message: "skipped: duplicate slots locked or user-set",
-		}, nil
+		}, localBlocked, nil
 	}
 
 	removedNames, delErr := f.deleteDuplicateFanartWithRollback(ctx, a, primaryName, kodiNumbering, toDelete)
 	if delErr != nil {
-		return nil, delErr
+		return nil, localNotRun, delErr
 	}
 
 	// Resync the artist's fanart fields from disk so the pipeline's
@@ -2445,7 +2458,7 @@ func (f *ImageDuplicateFixer) Fix(ctx context.Context, a *artist.Artist, v *Viol
 		SlotsRemoved: len(removedNames),
 		RemovedFiles: true,
 		Message:      fmt.Sprintf("removed %d duplicate fanart file(s) for %s: %s", len(removedNames), a.Name, strings.Join(removedNames, ", ")),
-	}, nil
+	}, localRemoved, nil
 }
 
 // protectedFanartSlots returns the set of fanart slot indices for an artist
