@@ -2004,11 +2004,16 @@ components:
             which is neither a claim that a human nor an automated process
             supplied the value. Rows written before the producer column
             existed, and writes from paths that do not stamp one yet, are "".
-            Provider refresh ("provider:<name>"), platform pull
-            ("platform:<type>"), field edit and field clear ("operator" or
-            "provider:<name>") stamp a producer; the rule engine, scanner and
-            restore paths ("rule:<rule_id>", "nfo", "filesystem", "restore")
-            are not stamped yet.
+            Provider refresh stamps "provider:<name>" per field, or the bare
+            "provider:" for a field it moved that no provider is credited
+            with; platform pull stamps "platform:<type>"; a field clear
+            stamps "operator". A field edit records whatever the OPTIONAL
+            client "producer" claim says, but only if it is on the
+            allow-list ("operator" or "provider:<known provider>"),
+            otherwise ""; a provider-modal Merge records "" because a merged
+            list mixes sources. The rule engine, scanner and restore paths
+            ("rule:<rule_id>", "nfo", "filesystem", "restore") are not
+            stamped yet.
         created_at:
           type: string
           format: date-time

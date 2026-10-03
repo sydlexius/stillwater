@@ -16,9 +16,13 @@ import (
 // other, and collapsing them into one column is exactly the design this file
 // avoids -- see migration 029's header for the full argument.
 //
-// Stamped today (PR 2): provider refresh, platform pull, field edit and field
-// clear (internal/api). Not stamped yet, so still "": the rule engine, the
-// scanner and the restore paths, which land in #3078's PR 3.
+// Stamped today (PR 2, internal/api): provider refresh ("provider:<name>" per
+// field, bare "provider:" for a moved field with no credited source), platform
+// pull, and field clear ("operator"). A field EDIT records the producer the
+// client claims, an optional claim honored only when it is on the allow-list
+// (operator or provider:<known provider>), otherwise ""; a provider-modal
+// merge sends no claim, so it records "". Not stamped yet, so still "": the
+// rule engine, the scanner and the restore paths, which land in PR 3.
 //
 // THE EMPTY STRING IS THE DEFAULT, AND IT IS NOT "operator". This is the
 // single most load-bearing decision in this file. "" means "the writer did

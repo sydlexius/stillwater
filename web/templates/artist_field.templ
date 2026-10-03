@@ -583,6 +583,7 @@ templ biographyEdit(a *artist.Artist, providers []string, history []artist.Metad
 			hx-target={ "#field-biography-" + a.ID }
 			hx-swap="outerHTML"
 		>
+			<input type="hidden" name="producer" value="operator"/>
 			<textarea
 				name="value"
 				rows="8"
@@ -861,13 +862,16 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 									>
 										{ t(ctx, "artist.use_this") }
 									</button>
+									// No producer on Merge: the merged list mixes the artist's
+									// existing values with the provider's, so attributing the whole
+									// value to one provider would be false. It records unrecorded.
 									<button
 										type="button"
 										class="text-xs px-2 py-1 rounded border border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
 										hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
 										hx-target={ "#field-" + field + "-" + a.ID }
 										hx-swap="outerHTML"
-										hx-vals={ hxValsJSON(map[string]string{"value": mergeSliceValues(artist.SliceFieldFromArtist(a, field), r.Values), "producer": "provider:" + string(r.Provider)}) }
+										hx-vals={ hxValsJSON(map[string]string{"value": mergeSliceValues(artist.SliceFieldFromArtist(a, field), r.Values)}) }
 										hx-headers='{"Content-Type":"application/json"}'
 										hx-on::after-request="hideFieldProviderModal()"
 									>
@@ -1013,6 +1017,7 @@ templ selectFieldEdit(a *artist.Artist, field, label, value string, options []Se
 				hx-target={ "#field-" + field + "-" + a.ID }
 				hx-swap="outerHTML"
 			>
+				<input type="hidden" name="producer" value="operator"/>
 				<select
 					name="value"
 					aria-label={ label }

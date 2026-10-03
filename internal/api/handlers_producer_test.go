@@ -345,6 +345,13 @@ func TestArtistDetailPage_DoneStampsOperatorOnlyForTypedValues(t *testing.T) {
 		`+ (job.staged ? '' : '&amp;producer=operator')`,
 		`staged: input.dataset.swStaged === '1'`,
 		`input.dataset.swStaged = '1'`,
+		// Typing over a staged value clears the flag, on TRUSTED input only so
+		// staging's own synthetic input event does not clear it.
+		`if (e.isTrusted && t && t.dataset && t.dataset.swStaged) { delete t.dataset.swStaged; }`,
+		`document.addEventListener('input', swClearStagedOnUserEdit, true)`,
+		// A direct per-field submit of a staged value drops the operator claim.
+		`document.addEventListener('htmx:configRequest'`,
+		`delete e.detail.parameters.producer;`,
 	} {
 		if !strings.Contains(body, want) && !strings.Contains(body, strings.ReplaceAll(want, "&amp;", "&")) {
 			t.Errorf("rendered detail page missing %q", want)

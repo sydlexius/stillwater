@@ -239,7 +239,7 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 		// for free -- their edit routes through the single-column UpdateField,
 		// which never reaches the persist chokepoint -- but a provider ID has no
 		// such verb, so the grant is explicit and scoped to this one field.
-		ctx := artist.ContextWithLockOverride(req.Context(), field)
+		ctx := artist.ContextWithLockOverride(writeCtx, field)
 		if err := r.artistService.UpdateProviderField(ctx, artistID, field, value); err != nil {
 			if r.writeFieldLockRefusal(w, artistID, err) {
 				return
@@ -354,10 +354,15 @@ func (r *Router) handleFieldClear(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// A clear is an operator act: stamp it on every clear path, including the
+	// provider-ID one (derived below), so the producer is never dropped by
+	// rebuilding the context from the bare request.
+	clearCtx := artist.ContextWithProducer(req.Context(), artist.ProducerOperator)
+
 	if artist.IsProviderIDField(field) {
 		// Same operator grant as the update path: clearing a pinned ID is an
 		// operator act, not an automated write.
-		ctx := artist.ContextWithLockOverride(req.Context(), field)
+		ctx := artist.ContextWithLockOverride(clearCtx, field)
 		if err := r.artistService.ClearProviderField(ctx, artistID, field); err != nil {
 			if r.writeFieldLockRefusal(w, artistID, err) {
 				return
@@ -369,7 +374,7 @@ func (r *Router) handleFieldClear(w http.ResponseWriter, req *http.Request) {
 			writeError(w, req, http.StatusInternalServerError, "failed to clear field")
 			return
 		}
-	} else if _, err := r.artistService.ClearField(artist.ContextWithProducer(req.Context(), artist.ProducerOperator), artistID, field); err != nil {
+	} else if _, err := r.artistService.ClearField(clearCtx, artistID, field); err != nil {
 		writeError(w, req, http.StatusInternalServerError, "failed to clear field")
 		return
 	}
