@@ -226,18 +226,26 @@ func (s *PlatformDupSweep) sweepArtist(ctx context.Context, a *artist.Artist, to
 			s.logger.Error("platform duplicate sweep: panic on one artist; continuing with the next",
 				slog.String("artist_id", a.ID), slog.Any("panic", v), slog.String("stack", string(debug.Stack())))
 			undetermined(PlatformDupReasonError)
+			// A panicked read still counts against both pass bounds, or a
+			// target that panics every time would walk the whole library.
+			st.Swept++
+			*failures = nextFailureRun(*failures, true)
+			stop = *failures >= platformDupSweepMaxConsecutiveFailures
 		}
 	}()
 	if a.IsExcluded { // the rule pipeline never evaluates an excluded artist
 		s.cache.Invalidate(a.ID)
 		return false
 	}
+	// Re-read the policy before each artist, fresh entry or not, so switching
+	// the option off (or changing the tolerance) stops the pass here.
+	if !s.stillWanted(ctx, tol) {
+		return true
+	}
 	if s.cache.fresh(a.ID, tol, s.now(), s.cfg.EntryTTL, s.cfg.RetryAfter) {
 		return false
 	}
-	// Re-read the policy before each artist, so switching the option off (or
-	// changing the tolerance) stops the pass here.
-	if st.Swept >= s.cfg.MaxPerPass || !s.stillWanted(ctx, tol) {
+	if st.Swept >= s.cfg.MaxPerPass {
 		return true
 	}
 	if reason := s.policySkipReason(ctx, a); reason != "" {

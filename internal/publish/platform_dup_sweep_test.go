@@ -349,8 +349,8 @@ func TestPlatformDupSweep_PanicOnOneArtistDoesNotStopThePass(t *testing.T) {
 		return nil
 	}
 	st := fx.run(t)
-	if fx.lookup("a1").State != PlatformDupClean || fx.lookup("a3").State != PlatformDupClean || st.Stopped {
-		t.Errorf("a1 %+v a3 %+v stats %+v, want both swept around the panic", fx.lookup("a1"), fx.lookup("a3"), st)
+	if fx.lookup("a1").State != PlatformDupClean || fx.lookup("a3").State != PlatformDupClean || st.Stopped || st.Swept != 3 {
+		t.Errorf("a1 %+v a3 %+v stats %+v, want both swept around the panic and the panic counted as a read", fx.lookup("a1"), fx.lookup("a3"), st)
 	}
 	if e := fx.lookup("a2"); e.State != PlatformDupUndetermined || !slices.Contains(e.Reasons, PlatformDupReasonError) {
 		t.Errorf("the panicking artist reads %+v, want Undetermined/sweep_error", e)
