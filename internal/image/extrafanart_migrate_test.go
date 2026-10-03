@@ -461,3 +461,9 @@ func TestApplyExtraFanart_SourceSwappedForDirAfterPlanIsBlocked(t *testing.T) {
 		t.Error("a directory must not be moved into the artist root")
 	}
 }
+
+func TestApplyExtraFanart_NilPlanIsRejected(t *testing.T) {
+	if res, err := ApplyExtraFanartMigration(context.Background(), &fakeHashInvalidator{}, "a1", nil); err == nil || res != nil {
+		t.Errorf("res=%v err=%v, want a nil result and an error", res, err)
+	}
+}

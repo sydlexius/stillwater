@@ -184,6 +184,9 @@ func ApplyExtraFanartMigration(ctx context.Context, inv HashInvalidator, artistI
 	if inv == nil {
 		return nil, errors.New("extrafanart migration requires a hash invalidator")
 	}
+	if plan == nil {
+		return nil, errors.New("extrafanart migration requires a plan")
+	}
 	res := &ExtraFanartApplyResult{}
 	allMoved := len(plan.Entries) > 0
 	mv := &fdMover{plan: plan}

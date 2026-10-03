@@ -23,5 +23,6 @@ func isRegularAt(dirFd int, name string) (bool, error) {
 	if err := unix.Fstatat(dirFd, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 		return false, err
 	}
-	return uint32(st.Mode)&unix.S_IFMT == unix.S_IFREG, nil
+	// Untyped constants, so this compiles for uint32 (linux) and uint16 (darwin) Mode.
+	return st.Mode&unix.S_IFMT == unix.S_IFREG, nil
 }
