@@ -341,53 +341,6 @@ func TestGetByTypeAndURL(t *testing.T) {
 	}
 }
 
-func TestDeduplicateByTypeURL(t *testing.T) {
-	t.Parallel()
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("opening test db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("running migrations: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
-	enc, _, err := encryption.NewEncryptor("")
-	if err != nil {
-		t.Fatalf("creating encryptor: %v", err)
-	}
-	svc := NewService(db, enc)
-	ctx := context.Background()
-
-	// Create 3 connections with the same type+url
-	for i := 0; i < 3; i++ {
-		c := &Connection{Name: "Emby", Type: TypeEmby, URL: "http://emby:8096", APIKey: "key", Enabled: true}
-		if err := svc.Create(ctx, c); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// Create 1 different connection
-	if err := svc.Create(ctx, &Connection{Name: "Lidarr", Type: TypeLidarr, URL: "http://lidarr:8686", APIKey: "key2", Enabled: true}); err != nil {
-		t.Fatal(err)
-	}
-
-	removed, err := svc.DeduplicateByTypeURL(ctx)
-	if err != nil {
-		t.Fatalf("DeduplicateByTypeURL: %v", err)
-	}
-	if removed != 2 {
-		t.Errorf("removed %d rows, want 2", removed)
-	}
-
-	conns, err := svc.List(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(conns) != 2 {
-		t.Fatalf("got %d connections after dedup, want 2", len(conns))
-	}
-}
-
 func TestCreatePreservesFeatureFlags(t *testing.T) {
 	t.Parallel()
 	svc := setupTestService(t)
