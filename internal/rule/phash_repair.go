@@ -755,7 +755,7 @@ func (p *Pipeline) stageAndCommitPHashRemoval(
 			continue
 		}
 		tombPath := path + phashTombSuffix
-		if rmErr := os.Remove(tombPath); rmErr != nil && !os.IsNotExist(rmErr) {
+		if rmErr := quarantineStrandedTomb(tombPath, phashTombSuffix, p.now, p.logger); rmErr != nil {
 			return nil, wrapWithRollbackErrs(restoreStaged(),
 				fmt.Errorf("clearing stale tomb %s for %s: %w", filepath.Base(tombPath), a.Name, rmErr))
 		}

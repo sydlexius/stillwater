@@ -321,6 +321,7 @@ func TestDeleteDuplicateFanart_SweepsOrphanedTombFromPriorFailedUnlink(t *testin
 		t.Fatalf("precondition failed: %s does not exist after the forced unlink failure (%v), so the "+
 			"stranding this test is about did not occur", strandedTomb, statErr)
 	}
+	doomedBytes := readBytes(t, strandedTomb)
 	// Confirm the ordinary discovery path really cannot see it -- the property
 	// that makes the per-index clear unable to reach it on a later run.
 	rediscovered, discErr := img.DiscoverFanart(t.Context(), dir, "fanart.jpg")
@@ -353,9 +354,12 @@ func TestDeleteDuplicateFanart_SweepsOrphanedTombFromPriorFailedUnlink(t *testin
 
 	if _, statErr := os.Stat(strandedTomb); !os.IsNotExist(statErr) {
 		t.Errorf("the stranded tomb %s still exists after a second, independent fixer run; the directory-"+
-			"wide sweep should have removed it regardless of whether its pre-suffix name is still "+
+			"wide sweep should have cleared it regardless of whether its pre-suffix name is still "+
 			"discoverable (stat error: %v)", strandedTomb, statErr)
 	}
+	// #2956: the sweep must QUARANTINE, not unlink. The tomb may be the only
+	// copy of real artwork, so its bytes must survive under an orphan name.
+	requireBytesUnderOrphan(t, dir, "fanart1.orphan-*.jpg", doomedBytes)
 }
 
 // capturingLogger returns a logger writing JSON records to the returned buffer.
