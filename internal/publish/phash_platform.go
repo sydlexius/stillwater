@@ -101,11 +101,9 @@ func validPHashTolerance(t float64) error {
 // near-duplicate cache drops the artist's entry). Announced only once the lock
 // is HELD, so a reader that then waits for the lock sees the settled result.
 //
-// NOT every backdrop writer takes this lock. Two unindexed deletes in
-// internal/api do not: deleteImageFromPlatforms (handlers_image.go) and
-// handleDeletePushImage (handlers_push.go). A fanart delete through either is
-// not announced, so a cached entry for that artist stays stale until the next
-// sweep re-reads it or it ages out. A follow-up to #3138 S3a locks both.
+// The two unindexed platform deletes in internal/api, deleteImageFromPlatforms
+// (handlers_image.go) and handleDeletePushImage (handlers_push.go), take it too
+// for a fanart delete (and only fanart), via LockBackdropTarget (#3138).
 func (p *Publisher) lockPhashTarget(connectionID, platformArtistID string) func() {
 	unlock := p.lockPhashTargetQuiet(connectionID, platformArtistID)
 	if fn := p.backdropWriteObserver.Load(); fn != nil {

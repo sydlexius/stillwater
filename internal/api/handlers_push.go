@@ -431,7 +431,26 @@ func (r *Router) handleDeletePushImage(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	if err := deleter.DeleteImage(req.Context(), body.PlatformArtistID, imageType); err != nil {
+	// A backdrop delete serializes with the perceptual prune and the phash
+	// repair on this (connection, platform artist) pair (#3138): they read
+	// backdrop indices and delete by index, and an unlocked delete here
+	// shifts those indices underneath them. Other image types have no
+	// indices, so they skip the lock. Held only across the one delete.
+	lockTarget := imageType == "fanart"
+	if lockTarget && r.publisher == nil {
+		r.logger.Error("publisher not wired; fanart delete refused", "artist_id", artistID)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "delete unavailable"})
+		return
+	}
+	// The unlock is deferred inside the closure so a panic in the client
+	// cannot leak the lock.
+	err = func() error {
+		if lockTarget {
+			defer r.publisher.LockBackdropTarget(body.ConnectionID, body.PlatformArtistID)()
+		}
+		return deleter.DeleteImage(req.Context(), body.PlatformArtistID, imageType)
+	}()
+	if err != nil {
 		r.logger.Error("deleting image from platform", "artist_id", artistID, "type", imageType, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "delete failed"})
 		return

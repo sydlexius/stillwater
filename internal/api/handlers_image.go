@@ -2239,9 +2239,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 			fanartWarnings = append(fanartWarnings, "some fanart files could not be deleted from disk")
 		}
 		if len(deleted) > 0 && !removeFailed {
-			delCtx, delCancel := context.WithTimeout(req.Context(), 30*time.Second)
-			defer delCancel()
-			fanartWarnings = append(fanartWarnings, r.deleteImageFromPlatforms(delCtx, a, imageType)...)
+			fanartWarnings = append(fanartWarnings, r.deleteImageFromPlatforms(req.Context(), a, imageType)...)
 		}
 		if isHTMXRequest(req) {
 			setSyncWarningTrigger(w, fanartWarnings)
@@ -2289,9 +2287,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 		warnings = append(warnings, "some image files could not be deleted from disk")
 	}
 	if len(deleted) > 0 && !deleteFailed {
-		delCtx, delCancel := context.WithTimeout(req.Context(), 30*time.Second)
-		defer delCancel()
-		warnings = append(warnings, r.deleteImageFromPlatforms(delCtx, a, imageType)...)
+		warnings = append(warnings, r.deleteImageFromPlatforms(req.Context(), a, imageType)...)
 	}
 
 	if isHTMXRequest(req) {
@@ -2311,6 +2307,10 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 func (r *Router) clearArtistImageFlag(ctx context.Context, a *artist.Artist, imageType string) {
 	r.setArtistImageFlag(ctx, a, imageType, false)
 }
+
+// platformDeleteTimeout bounds one platform image delete. Package variable only
+// so a test can shrink it.
+var platformDeleteTimeout = 30 * time.Second
 
 // deleteImageFromPlatforms removes the image from every platform connection that
 // has a stored artist ID mapping. Errors are logged and returned as warning
@@ -2353,7 +2353,29 @@ func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist,
 			continue
 		}
 
-		if delErr := deleter.DeleteImage(ctx, pid.PlatformArtistID, imageType); delErr != nil {
+		// A backdrop delete serializes with the perceptual prune and the phash
+		// repair on this (connection, platform artist) pair (#3138); other
+		// types have no indices and skip the lock. One target at a time: the
+		// lock is released (deferred inside the closure, so a panic in the
+		// client cannot leak it) before the loop moves to the next connection.
+		// The delete budget starts AFTER the lock is won, so time spent waiting
+		// behind a long prune is not charged to it.
+		lockTarget := imageType == "fanart"
+		if lockTarget && r.publisher == nil {
+			r.logger.Error("publisher not wired; fanart platform delete skipped", "artist", a.Name, "connection", conn.Name)
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): image delete unavailable", conn.Name, conn.Type)))
+			continue
+		}
+		var delErr error
+		func() {
+			if lockTarget {
+				defer r.publisher.LockBackdropTarget(pid.ConnectionID, pid.PlatformArtistID)()
+			}
+			tctx, cancel := context.WithTimeout(ctx, platformDeleteTimeout)
+			defer cancel()
+			delErr = deleter.DeleteImage(tctx, pid.PlatformArtistID, imageType)
+		}()
+		if delErr != nil {
 			r.logger.Error("deleting image from platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", delErr)
 			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): image delete failed", conn.Name, conn.Type)))
 		}
