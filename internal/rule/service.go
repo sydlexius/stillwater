@@ -335,7 +335,7 @@ var defaultRules = []Rule{
 		// the destructive back-out operator-triggered (one click), which is the
 		// safety valve on the ambiguous symmetric collision signal.
 		// The collision tolerance is governed by collision.DefaultTolerance
-		// (internal/collision/phash.go) and is not configurable per-rule.
+		// (internal/collision/notifier.go) and is not configurable per-rule.
 		// The Config field is omitempty, so any existing rows in the database
 		// carrying the old Tolerance key are still parsed but unused.
 		Enabled:        false,

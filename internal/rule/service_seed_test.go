@@ -10,12 +10,12 @@ import "testing"
 // Tolerance); that is caught when the rule's test coverage fails.
 func TestSeededToleranceReadByChecker(t *testing.T) {
 	// Hand-maintained allow-list: rules whose checkers read cfg.Tolerance.
-	// See the cited lines in checkers.go for the actual tolerance reads.
+	// See the checker functions in checkers.go for the actual tolerance reads.
 	rulesThatReadTolerance := map[string]bool{
-		RuleThumbSquare:      true, // checkers.go:99 reads cfg.Tolerance
-		RuleFanartAspect:     true, // checkers.go:275 reads cfg.Tolerance
-		RuleArtistIDMismatch: true, // checkers.go:630 reads cfg.Tolerance
-		RuleImageDuplicate:   true, // checkers.go:1106 reads cfg.Tolerance
+		RuleThumbSquare:      true, // makeThumbSquareChecker reads cfg.Tolerance
+		RuleFanartAspect:     true, // makeFanartAspectChecker reads cfg.Tolerance
+		RuleArtistIDMismatch: true, // checkArtistIDMismatch reads cfg.Tolerance
+		RuleImageDuplicate:   true, // makeImageDuplicateChecker reads cfg.Tolerance
 	}
 
 	// Check that all seeded rules with non-zero Tolerance are in the allow-list.
