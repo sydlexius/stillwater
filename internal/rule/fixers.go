@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -1410,7 +1411,7 @@ func (f *ExtraneousImagesFixer) removeExtraneousFiles(a *artist.Artist, entries 
 		if !imageExtensions[ext] {
 			continue
 		}
-		if expected[strings.ToLower(name)] {
+		if expected[strings.ToLower(name)] || isQuarantinedOrphan(name) {
 			continue
 		}
 		target := filepath.Join(a.Path, name)
@@ -2269,6 +2270,7 @@ type ImageDuplicateFixer struct {
 	imageHashRecorder imageHashRecorder
 	logger            *slog.Logger
 	platformPrune     platformPruneSlot // #3138; see SetPlatformPruner
+	now               func() time.Time  // clock seam for quarantineStrandedTomb names; time.Now in production
 }
 
 // NewImageDuplicateFixer creates an ImageDuplicateFixer.
@@ -2279,6 +2281,7 @@ func NewImageDuplicateFixer(db *sql.DB, platformService *platform.Service, fsChe
 		fsCheck:           fsCheck,
 		imageHashRecorder: hashRecorder,
 		logger:            logger.With(slog.String("component", "image-duplicate-fixer")),
+		now:               time.Now,
 	}
 }
 
@@ -2511,9 +2514,112 @@ func (f *ImageDuplicateFixer) protectedFanartSlots(ctx context.Context, artistID
 // loop would otherwise define it.
 const dupTombSuffix = ".dup_pending_delete.tmp"
 
-// sweepOrphanedDupTombs removes every ".dup_pending_delete.tmp" file directly
-// in the artist directory, independent of whether its pre-suffix name is
-// still discoverable.
+// orphanMarker is the infix of a quarantined file's name; it matches
+// internal/image's quarantineMarker (unexported there), so orphans from both
+// packages share one name shape.
+const orphanMarker = ".orphan-"
+
+// isQuarantinedOrphan reports whether name is a quarantined orphan. The
+// extraneous-images rule must skip these: they keep a terminal image extension
+// (so #2954 can classify them) and so look like unexpected images, but may be
+// the only copy of real artwork.
+func isQuarantinedOrphan(name string) bool {
+	return strings.Contains(name, orphanMarker)
+}
+
+// quarantineStrandedTomb moves a regular file sitting at a tomb path aside
+// instead of deleting it, and is a no-op when nothing is there (#2956). It is
+// the rule-package twin of internal/image's quarantineStrandedTemp (#2460);
+// read that function for the full argument. Not reused because its name
+// derivation strips ".tmp" and one extension, which mangles a tomb name like
+// "fanart2.jpg.dup_pending_delete.tmp".
+//
+// WHY NOT os.Remove. A tomb path holds either junk from a failed operation or,
+// after a HARD crash (SIGKILL, power loss) between "rename artwork to the tomb"
+// and "commit", the ONLY copy of real artwork. Nothing in the name tells them
+// apart, so unlinking silently destroys the second case.
+//
+// ORPHAN NAME: "<stem>.orphan-<stamp><ext>", with stem and ext taken from the
+// ORIGINAL artwork name (tomb "fanart2.jpg.dup_pending_delete.tmp" becomes
+// "fanart2.orphan-20260102T030405.000000000Z.jpg"). The extension stays
+// terminal so extension-based classifiers (internal/foreign, #2954) still see
+// an image. This is the same shape quarantineStrandedTemp produces. On a name
+// collision a "-<n>" counter goes before the extension.
+//
+// Only a REGULAR file is moved. A directory or symlink at the tomb path is
+// refused with an error: os.Rename would succeed on a directory, silently
+// retiring the guard that the squatter tests pin (a directory or symlink at a
+// live tomb path must abort the operation before the source file moves; see
+// TestDeleteDuplicateFanart_*TombPath* and the pHash StaleTomb test).
+//
+// os.Link + os.Remove, NOT os.Rename: Rename silently overwrites an existing
+// destination, which could destroy an earlier orphan (another only-copy). Link
+// fails with EEXIST atomically, so we try the next counter instead.
+//
+// Both constructors set now to time.Now; nil is only a fallback for a struct
+// built without one. Tests pin it so the collision branch is reachable.
+func quarantineStrandedTomb(tombPath, tombSuffix string, now func() time.Time, logger *slog.Logger) error {
+	info, statErr := os.Lstat(tombPath)
+	if statErr != nil {
+		if errors.Is(statErr, fs.ErrNotExist) {
+			return nil // The ordinary case: nothing stranded.
+		}
+		return fmt.Errorf("checking tomb %s: %w", filepath.Base(tombPath), statErr)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%s exists and is not a regular file (mode %s); refusing to touch it",
+			filepath.Base(tombPath), info.Mode().Type())
+	}
+
+	if now == nil {
+		now = time.Now
+	}
+	original := strings.TrimSuffix(filepath.Base(tombPath), tombSuffix)
+	ext := filepath.Ext(original)
+	stem := strings.TrimSuffix(original, ext)
+	dir := filepath.Dir(tombPath)
+	stamp := now().UTC().Format("20060102T150405.000000000Z")
+
+	for attempt := range 100 {
+		name := fmt.Sprintf("%s%s%s%s", stem, orphanMarker, stamp, ext)
+		if attempt > 0 {
+			name = fmt.Sprintf("%s%s%s-%d%s", stem, orphanMarker, stamp, attempt, ext)
+		}
+		dest := filepath.Join(dir, name)
+		if err := os.Link(tombPath, dest); err != nil {
+			if errors.Is(err, fs.ErrExist) {
+				continue // never overwrite an existing orphan
+			}
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil // a concurrent run already cleared the tomb
+			}
+			// No rename fallback on purpose: Rename can overwrite an orphan.
+			return fmt.Errorf("linking stranded tomb %s aside failed (hard links may be unsupported on this filesystem); "+
+				"the file at that path may be the only copy of an image, so move it aside by hand: %w",
+				filepath.Base(tombPath), err)
+		}
+		// The bytes are now safe under dest; a failed unlink is reported
+		// because the caller is about to stage onto this path.
+		if err := os.Remove(tombPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			// Drop the link just made (the tomb still holds the bytes) so a
+			// persistently failing unlink does not mint a new orphan per run.
+			_ = os.Remove(dest)
+			return fmt.Errorf("could not clear tomb %s after linking it aside (the tomb still holds the bytes): %w",
+				filepath.Base(tombPath), err)
+		}
+		if logger != nil {
+			logger.Warn("quarantined a stranded tomb instead of deleting it; it may be the only copy of this artwork",
+				"tomb", tombPath, "quarantined_to", dest)
+		}
+		return nil
+	}
+	return fmt.Errorf("quarantining tomb %s: exhausted name attempts", filepath.Base(tombPath))
+}
+
+// sweepOrphanedDupTombs quarantines every ".dup_pending_delete.tmp" file
+// directly in the artist directory (see quarantineStrandedTomb; it does NOT
+// unlink them, #2956), independent of whether its pre-suffix name is still
+// discoverable.
 //
 // STRAY-TOMB SWEEP (#3015 fix-round-2), keyed on the SUFFIX directly rather
 // than on any current filename.
@@ -2534,17 +2640,24 @@ const dupTombSuffix = ".dup_pending_delete.tmp"
 //
 // A directory-wide glob on the suffix, independent of what DiscoverFanart
 // currently enumerates, is what actually reaches it. Best-effort: a failed
-// removal is logged and does not block the fix, matching the post-commit
+// quarantine is logged and does not block the fix, matching the post-commit
 // tomb-unlink's own best-effort handling.
 func (f *ImageDuplicateFixer) sweepOrphanedDupTombs(a *artist.Artist) {
-	strays, globErr := filepath.Glob(filepath.Join(a.Path, "*"+dupTombSuffix))
-	if globErr != nil {
-		f.logger.Warn("globbing for orphaned duplicate-fanart tombs",
-			"artist", a.Name, "dir", a.Path, "error", globErr)
+	// ReadDir + suffix match, NOT filepath.Glob: Glob treats "[" and "*" in the
+	// directory name as pattern syntax, so a dir like "Artist [Live]" silently
+	// matched nothing and returned no error.
+	dirEntries, readErr := os.ReadDir(a.Path)
+	if readErr != nil {
+		f.logger.Warn("listing directory for orphaned duplicate-fanart tombs",
+			"artist", a.Name, "dir", a.Path, "error", readErr)
 		return
 	}
-	for _, stray := range strays {
-		if rmErr := os.Remove(stray); rmErr != nil && !os.IsNotExist(rmErr) {
+	for _, de := range dirEntries {
+		if !strings.HasSuffix(de.Name(), dupTombSuffix) {
+			continue
+		}
+		stray := filepath.Join(a.Path, de.Name())
+		if rmErr := quarantineStrandedTomb(stray, dupTombSuffix, f.now, f.logger); rmErr != nil {
 			f.logger.Warn("sweeping orphaned duplicate-fanart tomb",
 				"artist", a.Name, "path", stray, "error", rmErr)
 		}
@@ -2562,13 +2675,16 @@ func (f *ImageDuplicateFixer) sweepOrphanedDupTombs(a *artist.Artist) {
 // moments ago and still needs. Two invocations against the same artist give:
 //
 //  1. A stages fanart2.jpg -> fanart2.jpg.dup_pending_delete.tmp.
-//  2. B enters and sweeps; its glob matches A's LIVE tomb and removes it.
+//  2. B enters and sweeps; its scan matches A's LIVE tomb and quarantines it
+//     (moves it to an orphan name).
 //  3. A's RenumberFanart fails and A calls restoreStaged.
-//  4. A cannot restore: the original bytes were inside the tomb B deleted.
+//  4. A cannot restore: the tomb path is empty, the bytes are now under B's
+//     orphan name.
 //
 // A pre-commit failure is RECOVERABLE by design -- that is the entire reason
-// the stage/commit split and restoreStaged exist -- and this turns it into
-// permanent loss of distinct artwork. Locking only the sweep does not close
+// the stage/commit split and restoreStaged exist -- and this turns it into a
+// failed rollback that needs manual recovery of the orphan (before #2956 the
+// sweep unlinked the tomb, which was permanent loss of distinct artwork). Locking only the sweep does not close
 // it: B would merely wait for A's sweep, then delete A's tomb during A's
 // staging instead. The critical section has to span from before the sweep to
 // after the last tomb unlink, which is exactly the body of
@@ -2611,7 +2727,7 @@ func (f *ImageDuplicateFixer) sweepOrphanedDupTombs(a *artist.Artist) {
 //
 // -RACE CANNOT SEE THIS HAZARD, which is why the serialization is
 // load-bearing rather than defensive: A's tomb and B's glob meet on the
-// filesystem (os.Remove against a path A holds bytes in), not in shared Go
+// filesystem (a quarantine of a path A holds bytes in), not in shared Go
 // memory. Same reasoning as Pipeline.phashArtistMu and image.repairOpMu.
 //
 // Entries are never evicted -- one mutex per artist directory ever
@@ -2632,8 +2748,8 @@ func dupFanartDirMutex(dir string) *sync.Mutex {
 func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(ctx context.Context, a *artist.Artist, primaryName string, kodiNumbering bool, toDelete map[int]bool) ([]string, error) {
 	// Serialize the WHOLE mutation for this directory: the sweep below cannot
 	// distinguish a concurrent invocation's live staged tomb from an orphan, and
-	// deleting one turns that invocation's recoverable pre-commit failure into
-	// permanent loss. See dupFanartDirMu for the interleaving and why the
+	// quarantining one turns that invocation's recoverable pre-commit failure
+	// into a failed rollback (the bytes survive, but under an orphan name). See dupFanartDirMu for the interleaving and why the
 	// critical section has to span the sweep through the final tomb unlink.
 	mu := dupFanartDirMutex(a.Path)
 	mu.Lock()
@@ -2700,8 +2816,9 @@ func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(ctx context.Cont
 			continue
 		}
 		tombPath := p + dupTombSuffix
-		// Clear any leftover tomb from a previous crashed operation.
-		if rmErr := os.Remove(tombPath); rmErr != nil && !os.IsNotExist(rmErr) {
+		// A leftover tomb from a previous crashed operation may be the ONLY
+		// copy of real artwork (#2956), so quarantine it, never unlink it.
+		if rmErr := quarantineStrandedTomb(tombPath, dupTombSuffix, f.now, f.logger); rmErr != nil {
 			return nil, wrapWithRollbackErrs(restoreStaged(),
 				fmt.Errorf("clearing stale tomb %s for %s: %w", filepath.Base(tombPath), a.Name, rmErr))
 		}

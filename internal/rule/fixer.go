@@ -219,6 +219,7 @@ type Pipeline struct {
 	fixers        []Fixer
 	publisher     *publish.Publisher
 	logger        *slog.Logger
+	now           func() time.Time // clock seam for quarantineStrandedTomb names; time.Now in production
 
 	// writeGateMu guards writeGate. SetWriteGate is documented as
 	// idempotent and safe to call after construction ("replace"), so
@@ -502,6 +503,7 @@ func NewPipeline(engine *Engine, artistService *artist.Service, ruleService *Ser
 		fixers:        fixers,
 		publisher:     publisher,
 		logger:        logger.With(slog.String("component", "fix-pipeline")),
+		now:           time.Now,
 	}
 }
 
