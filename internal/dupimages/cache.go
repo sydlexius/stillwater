@@ -362,8 +362,12 @@ func (c *Cache) Set(counts Counts) {
 	if counts.PlatformsAt.IsZero() {
 		counts.PlatformsAt = now
 	}
-	counts.libraryGen, counts.platformsGen = c.gen.Add(1), c.gen.Add(1)
 	c.mu.Lock()
+	// ONE generation for both halves, drawn under the lock so a concurrent
+	// refresh cannot start between two draws and overwrite only one half, and
+	// so lock order equals generation order.
+	gen := c.gen.Add(1)
+	counts.libraryGen, counts.platformsGen = gen, gen
 	c.counts = normalize(counts)
 	c.mu.Unlock()
 }
@@ -376,8 +380,20 @@ func (c *Cache) Set(counts Counts) {
 // is a LOST UPDATE: a concurrent StorePlatforms would be read before its write
 // and overwritten by this one's stale copy of the platform half.
 func (c *Cache) StoreLibrary(count int) {
-	gen := c.gen.Add(1)
+	c.storeLibraryGen(count, c.gen.Add(1))
+}
+
+// storeLibraryGen commits count only if gen is newer than the half's current
+// generation. The generation is drawn BEFORE the lock is taken, so two stores
+// can commit in the opposite order to their draws; without this check the
+// older one would land last and restore stale counts. A compare is simpler
+// than drawing under the lock because it also stays correct for refresh, whose
+// startGen is necessarily drawn before its (minutes-long) scan.
+func (c *Cache) storeLibraryGen(count int, gen uint64) {
 	c.update(func(cur Counts) Counts {
+		if cur.libraryGen >= gen {
+			return cur
+		}
 		cur.Library = count
 		cur.LibraryAt = c.now()
 		cur.libraryGen = gen
@@ -388,8 +404,15 @@ func (c *Cache) StoreLibrary(count int) {
 // StorePlatforms records authoritative per-platform counts, leaving the library
 // half untouched. Same locking rationale as StoreLibrary.
 func (c *Cache) StorePlatforms(platforms []PlatformCount) {
-	gen := c.gen.Add(1)
+	c.storePlatformsGen(platforms, c.gen.Add(1))
+}
+
+// storePlatformsGen is storeLibraryGen for the platforms half.
+func (c *Cache) storePlatformsGen(platforms []PlatformCount, gen uint64) {
 	c.update(func(cur Counts) Counts {
+		if cur.platformsGen >= gen {
+			return cur
+		}
 		cur.Platforms = platforms
 		cur.PlatformsAt = c.now()
 		cur.platformsGen = gen

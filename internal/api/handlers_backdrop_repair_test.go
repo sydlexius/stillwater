@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,6 +29,8 @@ type fanartCapablePipeline struct {
 	*stubPipeline
 	scanFn      func(ctx context.Context) (rule.FanartDupReport, error)
 	remediateFn func(ctx context.Context) (rule.FanartRepairResult, error)
+	// requestScans counts scans started with a requestScanKey context.
+	requestScans atomic.Int32
 }
 
 func (f *fanartCapablePipeline) ScanFanartDuplicates(ctx context.Context) (rule.FanartDupReport, error) {
@@ -44,19 +47,44 @@ func (f *fanartCapablePipeline) RemediateFanartDuplicates(ctx context.Context) (
 	return rule.FanartRepairResult{}, nil
 }
 
+// requestScanKey marks a request context so the scan stub can tell a scan
+// started FROM that request apart from a refresh some other test kicked off.
+type requestScanKey struct{}
+
 // seededScanPipeline returns a pipeline whose scan yields exactly report. The
 // parallel store-then-render tests use it because every NewRouter re-points
 // the process-wide dupimages.Shared() cache at ITS OWN libraryDupCount: a
 // refresh kicked by any other test would otherwise run this router's scan and
 // store a newer EMPTY report over the seeded one. Returning the seed makes such
 // a foreign refresh idempotent (#2849).
+//
+// The stub also counts scans invoked with a context marked by
+// requestScanKey, which only the GET under test carries. A foreign shared-cache
+// refresh uses its own context, so it never counts; a regression that makes the
+// GET scan does.
 func seededScanPipeline(report rule.FanartDupReport) *fanartCapablePipeline {
-	return &fanartCapablePipeline{
-		stubPipeline: &stubPipeline{},
-		scanFn: func(context.Context) (rule.FanartDupReport, error) {
-			return report, nil
-		},
+	p := &fanartCapablePipeline{stubPipeline: &stubPipeline{}}
+	p.scanFn = func(ctx context.Context) (rule.FanartDupReport, error) {
+		if ctx.Value(requestScanKey{}) != nil {
+			p.requestScans.Add(1)
+		}
+		return report, nil
 	}
+	return p
+}
+
+// scanFreeGET renders the page for a marked request and fails the test if that
+// GET itself started a scan.
+func scanFreeGET(t *testing.T, r *Router, p *fanartCapablePipeline) *httptest.ResponseRecorder {
+	t.Helper()
+	ctx := context.WithValue(adminContext(), requestScanKey{}, true)
+	req := withI18nCtx(t, httptest.NewRequestWithContext(ctx, http.MethodGet, "/reports/backdrop-duplicates", nil))
+	w := httptest.NewRecorder()
+	r.handleBackdropDuplicatesPage(w, req)
+	if n := p.requestScans.Load(); n != 0 {
+		t.Fatalf("the GET started %d scan(s); a warm-cache render must not scan (#2684)", n)
+	}
+	return w
 }
 
 // testRouterWithFanartPipeline builds a full Router (static assets wired, so
@@ -136,8 +164,9 @@ func TestBackdropDuplicatesPage_NonAdminForbidden(t *testing.T) {
 // longer scans on render at all: the GET path renders purely from the
 // pre-populated cache (r.storeBackdropDupReport), the totals and per-artist
 // table coming straight from that cached snapshot. (The scan stub returns the
-// seed rather than failing the test, because a foreign test's refresh of the
-// process-wide cache can legitimately invoke it -- see seededScanPipeline.)
+// seed and counts scans started by THIS request, because a foreign test's
+// refresh of the process-wide cache can legitimately invoke it -- see
+// seededScanPipeline.)
 func TestBackdropDuplicatesPage_WarmCacheRendersWithoutScanning(t *testing.T) {
 	t.Parallel()
 	report := rule.FanartDupReport{
@@ -148,12 +177,11 @@ func TestBackdropDuplicatesPage_WarmCacheRendersWithoutScanning(t *testing.T) {
 			{ArtistID: "artist-2", Name: "Test Artist Two", ExactDrops: 1},
 		},
 	}
-	r := testRouterWithFanartPipeline(t, seededScanPipeline(report))
+	pipe := seededScanPipeline(report)
+	r := testRouterWithFanartPipeline(t, pipe)
 	r.storeBackdropDupReport(report, nextBackdropScanGen())
 
-	req := withI18nCtx(t, httptest.NewRequestWithContext(adminContext(), http.MethodGet, "/reports/backdrop-duplicates", nil))
-	w := httptest.NewRecorder()
-	r.handleBackdropDuplicatesPage(w, req)
+	w := scanFreeGET(t, r, pipe)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("authenticated admin request should get 200, got %d (body: %s)", w.Code, w.Body.String())
@@ -186,12 +214,11 @@ func TestBackdropDuplicatesPage_WarmCacheRendersWithoutScanning(t *testing.T) {
 func TestBackdropDuplicatesPage_PartialScanShowsNotice(t *testing.T) {
 	t.Parallel()
 	report := rule.FanartDupReport{ScanErrors: 4}
-	r := testRouterWithFanartPipeline(t, seededScanPipeline(report))
+	pipe := seededScanPipeline(report)
+	r := testRouterWithFanartPipeline(t, pipe)
 	r.storeBackdropDupReport(report, nextBackdropScanGen())
 
-	req := withI18nCtx(t, httptest.NewRequestWithContext(adminContext(), http.MethodGet, "/reports/backdrop-duplicates", nil))
-	w := httptest.NewRecorder()
-	r.handleBackdropDuplicatesPage(w, req)
+	w := scanFreeGET(t, r, pipe)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body: %s)", w.Code, w.Body.String())
@@ -292,12 +319,11 @@ func TestBackdropDuplicatesPage_PerceptualNoticeShowsWhenPerceptualPresent(t *te
 			{ArtistID: "a1", Name: "Near Match Artist", ExactDrops: 0, PerceptualDrops: 4, TotalSlots: 31},
 		},
 	}
-	r := testRouterWithFanartPipeline(t, seededScanPipeline(report))
+	pipe := seededScanPipeline(report)
+	r := testRouterWithFanartPipeline(t, pipe)
 	r.storeBackdropDupReport(report, nextBackdropScanGen())
 
-	req := withI18nCtx(t, httptest.NewRequestWithContext(adminContext(), http.MethodGet, "/reports/backdrop-duplicates", nil))
-	w := httptest.NewRecorder()
-	r.handleBackdropDuplicatesPage(w, req)
+	w := scanFreeGET(t, r, pipe)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body: %s)", w.Code, w.Body.String())
@@ -336,12 +362,11 @@ func TestBackdropDuplicatesPage_NoPerceptualNoticeWhenZero(t *testing.T) {
 			{ArtistID: "a1", Name: "Exact Only Artist", ExactDrops: 3, TotalSlots: 3},
 		},
 	}
-	r := testRouterWithFanartPipeline(t, seededScanPipeline(report))
+	pipe := seededScanPipeline(report)
+	r := testRouterWithFanartPipeline(t, pipe)
 	r.storeBackdropDupReport(report, nextBackdropScanGen())
 
-	req := withI18nCtx(t, httptest.NewRequestWithContext(adminContext(), http.MethodGet, "/reports/backdrop-duplicates", nil))
-	w := httptest.NewRecorder()
-	r.handleBackdropDuplicatesPage(w, req)
+	w := scanFreeGET(t, r, pipe)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body: %s)", w.Code, w.Body.String())
