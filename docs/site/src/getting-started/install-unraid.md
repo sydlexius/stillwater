@@ -108,3 +108,5 @@ See [Installation > Unraid](../troubleshooting/index.md#unraid) in the troublesh
 ## What about Docker Compose?
 
 If you'd rather skip Community Applications and run Stillwater through Unraid's compose plugin or a different host entirely, see [Install with Docker Compose](install-docker-compose.md). The underlying image is identical; CA just wraps it in a GUI form.
+
+The image now includes bash. The container Console shell is determined by the Unraid CA template's `<Shell>` field (currently `sh` in [doxazo-net/unraid-templates](https://github.com/doxazo-net/unraid-templates)). From that console, you can open bash interactively with `bash`.
