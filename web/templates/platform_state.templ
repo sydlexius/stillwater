@@ -10,6 +10,17 @@ import (
 	img "github.com/sydlexius/stillwater/internal/image"
 )
 
+// PlatformStateRowData is the options struct for platformStateRow (#2214): one
+// comparison row (Stillwater value vs. platform value) plus its status flags.
+type PlatformStateRowData struct {
+	Field         string
+	SWValue       string
+	PlatformValue string
+	Match         bool // values agree (renders the green check)
+	BothEmpty     bool // neither side has a value (renders "--" instead of a status)
+	Mono          bool // render values in a monospace <code> (IDs)
+}
+
 // Platform-state comparison partials, shared by the artist-detail Providers
 // section (via PlatformStateCardBody in shared_artist_detail.templ) and the
 // Debug section's read-only cards. Extracted from artist_detail.templ with the
@@ -87,67 +98,78 @@ templ platformStateTable(a *artist.Artist, conn *connection.Connection, state *c
 				</tr>
 			</thead>
 			<tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
-				@platformStateRow(t(ctx, "artist.biography"),
-					truncate(a.Biography, 80),
-					truncate(state.Biography, 80),
-					fieldMatch(a.Biography, state.Biography),
-					a.Biography == "" && state.Biography == "",
-					false)
-				@platformStateRow(t(ctx, "artist.genres"),
-					strings.Join(a.Genres, ", "),
-					strings.Join(state.Genres, ", "),
-					sliceMatch(a.Genres, state.Genres),
-					len(a.Genres) == 0 && len(state.Genres) == 0,
-					false)
-				@platformStateRow(t(ctx, "artist.formed_premiere_date"),
-					firstNonEmpty(a.Formed, a.Born),
-					state.PremiereDate,
-					fieldMatch(firstNonEmpty(a.Formed, a.Born), state.PremiereDate),
-					firstNonEmpty(a.Formed, a.Born) == "" && state.PremiereDate == "",
-					false)
-				@platformStateRow(t(ctx, "artist.disbanded_end_date"),
-					firstNonEmpty(a.Disbanded, a.Died),
-					state.EndDate,
-					fieldMatch(firstNonEmpty(a.Disbanded, a.Died), state.EndDate),
-					firstNonEmpty(a.Disbanded, a.Died) == "" && state.EndDate == "",
-					false)
-				@platformStateRow(t(ctx, "artist.musicbrainz_id_label"),
-					a.MusicBrainzID,
-					state.MusicBrainzID,
-					fieldMatch(a.MusicBrainzID, state.MusicBrainzID),
-					a.MusicBrainzID == "" && state.MusicBrainzID == "",
-					true)
+				@platformStateRow(PlatformStateRowData{
+					Field: t(ctx, "artist.biography"),
+					SWValue: truncate(a.Biography, 80),
+					PlatformValue: truncate(state.Biography, 80),
+					Match: fieldMatch(a.Biography, state.Biography),
+					BothEmpty: a.Biography == "" && state.Biography == "",
+				})
+				@platformStateRow(PlatformStateRowData{
+					Field: t(ctx, "artist.genres"),
+					SWValue: strings.Join(a.Genres, ", "),
+					PlatformValue: strings.Join(state.Genres, ", "),
+					Match: sliceMatch(a.Genres, state.Genres),
+					BothEmpty: len(a.Genres) == 0 && len(state.Genres) == 0,
+				})
+				@platformStateRow(PlatformStateRowData{
+					Field: t(ctx, "artist.formed_premiere_date"),
+					SWValue: firstNonEmpty(a.Formed, a.Born),
+					PlatformValue: state.PremiereDate,
+					Match: fieldMatch(firstNonEmpty(a.Formed, a.Born), state.PremiereDate),
+					BothEmpty: firstNonEmpty(a.Formed, a.Born) == "" && state.PremiereDate == "",
+				})
+				@platformStateRow(PlatformStateRowData{
+					Field: t(ctx, "artist.disbanded_end_date"),
+					SWValue: firstNonEmpty(a.Disbanded, a.Died),
+					PlatformValue: state.EndDate,
+					Match: fieldMatch(firstNonEmpty(a.Disbanded, a.Died), state.EndDate),
+					BothEmpty: firstNonEmpty(a.Disbanded, a.Died) == "" && state.EndDate == "",
+				})
+				@platformStateRow(PlatformStateRowData{
+					Field: t(ctx, "artist.musicbrainz_id_label"),
+					SWValue: a.MusicBrainzID,
+					PlatformValue: state.MusicBrainzID,
+					Match: fieldMatch(a.MusicBrainzID, state.MusicBrainzID),
+					BothEmpty: a.MusicBrainzID == "" && state.MusicBrainzID == "",
+					Mono: true,
+				})
 				if readonly {
-					@platformStateRow(t(ctx, "artist.platform_state.sort_name"),
-						a.SortName,
-						state.SortName,
-						fieldMatch(a.SortName, state.SortName),
-						a.SortName == "" && state.SortName == "",
-						false)
-					@platformStateRow(t(ctx, "artist.platform_state.tags"),
-						"--",
-						strings.Join(state.Tags, ", "),
-						false,
-						true,
-						false)
-					@platformStateRow(t(ctx, "artist.platform_state.backdrop_count"),
-						"--",
-						strconv.Itoa(state.BackdropCount),
-						false,
-						true,
-						false)
-					@platformStateRow(t(ctx, "artist.platform_state.locked"),
-						"--",
-						t(ctx, boolDisplay(state.IsLocked)),
-						false,
-						true,
-						false)
-					@platformStateRow(t(ctx, "artist.platform_state.locked_fields"),
-						"--",
-						strings.Join(state.LockedFields, ", "),
-						false,
-						true,
-						false)
+					@platformStateRow(PlatformStateRowData{
+						Field: t(ctx, "artist.platform_state.sort_name"),
+						SWValue: a.SortName,
+						PlatformValue: state.SortName,
+						Match: fieldMatch(a.SortName, state.SortName),
+						BothEmpty: a.SortName == "" && state.SortName == "",
+					})
+					@platformStateRow(PlatformStateRowData{
+						Field: t(ctx, "artist.platform_state.tags"),
+						SWValue: "--",
+						PlatformValue: strings.Join(state.Tags, ", "),
+						Match: false,
+						BothEmpty: true,
+					})
+					@platformStateRow(PlatformStateRowData{
+						Field: t(ctx, "artist.platform_state.backdrop_count"),
+						SWValue: "--",
+						PlatformValue: strconv.Itoa(state.BackdropCount),
+						Match: false,
+						BothEmpty: true,
+					})
+					@platformStateRow(PlatformStateRowData{
+						Field: t(ctx, "artist.platform_state.locked"),
+						SWValue: "--",
+						PlatformValue: t(ctx, boolDisplay(state.IsLocked)),
+						Match: false,
+						BothEmpty: true,
+					})
+					@platformStateRow(PlatformStateRowData{
+						Field: t(ctx, "artist.platform_state.locked_fields"),
+						SWValue: "--",
+						PlatformValue: strings.Join(state.LockedFields, ", "),
+						Match: false,
+						BothEmpty: true,
+					})
 				}
 				<tr>
 					<td class="px-4 py-2 text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide font-medium align-top">{ t(ctx, "artist.tab_images") }</td>
@@ -172,35 +194,35 @@ templ platformStateTable(a *artist.Artist, conn *connection.Connection, state *c
 	</div>
 }
 
-templ platformStateRow(field, swValue, platValue string, match, bothEmpty, mono bool) {
+templ platformStateRow(row PlatformStateRowData) {
 	<tr>
-		<td class="px-4 py-2 text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide font-medium align-top">{ field }</td>
+		<td class="px-4 py-2 text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide font-medium align-top">{ row.Field }</td>
 		<td class="px-4 py-2 text-gray-900 dark:text-gray-100 align-top">
-			if swValue != "" {
-				if mono {
-					<code class="font-mono break-all" style="color:var(--swd-ink-3)">{ swValue }</code>
+			if row.SWValue != "" {
+				if row.Mono {
+					<code class="font-mono break-all" style="color:var(--swd-ink-3)">{ row.SWValue }</code>
 				} else {
-					{ swValue }
+					{ row.SWValue }
 				}
 			} else {
 				<span class="text-gray-400 italic">{ t(ctx, "common.empty") }</span>
 			}
 		</td>
 		<td class="px-4 py-2 text-gray-900 dark:text-gray-100 align-top">
-			if platValue != "" {
-				if mono {
-					<code class="font-mono break-all" style="color:var(--swd-ink-3)">{ platValue }</code>
+			if row.PlatformValue != "" {
+				if row.Mono {
+					<code class="font-mono break-all" style="color:var(--swd-ink-3)">{ row.PlatformValue }</code>
 				} else {
-					{ platValue }
+					{ row.PlatformValue }
 				}
 			} else {
 				<span class="text-gray-400 italic">{ t(ctx, "common.empty") }</span>
 			}
 		</td>
 		<td class="px-4 py-2 text-center align-top">
-			if bothEmpty {
+			if row.BothEmpty {
 				<span class="text-gray-300 dark:text-gray-600">--</span>
-			} else if match {
+			} else if row.Match {
 				<span class="text-green-500" title={ t(ctx, "common.match") } aria-label={ t(ctx, "common.match") } role="img">
 					<svg class="h-4 w-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>

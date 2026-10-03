@@ -1,15 +1,15 @@
 // Unit tests for web/static/js/artist-detail/artwork-modal.js
 // Covers:
-//   - KIND_TO_TYPE parity with Go's artworkKindToType (handlers_artist_detail.go)
+//   - KIND_TO_TYPE parity with Go's templates.ArtworkKindType (web/templates/artwork_helpers.go)
 //   - doRevert: HTTP status branching (200, 404, 409) and CSRF guard
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createDom, makeFetchMock, flush } from './helpers/dom-harness.js';
 
 // ---------------------------------------------------------------------------
-// Go source of truth for kind -> image-type (handlers_artist_detail.go,
-// artworkKindToType). This constant is MANUALLY maintained: when Go's
-// artworkKindToType gains or changes a case, update GO_KIND_TO_TYPE here.
+// Go source of truth for kind -> image-type (web/templates/artwork_helpers.go,
+// templates.ArtworkKindType). This constant is MANUALLY maintained: when Go's
+// templates.ArtworkKindType gains or changes a case, update GO_KIND_TO_TYPE here.
 // The tests then catch JS drift from this constant -- they do NOT
 // auto-detect Go-side changes on their own.
 // ---------------------------------------------------------------------------
@@ -41,14 +41,14 @@ const MODAL_HTML = `<!doctype html><html><body>
 </body></html>`;
 
 // ---------------------------------------------------------------------------
-// KIND_TO_TYPE parity: JS map vs Go artworkKindToType
+// KIND_TO_TYPE parity: JS map vs Go templates.ArtworkKindType
 //
 // Strategy: open the modal for a given kind and observe what image-type segment
 // appears in the /info fetch URL that refreshRevert dispatches. This tests the
 // live code path rather than parsing source text, so a renamed variable or a
 // wrong value both fail the assertion.
 // ---------------------------------------------------------------------------
-describe('artwork-modal: KIND_TO_TYPE parity with Go artworkKindToType', () => {
+describe('artwork-modal: KIND_TO_TYPE parity with Go templates.ArtworkKindType', () => {
   for (const [kind, expectedType] of Object.entries(GO_KIND_TO_TYPE)) {
     it(`kind "${kind}" resolves to image type "${expectedType}"`, async () => {
       const fetchMock = makeFetchMock({ ok: true, json: { backup_exists: false } });

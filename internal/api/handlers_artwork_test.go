@@ -213,23 +213,3 @@ func TestHandleArtworkModal_UnknownArtist(t *testing.T) {
 		t.Fatalf("status = %d, want 404", w.Code)
 	}
 }
-
-// TestArtworkKindToType pins the modal kind -> API image-type mapping for every
-// kind plus the unknown/default fallback. A regression here (e.g. backdrops
-// resolving to thumb) would make the modal's Backdrops tab edit the wrong slot.
-func TestArtworkKindToType(t *testing.T) {
-	t.Parallel()
-	cases := map[string]string{
-		"primary":   "thumb",
-		"logo":      "logo",
-		"banner":    "banner",
-		"backdrops": "fanart",
-		"":          "thumb", // unknown falls to the primary/thumb default
-		"bogus":     "thumb",
-	}
-	for kind, want := range cases {
-		if got := artworkKindToType(kind); got != want {
-			t.Errorf("artworkKindToType(%q) = %q, want %q", kind, got, want)
-		}
-	}
-}

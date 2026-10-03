@@ -12,23 +12,6 @@ import (
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
-// artworkKindToType maps a Manage-artwork modal kind (the plain-language
-// switcher label) to the API image-type segment the editor uses.
-// NOTE: tests/unit/artwork-modal.test.js mirrors these constants in GO_KIND_TO_TYPE;
-// keep both in sync when adding or changing cases.
-func artworkKindToType(kind string) string {
-	switch kind {
-	case "logo":
-		return "logo"
-	case "banner":
-		return "banner"
-	case "backdrops":
-		return "fanart"
-	default:
-		return "thumb" // primary / unknown
-	}
-}
-
 // handleArtworkModal renders the reusable image editor (ArtworkManageEditor)
 // as a fragment for the artist-detail page's in-page Manage-artwork modal,
 // scoped to the requested kind (promoted from the next/ channel in #1757
@@ -63,7 +46,7 @@ func (r *Router) handleArtworkModal(w http.ResponseWriter, req *http.Request) {
 
 	// Validate the kind param: only the four modal kinds are legal. An unknown
 	// kind defaults to "primary" rather than silently mapping to "thumb" through
-	// artworkKindToType's default branch (defensive against future kind-set growth).
+	// templates.ArtworkKindType's default branch (defensive against future kind-set growth).
 	kind := req.URL.Query().Get("kind")
 	switch kind {
 	case "primary", "logo", "banner", "backdrops":
@@ -71,7 +54,7 @@ func (r *Router) handleArtworkModal(w http.ResponseWriter, req *http.Request) {
 	default:
 		kind = "primary"
 	}
-	selectedType := artworkKindToType(kind)
+	selectedType := templates.ArtworkKindType(kind)
 
 	// #2323/#2281 item 4: only meaningful for kind=backdrops. Validate against
 	// the artist's actual fanart count so an out-of-range or garbage slot
