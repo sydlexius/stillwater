@@ -26,6 +26,13 @@ var templateDBPath string
 // then runs all tests. Each test copies the template via newTestDB so the
 // migration cost is paid once per `go test` invocation.
 func TestMain(m *testing.M) {
+	// Register test-only SQL functions before the first database.Open and
+	// before m.Run(). Registration mutates a driver-global map that Open reads
+	// unlocked, so it must never overlap a test opening a database.
+	if err := registerFlagClearHook(); err != nil {
+		panic("registering sql function: " + err.Error())
+	}
+
 	dir, err := os.MkdirTemp("", "api-test-template-*")
 	if err != nil {
 		panic("creating temp dir: " + err.Error())
