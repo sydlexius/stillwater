@@ -694,7 +694,8 @@ jobs:
           # so this setting takes precedence. The correct apt config key is
           # Acquire::Retries (not APT::Acquire::Retries).
           echo 'Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/zzz-ci-retries >/dev/null
-          apt-config dump | grep -i retries
+          # Assert the effective value is exactly 3 by grepping the exact line.
+          apt-config dump | grep -Fx 'Acquire::Retries "3";'
 
           # Disable the runner image's Google Chrome apt source (#3219). We do
           # not consume it: `install-deps` pulls only Ubuntu archive packages
