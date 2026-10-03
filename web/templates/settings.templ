@@ -745,13 +745,51 @@ func providerIsAvailable(name provider.ProviderName, keys []provider.ProviderKey
 	return false
 }
 
-// availableProviders filters a priority list to only providers that are configured
-// and not structurally excluded for the given field (e.g. MusicBrainz never
-// provides biography text, so it is excluded from the biography priority list).
+// priorityImageFields maps the image-typed priority fields to the image type a
+// provider must declare in SupportedImages to be offered for that field. It
+// mirrors the mapping in TestDefaultPrioritiesHaveNoDeadSlots.
+var priorityImageFields = map[string]provider.ImageType{
+	"thumb":  provider.ImageThumb,
+	"fanart": provider.ImageFanart,
+	"logo":   provider.ImageLogo,
+	"banner": provider.ImageBanner,
+}
+
+// providerCanSupplyField reports whether the provider's declared capabilities
+// (provider.ProviderCapabilities) cover the priority field. Web search providers
+// are not metadata adapters and declare no images, so they bypass the check.
+func providerCanSupplyField(field string, name provider.ProviderName) bool {
+	if isWebSearchProvider(name) {
+		return true
+	}
+	// years_active is synthesized from Born/Died by SynthesizeYearsActive on the
+	// per-field comparison path, so AudioDB is a live answer despite not
+	// declaring the field literally (see TestDefaultPrioritiesHaveNoDeadSlots).
+	if field == "years_active" && name == provider.NameAudioDB {
+		return true
+	}
+	capability, ok := provider.ProviderCapabilities()[name]
+	if !ok {
+		return false
+	}
+	if imgType, isImage := priorityImageFields[field]; isImage {
+		return slices.Contains(capability.SupportedImages, imgType)
+	}
+	return slices.Contains(capability.SupportedFields, field)
+}
+
+// availableProviders filters a priority list to only providers that are
+// configured, not structurally excluded for the field, and declared capable of
+// supplying it (issue #3190). A provider saved in the stored priority list but
+// no longer capable is hidden here, not deleted: priorityChipRowInner keeps a hidden
+// marker for it so a drag-reorder save preserves it.
 func availableProviders(pri provider.FieldPriority, keys []provider.ProviderKeyStatus) []provider.ProviderName {
 	var result []provider.ProviderName
 	for _, p := range pri.Providers {
 		if provider.IsExcludedForField(pri.Field, p) {
+			continue
+		}
+		if !providerCanSupplyField(pri.Field, p) {
 			continue
 		}
 		if providerIsAvailable(p, keys) {
@@ -1695,6 +1733,13 @@ templ priorityChipRowInner(pri provider.FieldPriority, available []provider.Prov
 				}
 			}
 		</div>
+		// Stored providers rendered as no chip (capability-filtered or no key) keep a
+		// hidden marker so a drag-reorder PUT (sortable-init.js) preserves them (#3190).
+		for _, prov := range pri.Providers {
+			if !slices.Contains(available, prov) {
+				<span hidden data-hidden-provider={ string(prov) }></span>
+			}
+		}
 		for _, prov := range available {
 			if providerIsDisabled(prov, pri.Disabled) {
 				<div

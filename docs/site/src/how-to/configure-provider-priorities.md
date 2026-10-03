@@ -18,6 +18,8 @@ For the *behavior* (first-match wins for text, every-source contributes for tags
 4. The current priority list shows as drag-reorderable chips. Drag chips up or down to change the order.
 5. Changes save automatically as you drop.
 
+Each field's list shows only providers that can supply that field (for example, Discogs does not appear under moods). See the [providers reference](../reference/providers.md) for the capability matrix. A provider that cannot supply a field is hidden, not deleted, so your saved settings are unchanged.
+
 The order is **most-trusted at the top**. For first-match-wins fields, only the topmost responsive provider matters. For aggregated fields, every provider's contribution shows up but the priority order decides which contribution is listed first.
 
 <!-- SCREENSHOT: Settings > Providers > Priorities | state: priority chips for the biography field with Last.fm at top, Wikipedia second, AudioDB third | annotation: drag handles + per-field selector -->
