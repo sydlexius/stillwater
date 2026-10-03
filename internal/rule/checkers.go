@@ -843,7 +843,7 @@ func (e *Engine) makeExtraneousImagesChecker() Checker {
 			if !imageExtensions[ext] {
 				continue
 			}
-			if !expected[strings.ToLower(name)] {
+			if !expected[strings.ToLower(name)] && !isQuarantinedOrphan(name) {
 				extraneous = append(extraneous, name)
 			}
 		}
@@ -882,7 +882,7 @@ func (e *Engine) checkExtraneousAgainst(a *artist.Artist, expected map[string]bo
 		if !imageExtensions[ext] {
 			continue
 		}
-		if !expected[strings.ToLower(name)] {
+		if !expected[strings.ToLower(name)] && !isQuarantinedOrphan(name) {
 			extraneous = append(extraneous, name)
 		}
 	}
