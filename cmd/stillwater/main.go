@@ -61,6 +61,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/scraper"
 	"github.com/sydlexius/stillwater/internal/server"
 	"github.com/sydlexius/stillwater/internal/settingsio"
+	"github.com/sydlexius/stillwater/internal/settingsvalidate"
 	"github.com/sydlexius/stillwater/internal/updater"
 	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/internal/watcher"
@@ -752,6 +753,13 @@ func resolveRuleSchedule(a *Application, db *sql.DB, logger *slog.Logger) {
 			_, _ = db.ExecContext(ctx, `DELETE FROM settings WHERE key = ?`, "rule_schedule.interval_hours")
 			logger.Info("migrated rule schedule from hours to minutes", "minutes", a.ruleScheduleMinutes)
 		}
+	}
+	// Bound-check the persisted rule_schedule.interval_minutes before using it.
+	// Legacy rows are read without validation, so out-of-range values that would
+	// overflow time.Duration*time.Minute are ignored and the scheduler stays off.
+	if a.ruleScheduleMinutes > 0 && a.ruleScheduleMinutes > settingsvalidate.MaxRuleScheduleMinutes {
+		logger.Warn("ignoring persisted rule_schedule.interval_minutes: value out of range", "stored_value", a.ruleScheduleMinutes, "max", settingsvalidate.MaxRuleScheduleMinutes)
+		a.ruleScheduleMinutes = 0
 	}
 	if a.ruleScheduleMinutes >= 5 {
 		a.ruleScheduler = rule.NewScheduler(a.pipeline, a.ruleService, a.artistService, logger)
@@ -1806,9 +1814,16 @@ func applyPersistedOpsSettings(ctx context.Context, a *Application, logger *slog
 
 	// backup.interval_hours -- write back into cfg before the scheduler starts.
 	// Same presence-gated, warn-on-corrupt handling as the worker count above.
+	// Values above MaxIntervalHours would overflow time.Duration(hours)*time.Hour
+	// and panic the process, so they are ignored and the default is kept.
 	if !envSet("SW_BACKUP_INTERVAL") {
 		applyPersistedPositiveInt(ctx, db, logger, "backup.interval_hours",
 			func(n int) {
+				if n > settingsvalidate.MaxIntervalHours {
+					logger.Warn("ignoring persisted backup.interval_hours: value out of range",
+						"stored_value", n, "max", settingsvalidate.MaxIntervalHours)
+					return
+				}
 				cfg.Backup.IntervalHours = n
 				logger.Info("applied persisted backup.interval_hours override", "hours", n)
 			})
@@ -2578,12 +2593,10 @@ func resolveRelinkReconcileInterval(minutes int) (time.Duration, bool) {
 // Split out of startListeners purely so this mapping is unit-testable, same
 // rationale as resolveRelinkReconcileInterval.
 func resolveMBIDRevalidateSchedule(hours, maxPerPass int) (time.Duration, int) {
-	// A year of hours is far past any sane re-check cadence for a background
-	// sweep whose own default is one day; treating anything past that as
-	// nonsense costs nothing and keeps the fallback identical to the
-	// negative and unset cases.
-	const maxMBIDRevalidateHours = 24 * 365
-	if hours <= 0 || hours > maxMBIDRevalidateHours {
+	// MaxIntervalHours is one year. A value past that would be nonsensical for a
+	// background sweep whose own default is one day, and keeps the fallback
+	// identical to the negative and unset cases.
+	if hours <= 0 || hours > settingsvalidate.MaxIntervalHours {
 		return mbidcheck.DefaultInterval, maxPerPass
 	}
 	return time.Duration(hours) * time.Hour, maxPerPass

@@ -171,7 +171,7 @@ type ScannerConfig struct {
 type BackupConfig struct {
 	Path           string `yaml:"path" toml:"path" env:"SW_BACKUP_PATH" default:"" desc:"Override the directory where automated database backups are written. When empty Stillwater writes to a backups/ subfolder of the config directory."`
 	RetentionCount int    `yaml:"retention_count" toml:"retention_count" env:"SW_BACKUP_RETENTION" default:"7" desc:"Number of recent backups to keep. Must be a positive integer; non-positive or non-numeric values are silently ignored."`
-	IntervalHours  int    `yaml:"interval_hours" toml:"interval_hours" env:"SW_BACKUP_INTERVAL" default:"24" desc:"Hours between automated backups. Must be a positive integer; non-positive or non-numeric values are silently ignored. When set from the environment, this value takes precedence over the saved setting, so the Settings control is shown read-only."`
+	IntervalHours  int    `yaml:"interval_hours" toml:"interval_hours" env:"SW_BACKUP_INTERVAL" default:"24" desc:"Hours between automated backups (1-8760; 8760 hours = one year). Non-positive or non-numeric values are silently ignored. When set from the environment, this value takes precedence over the saved setting, so the Settings control is shown read-only."`
 	Enabled        bool   `yaml:"enabled" toml:"enabled" env:"SW_BACKUP_ENABLED" default:"true" desc:"Set to true or 1 to enable automated backups. Any other value disables them."`
 }
 

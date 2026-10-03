@@ -9013,9 +9013,9 @@ paths:
         notif_badge_severity_warning (true/false),
         notif_badge_severity_info (true/false),
         rule_schedule.interval_minutes (integer as string; 0 to disable, or >= 5),
-        backup_retention_count (positive integer as string),
-        backup_max_age_days (integer as string),
-        cache.image.max_size_mb (integer as string),
+        backup_retention_count (1-10000 integer as string),
+        backup_max_age_days (0-36500 integer as string; 0 means no age limit),
+        cache.image.max_size_mb (0-16777216 integer as string; 0 means unlimited),
         provider.name_similarity_threshold (0-100 integer as string;
         minimum similarity score for provider name matching,
         set to 0 to disable validation, default 60),
@@ -9023,15 +9023,17 @@ paths:
         target number of backdrop/fanart images per artist, default 1),
         mbid_revalidate.enabled (true/false; the MusicBrainz ID re-validation
         sweep, disabled by default and configurable only through this API),
-        mbid_revalidate.interval_hours (positive integer as string;
+        mbid_revalidate.interval_hours (1-8760 integer as string;
         hours between passes, default 24),
-        mbid_revalidate.max_per_pass (positive integer as string;
+        mbid_revalidate.max_per_pass (1-1000000 integer as string;
         artists checked per pass, default 200),
         mbid_revalidate.name_similarity_threshold (0-100 integer as string;
         the sweep's own name threshold, distinct from
         provider.name_similarity_threshold above),
         mbid_revalidate.catalogue_match_percent (0-100 integer as string;
-        minimum release-catalogue overlap before an ID is flagged).
+        minimum release-catalogue overlap before an ID is flagged),
+        backup.interval_hours (1-8760 integer as string; takes effect after a restart).
+        Integer values are stored in canonical form (leading zeros and a leading + removed).
 
 
         A value that fails validation is rejected with 400 and NOTHING in the

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"os"
@@ -11,10 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/config"
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/mbidcheck"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/settingsvalidate"
 )
 
 // --- Helpers ---
@@ -931,6 +935,80 @@ func TestApplyPersistedPositiveInt_DBError(t *testing.T) {
 	})
 	if applied {
 		t.Error("callback ran despite a DB read error")
+	}
+}
+
+// TestApplyPersistedOpsSettings_BackupIntervalUpperBound drives the REAL boot
+// overlay (applyPersistedOpsSettings) and asserts the backup.interval_hours
+// upper-bound guard: a persisted value above MaxIntervalHours would overflow
+// time.Duration(hours)*time.Hour and panic, so cfg must keep its default.
+func TestApplyPersistedOpsSettings_BackupIntervalUpperBound(t *testing.T) {
+	defaultHours := config.Default().Backup.IntervalHours
+	cases := []struct {
+		name  string
+		value string
+		want  int
+	}{
+		{name: "in_range", value: "48", want: 48},
+		{name: "at_max", value: fmt.Sprintf("%d", settingsvalidate.MaxIntervalHours), want: settingsvalidate.MaxIntervalHours},
+		{name: "over_max", value: fmt.Sprintf("%d", settingsvalidate.MaxIntervalHours+1), want: defaultHours},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// envSet treats empty as unset, so clearing via t.Setenv is
+			// equivalent to the variable being absent; assert it.
+			t.Setenv("SW_BACKUP_INTERVAL", "")
+			if envSet("SW_BACKUP_INTERVAL") {
+				t.Fatal("SW_BACKUP_INTERVAL must read as unset for this test")
+			}
+			db := openTestDB(t)
+			if _, err := db.ExecContext(context.Background(),
+				`INSERT INTO settings (key, value, updated_at) VALUES ('backup.interval_hours', ?, '2024-01-01T00:00:00Z')`,
+				tc.value); err != nil {
+				t.Fatalf("inserting row: %v", err)
+			}
+			cfg := config.Default()
+			a := &Application{db: db, cfg: cfg}
+			applyPersistedOpsSettings(context.Background(), a, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			if cfg.Backup.IntervalHours != tc.want {
+				t.Errorf("cfg.Backup.IntervalHours = %d, want %d", cfg.Backup.IntervalHours, tc.want)
+			}
+		})
+	}
+}
+
+// TestResolveRuleSchedule_UpperBound drives the REAL resolveRuleSchedule and
+// asserts an out-of-range persisted rule_schedule.interval_minutes is never
+// applied (scheduler off, minutes reset to 0), while an in-range value starts
+// the scheduler.
+func TestResolveRuleSchedule_UpperBound(t *testing.T) {
+	cases := []struct {
+		name          string
+		value         string
+		wantMinutes   int
+		wantScheduler bool
+	}{
+		{name: "in_range", value: "60", wantMinutes: 60, wantScheduler: true},
+		{name: "at_max", value: fmt.Sprintf("%d", settingsvalidate.MaxRuleScheduleMinutes), wantMinutes: settingsvalidate.MaxRuleScheduleMinutes, wantScheduler: true},
+		{name: "over_max", value: fmt.Sprintf("%d", settingsvalidate.MaxRuleScheduleMinutes+1), wantMinutes: 0, wantScheduler: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openTestDB(t)
+			if _, err := db.ExecContext(context.Background(),
+				`INSERT INTO settings (key, value, updated_at) VALUES ('rule_schedule.interval_minutes', ?, '2024-01-01T00:00:00Z')`,
+				tc.value); err != nil {
+				t.Fatalf("inserting row: %v", err)
+			}
+			a := &Application{db: db, artistService: artist.NewService(db)}
+			resolveRuleSchedule(a, db, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			if a.ruleScheduleMinutes != tc.wantMinutes {
+				t.Errorf("ruleScheduleMinutes = %d, want %d", a.ruleScheduleMinutes, tc.wantMinutes)
+			}
+			if (a.ruleScheduler != nil) != tc.wantScheduler {
+				t.Errorf("ruleScheduler non-nil = %v, want %v", a.ruleScheduler != nil, tc.wantScheduler)
+			}
+		})
 	}
 }
 
