@@ -344,30 +344,25 @@ func TestHandleRandomBackdrop_GenuineQueryFailureStillErrors(t *testing.T) {
 	}
 }
 
-var (
-	flagHookOnce sync.Once
-	flagHooks    sync.Map // artist id -> func(); set by tests
-)
+// flagHooks maps an artist id to the callback its test installed. It is the
+// only per-test state the registered SQL function reads, and sync.Map keeps
+// that safe across parallel tests.
+var flagHooks sync.Map // artist id -> func(); set by tests
 
 // registerFlagClearHook installs a SQL function the flag-clear UPDATE can call
 // through a trigger. It runs the test's callback (which cancels the request)
 // and then fails the statement, so ClearImageFlag returns an error at a point
-// the test controls. It only reaches connections opened after registration,
-// so call it before building the router.
-func registerFlagClearHook(t *testing.T) {
-	t.Helper()
-	flagHookOnce.Do(func() {
-		err := sqlite.RegisterScalarFunction("sw_test_flag_hook", 1,
-			func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
-				if fn, ok := flagHooks.Load(args[0]); ok {
-					fn.(func())()
-				}
-				return nil, errors.New("injected flag-clear failure")
-			})
-		if err != nil {
-			t.Fatalf("registering sql function: %v", err)
-		}
-	})
+// the test controls. TestMain calls it once, before any test runs: registering
+// writes the driver's process-global function table, which every Open reads
+// without a lock, so doing it from inside a test races with parallel tests.
+func registerFlagClearHook() error {
+	return sqlite.RegisterScalarFunction("sw_test_flag_hook", 1,
+		func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+			if fn, ok := flagHooks.Load(args[0]); ok {
+				fn.(func())()
+			}
+			return nil, errors.New("injected flag-clear failure")
+		})
 }
 
 // failFlagClear makes every exists_flag UPDATE for the artist fail, calling fn
@@ -399,7 +394,6 @@ func onlyBackdropArtist(t *testing.T, r *Router) string {
 // client gone. No Warn may be logged for that.
 func TestHandleRandomBackdrop_CancelDuringFlagClearIsQuiet(t *testing.T) {
 	t.Parallel()
-	registerFlagClearHook(t)
 	r, svc := testRouterWithPlatform(t)
 	seedStaleBackdropPool(t, r, svc, 1)
 
@@ -425,7 +419,6 @@ func TestHandleRandomBackdrop_CancelDuringFlagClearIsQuiet(t *testing.T) {
 // same injected failure with a live request context keeps its Warn.
 func TestHandleRandomBackdrop_GenuineFlagClearFailureStillWarns(t *testing.T) {
 	t.Parallel()
-	registerFlagClearHook(t)
 	r, svc := testRouterWithPlatform(t)
 	seedStaleBackdropPool(t, r, svc, 1)
 
