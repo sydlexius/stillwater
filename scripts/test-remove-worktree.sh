@@ -19,7 +19,8 @@ set -euo pipefail
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
+REAL_WT_PATH=""
+trap 'rm -rf "$WORK"; [ -n "$REAL_WT_PATH" ] && rmdir "$REAL_WT_PATH" 2>/dev/null || true' EXIT
 
 PASSED=0
 FAILED=0
@@ -226,7 +227,7 @@ fi
 # --------------------------------------------------------------------------
 
 # Create a unique real worktree directory as a sibling to REPO_ROOT
-UNIQUE_ID="sw-test-$$RANDOM-$$"
+UNIQUE_ID="sw-test-${RANDOM}-$$"
 REAL_WT_PATH="$REPO_ROOT/../stillwater-$UNIQUE_ID"
 # Refuse to run if it already exists (safety check)
 if [ -d "$REAL_WT_PATH" ]; then
@@ -245,12 +246,12 @@ exit 0
 STUB
 chmod +x "$CASE_D_HOME"/.claude/scripts/cleanup-worktree.sh
 
-# Temp worktrees.md with a row
-cat > "$CASE_D_HOME"/worktrees.md << 'MD'
+# Temp worktrees.md with a row for the actual UNIQUE_ID
+cat > "$CASE_D_HOME"/worktrees.md <<EOF
 | Name | Branch | Issue |
 | --- | --- | --- |
-| stillwater-sw-test-dummy | fix/test | #6666 |
-MD
+| stillwater-$UNIQUE_ID | fix/test | #6666 |
+EOF
 
 CASE_D_MD="$CASE_D_HOME"/worktrees.md
 
@@ -264,18 +265,15 @@ WORKTREES_MD="$CASE_D_MD" \
 REMOVE_WORKTREE_TEST_DIR="$NONEXISTENT_OVERRIDE" \
 make -C "$REPO_ROOT" remove-worktree NAME="$UNIQUE_ID" >/dev/null 2>&1 || rc=$?
 
-# Clean up the real worktree directory we created
-rm -rf "$REAL_WT_PATH"
-
 # Exit code must be non-zero (real path still exists)
 if [ "$rc" -ne 0 ]; then
-    ok "case D: make exits non-zero when real path exists despite override override being stale"
+    ok "case D: make exits non-zero when real path exists despite override being stale"
 else
     bad "case D: make exits non-zero when real path exists despite override being stale" "exit was $rc"
 fi
 
 # Tracker row must still exist (real dir exists, so row is kept)
-if grep -q '^| stillwater-sw-test-dummy ' "$CASE_D_MD"; then
+if grep -q "^| stillwater-$UNIQUE_ID " "$CASE_D_MD"; then
     ok "case D: tracker row is preserved when real path exists despite override being stale"
 else
     bad "case D: tracker row is preserved when real path exists despite override being stale" "row was removed"
