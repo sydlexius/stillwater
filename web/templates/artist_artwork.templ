@@ -61,19 +61,6 @@ templ ArtworkSection(data *ArtistDetailData, collapsed bool) {
 	</section>
 }
 
-// artworkKindType maps a UI kind (the plain-language switcher label) to the API
-// image-type path segment used by /api/v1/artists/{id}/images/{type}/...
-func artworkKindType(kind string) string {
-	switch kind {
-	case "primary":
-		return "thumb"
-	case "backdrops":
-		return "fanart"
-	default:
-		return kind // logo, banner
-	}
-}
-
 // artworkKindLabelKey returns the i18n key for a kind's display label.
 func artworkKindLabelKey(kind string) string {
 	return "artist.artwork.kind_" + kind
@@ -103,7 +90,7 @@ func artworkTileAspectClass(kind string) string {
 // per-image findings are a follow-up -- only the low-res flag is on the model
 // today).
 templ artworkIdentityTile(artistID string, kind string, exists bool, w int, h int, lowRes bool) {
-	{{ typeSeg := artworkKindType(kind) }}
+	{{ typeSeg := ArtworkKindType(kind) }}
 	{{ fileURL := fmt.Sprintf("/api/v1/artists/%s/images/%s/file", artistID, typeSeg) }}
 	{{ kindLabelID := "artwork-kind-" + artistID + "-" + kind }}
 	{{ addLabelID := "artwork-add-" + artistID + "-" + kind }}

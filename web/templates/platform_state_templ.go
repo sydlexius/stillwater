@@ -18,6 +18,17 @@ import (
 	img "github.com/sydlexius/stillwater/internal/image"
 )
 
+// PlatformStateRowData is the options struct for platformStateRow (#2214): one
+// comparison row (Stillwater value vs. platform value) plus its status flags.
+type PlatformStateRowData struct {
+	Field         string
+	SWValue       string
+	PlatformValue string
+	Match         bool // values agree (renders the green check)
+	BothEmpty     bool // neither side has a value (renders "--" instead of a status)
+	Mono          bool // render values in a monospace <code> (IDs)
+}
+
 // Platform-state comparison partials, shared by the artist-detail Providers
 // section (via PlatformStateCardBody in shared_artist_detail.templ) and the
 // Debug section's read-only cards. Extracted from artist_detail.templ with the
@@ -94,7 +105,7 @@ func PlatformStateError(conn *connection.Connection, errMsg string) templ.Compon
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(conn.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 33, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 44, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -107,7 +118,7 @@ func PlatformStateError(conn *connection.Connection, errMsg string) templ.Compon
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artist.platform_state_error", errMsg))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 34, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 45, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -201,7 +212,7 @@ func platformStateHeaderBadges(conn *connection.Connection, state *connection.Ar
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrc(conn.Type))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 59, Col: 27}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 70, Col: 27}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 		if templ_7745c5c3_Err != nil {
@@ -219,7 +230,7 @@ func platformStateHeaderBadges(conn *connection.Connection, state *connection.Ar
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(logoSrcSet(conn.Type))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 61, Col: 34}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 72, Col: 34}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 			if templ_7745c5c3_Err != nil {
@@ -237,7 +248,7 @@ func platformStateHeaderBadges(conn *connection.Connection, state *connection.Ar
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(sourceDisplayName(conn.Type))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 63, Col: 37}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 74, Col: 37}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 		if templ_7745c5c3_Err != nil {
@@ -250,7 +261,7 @@ func platformStateHeaderBadges(conn *connection.Connection, state *connection.Ar
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(conn.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 66, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 77, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -268,7 +279,7 @@ func platformStateHeaderBadges(conn *connection.Connection, state *connection.Ar
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.locked"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 68, Col: 169}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 79, Col: 169}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -320,7 +331,7 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 		var templ_7745c5c3_Var13 string
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.field"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 83, Col: 143}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 94, Col: 143}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
@@ -333,7 +344,7 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(platformLabel)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 85, Col: 97}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 96, Col: 97}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
@@ -346,7 +357,7 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.status"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 86, Col: 114}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 97, Col: 114}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -356,58 +367,65 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = platformStateRow(t(ctx, "artist.biography"),
-			truncate(a.Biography, 80),
-			truncate(state.Biography, 80),
-			fieldMatch(a.Biography, state.Biography),
-			a.Biography == "" && state.Biography == "",
-			false).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = platformStateRow(PlatformStateRowData{
+			Field:         t(ctx, "artist.biography"),
+			SWValue:       truncate(a.Biography, 80),
+			PlatformValue: truncate(state.Biography, 80),
+			Match:         fieldMatch(a.Biography, state.Biography),
+			BothEmpty:     a.Biography == "" && state.Biography == "",
+		}).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = platformStateRow(t(ctx, "artist.genres"),
-			strings.Join(a.Genres, ", "),
-			strings.Join(state.Genres, ", "),
-			sliceMatch(a.Genres, state.Genres),
-			len(a.Genres) == 0 && len(state.Genres) == 0,
-			false).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = platformStateRow(PlatformStateRowData{
+			Field:         t(ctx, "artist.genres"),
+			SWValue:       strings.Join(a.Genres, ", "),
+			PlatformValue: strings.Join(state.Genres, ", "),
+			Match:         sliceMatch(a.Genres, state.Genres),
+			BothEmpty:     len(a.Genres) == 0 && len(state.Genres) == 0,
+		}).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = platformStateRow(t(ctx, "artist.formed_premiere_date"),
-			firstNonEmpty(a.Formed, a.Born),
-			state.PremiereDate,
-			fieldMatch(firstNonEmpty(a.Formed, a.Born), state.PremiereDate),
-			firstNonEmpty(a.Formed, a.Born) == "" && state.PremiereDate == "",
-			false).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = platformStateRow(PlatformStateRowData{
+			Field:         t(ctx, "artist.formed_premiere_date"),
+			SWValue:       firstNonEmpty(a.Formed, a.Born),
+			PlatformValue: state.PremiereDate,
+			Match:         fieldMatch(firstNonEmpty(a.Formed, a.Born), state.PremiereDate),
+			BothEmpty:     firstNonEmpty(a.Formed, a.Born) == "" && state.PremiereDate == "",
+		}).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = platformStateRow(t(ctx, "artist.disbanded_end_date"),
-			firstNonEmpty(a.Disbanded, a.Died),
-			state.EndDate,
-			fieldMatch(firstNonEmpty(a.Disbanded, a.Died), state.EndDate),
-			firstNonEmpty(a.Disbanded, a.Died) == "" && state.EndDate == "",
-			false).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = platformStateRow(PlatformStateRowData{
+			Field:         t(ctx, "artist.disbanded_end_date"),
+			SWValue:       firstNonEmpty(a.Disbanded, a.Died),
+			PlatformValue: state.EndDate,
+			Match:         fieldMatch(firstNonEmpty(a.Disbanded, a.Died), state.EndDate),
+			BothEmpty:     firstNonEmpty(a.Disbanded, a.Died) == "" && state.EndDate == "",
+		}).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = platformStateRow(t(ctx, "artist.musicbrainz_id_label"),
-			a.MusicBrainzID,
-			state.MusicBrainzID,
-			fieldMatch(a.MusicBrainzID, state.MusicBrainzID),
-			a.MusicBrainzID == "" && state.MusicBrainzID == "",
-			true).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = platformStateRow(PlatformStateRowData{
+			Field:         t(ctx, "artist.musicbrainz_id_label"),
+			SWValue:       a.MusicBrainzID,
+			PlatformValue: state.MusicBrainzID,
+			Match:         fieldMatch(a.MusicBrainzID, state.MusicBrainzID),
+			BothEmpty:     a.MusicBrainzID == "" && state.MusicBrainzID == "",
+			Mono:          true,
+		}).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if readonly {
-			templ_7745c5c3_Err = platformStateRow(t(ctx, "artist.platform_state.sort_name"),
-				a.SortName,
-				state.SortName,
-				fieldMatch(a.SortName, state.SortName),
-				a.SortName == "" && state.SortName == "",
-				false).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = platformStateRow(PlatformStateRowData{
+				Field:         t(ctx, "artist.platform_state.sort_name"),
+				SWValue:       a.SortName,
+				PlatformValue: state.SortName,
+				Match:         fieldMatch(a.SortName, state.SortName),
+				BothEmpty:     a.SortName == "" && state.SortName == "",
+			}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -415,12 +433,13 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = platformStateRow(t(ctx, "artist.platform_state.tags"),
-				"--",
-				strings.Join(state.Tags, ", "),
-				false,
-				true,
-				false).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = platformStateRow(PlatformStateRowData{
+				Field:         t(ctx, "artist.platform_state.tags"),
+				SWValue:       "--",
+				PlatformValue: strings.Join(state.Tags, ", "),
+				Match:         false,
+				BothEmpty:     true,
+			}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -428,12 +447,13 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = platformStateRow(t(ctx, "artist.platform_state.backdrop_count"),
-				"--",
-				strconv.Itoa(state.BackdropCount),
-				false,
-				true,
-				false).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = platformStateRow(PlatformStateRowData{
+				Field:         t(ctx, "artist.platform_state.backdrop_count"),
+				SWValue:       "--",
+				PlatformValue: strconv.Itoa(state.BackdropCount),
+				Match:         false,
+				BothEmpty:     true,
+			}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -441,12 +461,13 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = platformStateRow(t(ctx, "artist.platform_state.locked"),
-				"--",
-				t(ctx, boolDisplay(state.IsLocked)),
-				false,
-				true,
-				false).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = platformStateRow(PlatformStateRowData{
+				Field:         t(ctx, "artist.platform_state.locked"),
+				SWValue:       "--",
+				PlatformValue: t(ctx, boolDisplay(state.IsLocked)),
+				Match:         false,
+				BothEmpty:     true,
+			}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -454,12 +475,13 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = platformStateRow(t(ctx, "artist.platform_state.locked_fields"),
-				"--",
-				strings.Join(state.LockedFields, ", "),
-				false,
-				true,
-				false).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = platformStateRow(PlatformStateRowData{
+				Field:         t(ctx, "artist.platform_state.locked_fields"),
+				SWValue:       "--",
+				PlatformValue: strings.Join(state.LockedFields, ", "),
+				Match:         false,
+				BothEmpty:     true,
+			}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -471,7 +493,7 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.tab_images"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 153, Col: 143}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 175, Col: 143}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -525,7 +547,7 @@ func platformStateTable(a *artist.Artist, conn *connection.Connection, state *co
 	})
 }
 
-func platformStateRow(field, swValue, platValue string, match, bothEmpty, mono bool) templ.Component {
+func platformStateRow(row PlatformStateRowData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -551,9 +573,9 @@ func platformStateRow(field, swValue, platValue string, match, bothEmpty, mono b
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var18 string
-		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(field)
+		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(row.Field)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 177, Col: 118}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 199, Col: 122}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {
@@ -563,16 +585,16 @@ func platformStateRow(field, swValue, platValue string, match, bothEmpty, mono b
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if swValue != "" {
-			if mono {
+		if row.SWValue != "" {
+			if row.Mono {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<code class=\"font-mono break-all\" style=\"color:var(--swd-ink-3)\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var19 string
-				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(swValue)
+				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(row.SWValue)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 181, Col: 79}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 203, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 				if templ_7745c5c3_Err != nil {
@@ -584,9 +606,9 @@ func platformStateRow(field, swValue, platValue string, match, bothEmpty, mono b
 				}
 			} else {
 				var templ_7745c5c3_Var20 string
-				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(swValue)
+				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(row.SWValue)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 183, Col: 14}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 205, Col: 18}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
@@ -601,7 +623,7 @@ func platformStateRow(field, swValue, platValue string, match, bothEmpty, mono b
 			var templ_7745c5c3_Var21 string
 			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.empty"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 186, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 208, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 			if templ_7745c5c3_Err != nil {
@@ -616,16 +638,16 @@ func platformStateRow(field, swValue, platValue string, match, bothEmpty, mono b
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if platValue != "" {
-			if mono {
+		if row.PlatformValue != "" {
+			if row.Mono {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<code class=\"font-mono break-all\" style=\"color:var(--swd-ink-3)\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var22 string
-				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(platValue)
+				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(row.PlatformValue)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 192, Col: 81}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 214, Col: 89}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 				if templ_7745c5c3_Err != nil {
@@ -637,9 +659,9 @@ func platformStateRow(field, swValue, platValue string, match, bothEmpty, mono b
 				}
 			} else {
 				var templ_7745c5c3_Var23 string
-				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(platValue)
+				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(row.PlatformValue)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 194, Col: 16}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 216, Col: 24}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 				if templ_7745c5c3_Err != nil {
@@ -654,7 +676,7 @@ func platformStateRow(field, swValue, platValue string, match, bothEmpty, mono b
 			var templ_7745c5c3_Var24 string
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.empty"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 197, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 219, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {
@@ -669,12 +691,12 @@ func platformStateRow(field, swValue, platValue string, match, bothEmpty, mono b
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if bothEmpty {
+		if row.BothEmpty {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<span class=\"text-gray-300 dark:text-gray-600\">--</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		} else if match {
+		} else if row.Match {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "<span class=\"text-green-500\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -682,7 +704,7 @@ func platformStateRow(field, swValue, platValue string, match, bothEmpty, mono b
 			var templ_7745c5c3_Var25 string
 			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.match"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 204, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 226, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 			if templ_7745c5c3_Err != nil {
@@ -695,7 +717,7 @@ func platformStateRow(field, swValue, platValue string, match, bothEmpty, mono b
 			var templ_7745c5c3_Var26 string
 			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.match"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 204, Col: 101}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 226, Col: 101}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 			if templ_7745c5c3_Err != nil {
@@ -713,7 +735,7 @@ func platformStateRow(field, swValue, platValue string, match, bothEmpty, mono b
 			var templ_7745c5c3_Var27 string
 			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.mismatch"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 210, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 232, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
 			if templ_7745c5c3_Err != nil {
@@ -726,7 +748,7 @@ func platformStateRow(field, swValue, platValue string, match, bothEmpty, mono b
 			var templ_7745c5c3_Var28 string
 			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.mismatch"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 210, Col: 107}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 232, Col: 107}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var28)
 			if templ_7745c5c3_Err != nil {
@@ -794,7 +816,7 @@ func platformImageBadge(label string, present bool) templ.Component {
 		var templ_7745c5c3_Var32 string
 		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 227, Col: 9}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/platform_state.templ`, Line: 249, Col: 9}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 		if templ_7745c5c3_Err != nil {
