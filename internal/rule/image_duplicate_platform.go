@@ -106,6 +106,17 @@ func (f *ImageDuplicateFixer) runPlatformPhase(ctx context.Context, a *artist.Ar
 		}
 	}
 	f.logPlatformDeletes(a, tol, res)
+	// Raw platform/connection/DB error text stays in the server log; the
+	// message below is returned to API clients.
+	for _, fl := range res.Failures {
+		f.logger.Warn("duplicate-images platform prune connection failed",
+			slog.String("artist_id", a.ID), slog.String("connection_id", fl.ConnectionID),
+			slog.String("error", fl.Err))
+	}
+	if err != nil {
+		f.logger.Warn("duplicate-images platform prune failed",
+			slog.String("artist_id", a.ID), slog.String("error", err.Error()))
+	}
 	note(summarizePlatformPrune(res, err))
 }
 
@@ -169,10 +180,10 @@ func summarizePlatformPrune(res publish.PlatformBackdropPruneResult, err error) 
 		parts = append(parts, "near-duplicate pass skipped: "+s.Reason)
 	}
 	for _, fl := range res.Failures {
-		parts = append(parts, fmt.Sprintf("connection %s failed: %s", fl.ConnectionID, fl.Err))
+		parts = append(parts, fmt.Sprintf("connection %s failed (see server log)", fl.ConnectionID))
 	}
 	if err != nil {
-		parts = append(parts, "error: "+err.Error())
+		parts = append(parts, "platform prune error (see server log)")
 	}
 	return strings.Join(parts, "; ")
 }

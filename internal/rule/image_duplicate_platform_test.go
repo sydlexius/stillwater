@@ -257,7 +257,9 @@ func TestDupPlatform_LocalCleanPlatformOutcome(t *testing.T) {
 }
 
 func TestDupPlatform_ErrorFoldedIntoMessage(t *testing.T) {
-	f, a := dupFixture(t, "art-err")
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	f, a, _ := dupFixtureDB(t, "art-err", logger)
 	p := newFakePlatform(map[string][]string{"c1": {"A1", "A2", "A3"}})
 	p.failAfter = 1
 	p.err = errors.New("emby went away")
@@ -273,8 +275,14 @@ func TestDupPlatform_ErrorFoldedIntoMessage(t *testing.T) {
 	if !strings.Contains(res.Message, "removed 1 duplicate fanart file(s)") {
 		t.Errorf("local part of message lost: %q", res.Message)
 	}
-	if !strings.Contains(res.Message, "error: emby went away") {
-		t.Errorf("message does not carry the platform error: %q", res.Message)
+	if strings.Contains(res.Message, "emby went away") {
+		t.Errorf("raw platform error leaked into the client-visible message: %q", res.Message)
+	}
+	if !strings.Contains(res.Message, "(see server log)") {
+		t.Errorf("message does not point at the server log: %q", res.Message)
+	}
+	if !strings.Contains(buf.String(), "emby went away") || !strings.Contains(buf.String(), "art-err") {
+		t.Errorf("full error not logged server-side: %s", buf.String())
 	}
 	if !strings.Contains(res.Message, "connection c1 removed 1 backdrop(s)") || !res.Irreversible {
 		t.Errorf("partial platform delete not recorded: %q irreversible=%v", res.Message, res.Irreversible)
