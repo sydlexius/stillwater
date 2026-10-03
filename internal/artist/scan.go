@@ -599,14 +599,19 @@ func buildWhereClause(params ListParams) (string, []any) {
 		}
 	}
 
-	// Aggregate type filters. Multiple INCLUDE facets are OR'd (an artist may be
+	// Aggregate type filters. The column is compared as LOWER(TRIM(type)) so a
+	// stored "Group" or " group " matches like the canonical value, agreeing with
+	// artist.NormalizeType (#3333). Caveat: SQL TRIM strips spaces only, while Go
+	// strings.TrimSpace strips all Unicode whitespace (tabs, newlines), so a type
+	// padded with those still differs between SQL and Go; not closed here. The
+	// expression cannot use an index on type (none exists today). Multiple INCLUDE facets are OR'd (an artist may be
 	// any of the chosen types); the "Other" facet contributes the complement
 	// (type NOT IN namedTypeValues, plus NULL for untyped artists). EXCLUDE facets
 	// are AND'd as separate NOT conditions; excluding "Other" keeps only the named
 	// types.
 	var typeIncludeClauses []string
 	if len(typeIncludes) > 0 {
-		typeIncludeClauses = append(typeIncludeClauses, "type IN ("+buildPlaceholders(len(typeIncludes))+")")
+		typeIncludeClauses = append(typeIncludeClauses, "LOWER(TRIM(type)) IN ("+buildPlaceholders(len(typeIncludes))+")")
 		for _, t := range typeIncludes {
 			args = append(args, t)
 		}
@@ -614,7 +619,7 @@ func buildWhereClause(params ListParams) (string, []any) {
 	if otherInclude {
 		// SQLite evaluates `NULL NOT IN (...)` as NULL (not true), so untyped
 		// artists stored as NULL need an explicit OR; '' is caught by NOT IN.
-		typeIncludeClauses = append(typeIncludeClauses, "(type NOT IN ("+buildPlaceholders(len(namedTypeValues))+") OR type IS NULL)")
+		typeIncludeClauses = append(typeIncludeClauses, "(LOWER(TRIM(type)) NOT IN ("+buildPlaceholders(len(namedTypeValues))+") OR type IS NULL)")
 		for _, t := range namedTypeValues {
 			args = append(args, t)
 		}
@@ -625,7 +630,7 @@ func buildWhereClause(params ListParams) (string, []any) {
 		conditions = append(conditions, "("+strings.Join(typeIncludeClauses, " OR ")+")")
 	}
 	if len(typeExcludes) > 0 {
-		conditions = append(conditions, "type NOT IN ("+buildPlaceholders(len(typeExcludes))+")")
+		conditions = append(conditions, "LOWER(TRIM(type)) NOT IN ("+buildPlaceholders(len(typeExcludes))+")")
 		for _, t := range typeExcludes {
 			args = append(args, t)
 		}
@@ -633,7 +638,7 @@ func buildWhereClause(params ListParams) (string, []any) {
 	if otherExclude {
 		// Excluding "Other" == keep only the named types. NULL / '' rows fail
 		// `type IN (named)` and are correctly dropped.
-		conditions = append(conditions, "type IN ("+buildPlaceholders(len(namedTypeValues))+")")
+		conditions = append(conditions, "LOWER(TRIM(type)) IN ("+buildPlaceholders(len(namedTypeValues))+")")
 		for _, t := range namedTypeValues {
 			args = append(args, t)
 		}

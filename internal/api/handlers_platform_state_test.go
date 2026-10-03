@@ -413,3 +413,68 @@ func TestNewStateGetter_AllowListMatchesSupportsPlatformState(t *testing.T) {
 		})
 	}
 }
+
+// TestHandlePullMetadata_DateFieldsFollowNormalizedType pins that the pulled
+// platform dates land in born/died for a "person" regardless of the stored
+// type's case or padding (#3333), and in formed/disbanded for any other type.
+func TestHandlePullMetadata_DateFieldsFollowNormalizedType(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, typ  string
+		wantPerson bool
+	}{
+		{"canonical person", "person", true},
+		{"mixed case padded person", " Person ", true},
+		{"group", "group", false},
+		// Pinned, not endorsed: pull treats only "person" as born/died, while push
+		// treats "solo" as born/died. This is the existing vocabulary mismatch.
+		{"solo", "solo", false},
+		{"unknown type", "banana", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r, artistSvc, _ := testRouterWithHistory(t)
+			ctx := context.Background()
+			a := &artist.Artist{Name: "Pull Type " + tc.name, SortName: "x", Type: tc.typ, Path: "/music/pt-" + tc.name}
+			if err := artistSvc.Create(ctx, a); err != nil {
+				t.Fatalf("creating artist: %v", err)
+			}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"Name":"x","Genres":[],"Tags":[],"ProviderIds":{},"ImageTags":{},"BackdropImageTags":[],"LockedFields":[],"PremiereDate":"1990-01-01T00:00:00.0000000Z","EndDate":"2000-06-01T00:00:00.0000000Z"}`)
+			}))
+			t.Cleanup(srv.Close)
+			conn := &connection.Connection{Name: "Emby", Type: connection.TypeEmby, URL: srv.URL, APIKey: "k",
+				Emby: &connection.EmbyConfig{PlatformUserID: "u"}, Enabled: true}
+			if err := r.connectionService.Create(ctx, conn); err != nil {
+				t.Fatalf("creating connection: %v", err)
+			}
+			if err := artistSvc.SetPlatformID(ctx, a.ID, conn.ID, "emby-1"); err != nil {
+				t.Fatalf("setting platform id: %v", err)
+			}
+			// Precondition: the stored type is exactly what the case supplied.
+			if pre, err := artistSvc.GetByID(ctx, a.ID); err != nil || pre.Type != tc.typ {
+				t.Fatalf("precondition: stored type = %q (err %v), want %q", pre.Type, err, tc.typ)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/pull?connection_id="+conn.ID, nil)
+			req.SetPathValue("id", a.ID)
+			w := httptest.NewRecorder()
+			r.handlePullMetadata(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d; body: %s", w.Code, w.Body.String())
+			}
+			got, err := artistSvc.GetByID(ctx, a.ID)
+			if err != nil {
+				t.Fatalf("reloading artist: %v", err)
+			}
+			if tc.wantPerson {
+				if got.Born == "" || got.Died == "" || got.Formed != "" || got.Disbanded != "" {
+					t.Errorf("person: born=%q died=%q formed=%q disbanded=%q, want only born/died set", got.Born, got.Died, got.Formed, got.Disbanded)
+				}
+			} else if got.Formed == "" || got.Disbanded == "" || got.Born != "" || got.Died != "" {
+				t.Errorf("non-person: born=%q died=%q formed=%q disbanded=%q, want only formed/disbanded set", got.Born, got.Died, got.Formed, got.Disbanded)
+			}
+		})
+	}
+}

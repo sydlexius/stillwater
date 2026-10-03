@@ -92,6 +92,11 @@ func TestFromArtist_GenderSuppressedForGroups(t *testing.T) {
 		{"orchestra", "female", ""},
 		{"choir", "male", ""},
 		{"", "male", "male"}, // unknown type preserves gender
+		// Non-canonical stored types must behave like the canonical ones (#3333).
+		{"Solo", "male", "male"},
+		{" person ", "female", "female"},
+		{"Group", "male", ""},
+		{" CHOIR ", "female", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.artistType, func(t *testing.T) {
@@ -182,6 +187,19 @@ func TestToMetadataUpdate_GenderKeptForSolo(t *testing.T) {
 	u := ToMetadataUpdate(n)
 	if u.Gender != "female" {
 		t.Errorf("Gender = %q, want %q for person type", u.Gender, "female")
+	}
+}
+
+// TestToMetadataUpdate_GenderFollowsNormalizedType pins that a hand-written NFO
+// type with odd case or padding gates gender like the canonical one (#3333).
+func TestToMetadataUpdate_GenderFollowsNormalizedType(t *testing.T) {
+	for typ, want := range map[string]string{
+		"Solo": "female", " person ": "female", "Group": "", " Orchestra ": "",
+	} {
+		u := ToMetadataUpdate(&ArtistNFO{Name: "X", Type: typ, Gender: "female"})
+		if u.Gender != want {
+			t.Errorf("type %q: Gender = %q, want %q", typ, u.Gender, want)
+		}
 	}
 }
 

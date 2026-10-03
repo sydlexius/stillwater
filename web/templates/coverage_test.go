@@ -210,3 +210,28 @@ func TestScorePercentAndIDText(t *testing.T) {
 		t.Errorf("idCountTitle empty")
 	}
 }
+
+// TestMetadataFields_NonCanonicalType pins that a non-canonical type (case, padding) counts the same
+// applicable fields as the canonical one, that a whitespace-only type counts as
+// empty (ensemble), and that an unknown type counts neither person nor ensemble
+// fields (#3333).
+func TestMetadataFields_NonCanonicalType(t *testing.T) {
+	t.Parallel()
+	for _, typ := range []string{"person", " Person "} {
+		have, total := metadataFields(artist.Artist{Type: typ, Born: "1970"})
+		if have != 1 || total != 9 {
+			t.Errorf("type %q: have=%d total=%d, want 1 and 9", typ, have, total)
+		}
+	}
+	for _, typ := range []string{"group", " GROUP ", "", "   "} {
+		have, total := metadataFields(artist.Artist{Type: typ, Formed: "1980"})
+		if have != 1 || total != 8 {
+			t.Errorf("type %q: have=%d total=%d, want 1 and 8", typ, have, total)
+		}
+	}
+	// Unknown type: only the 6 universal fields apply, so Born/Formed add nothing.
+	have, total := metadataFields(artist.Artist{Type: "banana", Born: "1970", Formed: "1980"})
+	if have != 0 || total != 6 {
+		t.Errorf("unknown type: have=%d total=%d, want 0 and 6", have, total)
+	}
+}

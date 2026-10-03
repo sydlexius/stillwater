@@ -337,8 +337,9 @@ func coverageItems(ctx context.Context, a artist.Artist, profileName string) []c
 // the MBID, and the image slots (images and provider IDs have their own
 // indicators here, so they are deliberately left out of the metadata tally).
 func metadataFields(a artist.Artist) (have, total int) {
-	isPerson := a.Type == "person" || a.Type == "solo" || a.Type == "character"
-	isEnsemble := a.Type == "group" || a.Type == "orchestra" || a.Type == "choir" || a.Type == ""
+	typ := artist.NormalizeType(a.Type)
+	isPerson := typ == "person" || typ == "solo" || typ == "character"
+	isEnsemble := typ == "group" || typ == "orchestra" || typ == "choir" || typ == ""
 	fields := []struct {
 		applicable bool
 		present    bool

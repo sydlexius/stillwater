@@ -722,3 +722,30 @@ func TestBuildCompletenessReport_GenresEmpty(t *testing.T) {
 		t.Errorf("Genres Total = %d, want 3", genresFC.Total)
 	}
 }
+
+// TestBuildCompletenessReport_NonCanonicalType pins that a stored type with
+// different case or padding is counted like the canonical one (#3333).
+func TestBuildCompletenessReport_NonCanonicalType(t *testing.T) {
+	t.Parallel()
+	rows := []CompletenessRow{
+		{ID: "1", Name: "Band", Type: " Group ", Formed: "1985"},
+		{ID: "2", Name: "Person", Type: "PERSON", Born: "1970"},
+		// Whitespace-only type normalizes to empty, which counts as an ensemble.
+		{ID: "3", Name: "Blank", Type: "   ", Formed: "2001"},
+	}
+	report := buildCompletenessReport(rows, nil)
+	for field, want := range map[string]int{"Formed date": 2, "Born date": 1} {
+		found := false
+		for _, fc := range report.FieldCoverage {
+			if fc.Field == field {
+				found = true
+				if fc.Total != want || fc.Count != want {
+					t.Errorf("%s Total=%d Count=%d, want %d each", field, fc.Total, fc.Count, want)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("%s missing from report", field)
+		}
+	}
+}

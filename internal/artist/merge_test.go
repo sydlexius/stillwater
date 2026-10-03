@@ -1225,3 +1225,19 @@ func TestSnapshotRestore_PreservesNilVsEmptySlices(t *testing.T) {
 		}
 	})
 }
+
+// TestIsIndividualType_NormalizesInput pins that case and padding do not change
+// the answer (#3333), while unknown and empty types stay non-individual.
+func TestIsIndividualType_NormalizesInput(t *testing.T) {
+	t.Parallel()
+	for _, typ := range []string{"Solo", " person ", "CHARACTER"} {
+		if !IsIndividualType(typ) {
+			t.Errorf("IsIndividualType(%q) = false, want true", typ)
+		}
+	}
+	for _, typ := range []string{"Group", " ORCHESTRA ", "Other", " ", ""} {
+		if IsIndividualType(typ) {
+			t.Errorf("IsIndividualType(%q) = true, want false", typ)
+		}
+	}
+}

@@ -48,7 +48,8 @@ func BuildArtistPushData(a *artist.Artist, members []artist.BandMember) connecti
 		SpotifyID:      a.SpotifyID,
 		BandMembers:    buildMemberRefs(members),
 	}
-	switch a.Type {
+	// Normalize so "Group"/" group " take the same branch as "group".
+	switch artist.NormalizeType(a.Type) {
 	case "group", "orchestra", "choir":
 		data.Formed = a.Formed
 		data.Disbanded = a.Disbanded

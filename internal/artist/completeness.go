@@ -195,7 +195,7 @@ func buildCompletenessReport(rows []CompletenessRow, lowest []LowestCompleteness
 	for ri := range rows {
 		row := &rows[ri]
 		for i, fd := range allFieldDefs {
-			if !fd.applicable(row.Type) {
+			if !fd.applicable(NormalizeType(row.Type)) {
 				continue
 			}
 			totals[i]++

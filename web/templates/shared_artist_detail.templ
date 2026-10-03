@@ -3,7 +3,6 @@ package templates
 import (
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -22,7 +21,7 @@ func IsGroupType(artistType string) bool {
 // apply. Mirrors isGroupType for the opposite pole; unknown/empty types match
 // neither so nothing is hidden on a guess.
 func isPersonType(artistType string) bool {
-	switch strings.ToLower(strings.TrimSpace(artistType)) {
+	switch artist.NormalizeType(artistType) {
 	// "character" is an individual-type alongside person/solo (matches
 	// next/helpers.go's person predicate); without it, character artists were
 	// treated as unknown and still saw group-only fields (formed/disbanded/members).
@@ -399,7 +398,7 @@ func isGroupType(artistType string) bool {
 	// same as "group" -- matching isPersonType and ArtistTypeLabel, which both
 	// trim. Without it the hero label (trimmed) and field-gating (untrimmed)
 	// disagree.
-	switch strings.ToLower(strings.TrimSpace(artistType)) {
+	switch artist.NormalizeType(artistType) {
 	case "group", "orchestra", "choir":
 		return true
 	default:

@@ -276,7 +276,7 @@ func TestBuildWhereClause_TypeFilter_Include(t *testing.T) {
 		"type_person": "include",
 		"type_group":  "include",
 	}})
-	if !strings.Contains(clause, "type IN (") {
+	if !strings.Contains(clause, "LOWER(TRIM(type)) IN (") {
 		t.Errorf("expected type IN clause, got %q", clause)
 	}
 	// type_person maps to "person" and "solo"; type_group maps to "group" = 3 values.
@@ -284,7 +284,7 @@ func TestBuildWhereClause_TypeFilter_Include(t *testing.T) {
 		t.Errorf("expected 3 type args (person, solo, group), got %d: %v", len(args), args)
 	}
 	// Must NOT produce two separate conditions, which would be impossible AND.
-	if strings.Count(clause, "type IN (") > 1 {
+	if strings.Count(clause, "LOWER(TRIM(type)) IN (") > 1 {
 		t.Errorf("expected single IN clause, got multiple in %q", clause)
 	}
 }
@@ -294,7 +294,7 @@ func TestBuildWhereClause_TypeFilter_Include(t *testing.T) {
 func TestBuildWhereClause_TypeFilter_Exclude(t *testing.T) {
 	t.Parallel()
 	clause, args := buildWhereClause(ListParams{Filters: map[string]string{"type_orchestra": "exclude"}})
-	if !strings.Contains(clause, "type NOT IN (") {
+	if !strings.Contains(clause, "LOWER(TRIM(type)) NOT IN (") {
 		t.Errorf("expected type NOT IN clause, got %q", clause)
 	}
 	// type_orchestra backs the Orchestra/Choir facet = two values.
@@ -311,10 +311,10 @@ func TestBuildWhereClause_TypeFilter_IncludeExclude(t *testing.T) {
 		"type_group":     "include",
 		"type_orchestra": "exclude",
 	}})
-	if !strings.Contains(clause, "type IN (") {
+	if !strings.Contains(clause, "LOWER(TRIM(type)) IN (") {
 		t.Errorf("expected IN clause, got %q", clause)
 	}
-	if !strings.Contains(clause, "type NOT IN (") {
+	if !strings.Contains(clause, "LOWER(TRIM(type)) NOT IN (") {
 		t.Errorf("expected NOT IN clause, got %q", clause)
 	}
 }
@@ -531,7 +531,7 @@ func TestBuildWhereClause_TypeFilter_AllTypes(t *testing.T) {
 		t.Run(tc.key, func(t *testing.T) {
 			t.Parallel()
 			clause, args := buildWhereClause(ListParams{Filters: map[string]string{tc.key: "include"}})
-			if !strings.Contains(clause, "type IN (") {
+			if !strings.Contains(clause, "LOWER(TRIM(type)) IN (") {
 				t.Errorf("%s: expected type IN clause, got %q", tc.key, clause)
 			}
 			if len(args) != len(tc.wantArgs) {
@@ -558,7 +558,7 @@ func TestBuildWhereClause_TypeFilter_AllTypes(t *testing.T) {
 func TestBuildWhereClause_TypeFilter_Other_Include(t *testing.T) {
 	t.Parallel()
 	clause, args := buildWhereClause(ListParams{Filters: map[string]string{"type_other": "include"}})
-	if !strings.Contains(clause, "type NOT IN (") {
+	if !strings.Contains(clause, "LOWER(TRIM(type)) NOT IN (") {
 		t.Errorf("expected a type NOT IN negation, got %q", clause)
 	}
 	if !strings.Contains(clause, "type IS NULL") {
@@ -575,7 +575,7 @@ func TestBuildWhereClause_TypeFilter_Other_Include(t *testing.T) {
 func TestBuildWhereClause_TypeFilter_Other_Exclude(t *testing.T) {
 	t.Parallel()
 	clause, args := buildWhereClause(ListParams{Filters: map[string]string{"type_other": "exclude"}})
-	if !strings.Contains(clause, "type IN (") {
+	if !strings.Contains(clause, "LOWER(TRIM(type)) IN (") {
 		t.Errorf("expected type IN (named) clause, got %q", clause)
 	}
 	if strings.Contains(clause, "type IS NULL") {
@@ -598,7 +598,7 @@ func TestBuildWhereClause_TypeFilter_OtherWithNamed_Include(t *testing.T) {
 	if !strings.Contains(clause, " OR ") {
 		t.Errorf("expected an OR-composed include clause, got %q", clause)
 	}
-	if !strings.Contains(clause, "type IN (") || !strings.Contains(clause, "type NOT IN (") {
+	if !strings.Contains(clause, "LOWER(TRIM(type)) IN (") || !strings.Contains(clause, "LOWER(TRIM(type)) NOT IN (") {
 		t.Errorf("expected both IN (group) and NOT IN (named) branches, got %q", clause)
 	}
 }
@@ -615,11 +615,11 @@ func TestBuildWhereClause_TypeFilter_NamedAndOther_Exclude(t *testing.T) {
 		"type_other": "exclude",
 	}})
 	// The named exclusion: type NOT IN (group...).
-	if !strings.Contains(clause, "type NOT IN (") {
+	if !strings.Contains(clause, "LOWER(TRIM(type)) NOT IN (") {
 		t.Errorf("expected the named exclusion (type NOT IN (group)), got %q", clause)
 	}
 	// The Other exclusion: keep only the named types (type IN (named)).
-	if !strings.Contains(clause, "type IN (") {
+	if !strings.Contains(clause, "LOWER(TRIM(type)) IN (") {
 		t.Errorf("expected the Other exclusion (type IN (named)), got %q", clause)
 	}
 	// Two EXCLUDE facets are AND-joined as separate conditions, never OR-composed
