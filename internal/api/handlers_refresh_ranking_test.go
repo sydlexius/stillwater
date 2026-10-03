@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/templates"
 )
@@ -454,5 +455,40 @@ func TestRankScore_UsesSortName(t *testing.T) {
 
 	if rankScore("The Beatles", withSort) <= rankScore("The Beatles", withoutSort) {
 		t.Error("a matching SortName must raise the rank score")
+	}
+}
+
+// TestSortCandidatesByRank_MusicBrainzTierBeatsScoreAndOverlap pins #2811 at the
+// re-rank the disambiguation UI actually renders: a low-scoring MusicBrainz
+// candidate stays above a high-scoring Discogs one, even when the Discogs one
+// carries measured album overlap and the MusicBrainz one does not.
+func TestSortCandidatesByRank_MusicBrainzTierBeatsScoreAndOverlap(t *testing.T) {
+	t.Parallel()
+
+	mb := templates.DisambiguationCandidate{
+		Result: provider.ArtistSearchResult{Name: "Other Name", Source: string(provider.NameMusicBrainz), Score: 20},
+	}
+	dc := templates.DisambiguationCandidate{
+		Result:          provider.ArtistSearchResult{Name: "Query", Source: string(provider.NameDiscogs), Score: 99},
+		AlbumComparison: &artist.AlbumComparison{LocalCount: 4, MatchPercent: 100},
+	}
+	if !dc.HasMeasuredOverlap() {
+		t.Fatal("fixture: Discogs candidate must carry measured overlap")
+	}
+
+	for _, tc := range []struct {
+		name string
+		in   []templates.DisambiguationCandidate
+	}{
+		{"mb first in input", []templates.DisambiguationCandidate{mb, dc}},
+		{"dc first in input", []templates.DisambiguationCandidate{dc, mb}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := append([]templates.DisambiguationCandidate(nil), tc.in...)
+			sortCandidatesByRank("Query", got)
+			if got[0].Result.Source != string(provider.NameMusicBrainz) || got[1].Result.Source != string(provider.NameDiscogs) {
+				t.Errorf("order = %s, %s; want musicbrainz, discogs", got[0].Result.Source, got[1].Result.Source)
+			}
+		})
 	}
 }
