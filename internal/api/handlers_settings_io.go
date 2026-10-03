@@ -206,8 +206,6 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 
 	if req.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html")
-		// Local name avoids shadowing the html stdlib import used in
-		// writeImportErr above.
 		// Append users + token-reassignment counts only when non-zero so the
 		// happy path stays compact for instances that don't exercise the
 		// cross-instance restore code path.
@@ -225,10 +223,58 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 				`</div>`,
 			result.Settings, result.Connections, result.Profiles, result.Webhooks, result.ProviderKeys, result.Priorities,
 			result.Rules, result.ScraperConfigs, result.UserPreferences, extras,
-		)
+		) + importDropWarning(result)
 		w.Write([]byte(fragment)) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
 		return
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+// maxShownRejectedKeys bounds how many rejected setting keys the summary names;
+// the rest are reported as a count so the fragment stays short.
+const maxShownRejectedKeys = 10
+
+// importDropWarning renders an amber notice listing every row the import
+// dropped, skipped or rejected (#3012), so a partial restore cannot read as a
+// complete one. It returns "" when nothing was dropped, leaving the summary
+// unchanged. Rejected key names come from the uploaded file (untrusted), so
+// each is HTML-escaped before it is written into the fragment.
+func importDropWarning(result *settingsio.ImportResult) string {
+	// "Label: N" reads correctly for 1 and for many, so no plural handling.
+	var items []string
+	add := func(n int, label string) {
+		if n > 0 {
+			items = append(items, fmt.Sprintf("%s: %d", label, n))
+		}
+	}
+	if result.SettingsRejected > 0 {
+		item := fmt.Sprintf("Settings rejected as invalid: %d", result.SettingsRejected)
+		shown := result.SettingsRejectedKeys
+		if len(shown) > maxShownRejectedKeys {
+			shown = shown[:maxShownRejectedKeys]
+		}
+		if len(shown) > 0 {
+			esc := make([]string, len(shown))
+			for i, k := range shown {
+				esc[i] = html.EscapeString(k)
+			}
+			item += " (" + strings.Join(esc, ", ")
+			if more := result.SettingsRejected - len(shown); more > 0 {
+				item += fmt.Sprintf(" and %d more", more)
+			}
+			item += ")"
+		}
+		items = append(items, item)
+	}
+	add(result.SettingsRenamedDropped, "Settings discarded because the file also carried the current name")
+	add(result.LibrariesSkipped, "Libraries skipped")
+	add(result.APITokensSkipped, "API tokens skipped")
+	add(result.ConnectionFeaturesIgnored, "Connection feature settings ignored (not supported by that connection type)")
+	if len(items) == 0 {
+		return ""
+	}
+	return `<div role="status" class="mt-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">` +
+		`Import completed with dropped rows:<ul class="list-disc pl-5">` +
+		"<li>" + strings.Join(items, "</li><li>") + "</li></ul></div>"
 }

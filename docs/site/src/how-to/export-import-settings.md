@@ -65,7 +65,16 @@ There are two ways to import an exported bundle, depending on whether the receiv
 4. Enter the same passphrase that was used to export.
 5. Click **Import**.
 
-Stillwater decrypts and validates the bundle first. It then applies the whole bundle in a single database transaction covering every section (connections, platform profiles, webhooks, provider keys and priorities, rules, scraper preferences, application settings, users, user preferences, libraries, and API tokens), so an error in any section rolls the entire import back and the destination is left in the state it had before the import began. If the passphrase is wrong, decryption fails before anything is touched. Each section's import is upsert-by-natural-key, so a retry after a fixed-up bundle is safe. The result shows what was imported and what was skipped.
+Stillwater decrypts and validates the bundle first. It then applies the whole bundle in a single database transaction covering every section (connections, platform profiles, webhooks, provider keys and priorities, rules, scraper preferences, application settings, users, user preferences, libraries, and API tokens), so an error in any section rolls the entire import back and the destination is left in the state it had before the import began. If the passphrase is wrong, decryption fails before anything is touched. Each section's import is upsert-by-natural-key, so a retry after a fixed-up bundle is safe. The result shows what was imported.
+
+If an import leaves some rows out, an amber notice headed "Import completed with dropped rows" appears under the summary. It lists what was left out, one line per kind:
+
+- **Libraries skipped** and **API tokens skipped**.
+- **Settings rejected as invalid**, followed by the setting names (up to ten, then "and N more").
+- **Settings discarded because the file also carried the current name**: a setting saved under an old name was dropped because the file also had it under the current name.
+- **Connection feature settings ignored (not supported by that connection type)**.
+
+A clean import shows no notice. Skipped rows do not roll the import back; the rest of the bundle is still applied.
 
 ### Into a fresh instance, before admin creation (Restore from backup)
 
@@ -77,6 +86,8 @@ If you're standing up a new instance and want it to come up with the source inst
 4. Click **Restore**.
 
 The fresh instance applies the bundle in the same single-transaction atomic import described above, then marks onboarding as complete. The page redirects to the login screen; sign in with credentials from the source instance.
+
+This restore does not show the amber notice on screen, because the page moves on to the login screen. If it left rows out, the same counts are in the server log (as a warning) and in the API response.
 
 This path is gated on the receiving instance being truly empty (no admin user yet, onboarding not completed). Once an admin exists, the only way to import is through Settings > Maintenance described above.
 

@@ -32,8 +32,8 @@ docs {
   the response under ownership_reassigned.
 
   In CI the export and import run against the same instance, so the
-  users_imported and ownership_reassigned counters stay at zero and
-  drop out of the response via omitempty. The contract under test here
+  users_imported and ownership_reassigned counters stay at zero (they
+  are always present in the response). The contract under test here
   is the admin_fallback_tokens flag being accepted and the standard
   ImportResult shape coming back -- the cross-instance reassignment
   paths are exercised by Go unit tests in internal/settingsio.
