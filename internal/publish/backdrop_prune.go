@@ -582,6 +582,17 @@ type PlatformBackdropPruneResult struct {
 	// and -- once the run is over -- what actually became of it. Populated on
 	// both dry and live runs: a plan is worth recording after the fact too.
 	Plan []PlatformBackdropPrunePlanEntry
+	// Examined lists each target whose backdrops detection actually read, and
+	// Unhealthy each connection skipped for a Status other than "ok". Together
+	// they let a caller tell "nothing redundant" from "nothing was read".
+	Examined  []PlatformBackdropPruneTarget
+	Unhealthy []string
+}
+
+// PlatformBackdropPruneTarget is one artist/connection pair detection read.
+type PlatformBackdropPruneTarget struct {
+	ConnectionID, Connection, PlatformArtistID string
+	Backdrops                                  int
 }
 
 // PlatformBackdropPruneSkip is one perceptual tier skipped by policy.
@@ -955,7 +966,11 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, scope 
 			result.Failures = append(result.Failures, PlatformBackdropPruneFailure{ArtistID: a.ID, ConnectionID: pid.ConnectionID, Err: connErr.Error()})
 			continue
 		}
-		if !conn.Enabled || conn.Status != "ok" || !conn.GetFeatureImageWrite() {
+		if !conn.Enabled || !conn.GetFeatureImageWrite() {
+			continue // not a prune target by configuration
+		}
+		if conn.Status != "ok" {
+			result.Unhealthy = append(result.Unhealthy, pid.ConnectionID)
 			continue
 		}
 		client := backdropPruneClientFactory(conn, p.logger)
@@ -977,9 +992,15 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, scope 
 // (the prune handler, PrunePlatformBackdropsForArtist) holds the lock, and
 // nothing below takes it.
 func (p *Publisher) pruneOneTarget(ctx context.Context, a *artist.Artist, conn *connection.Connection, pid artist.PlatformID, client backdropPruneClient, scope PlatformBackdropPruneScope, opts perceptualPruneOpts, result *PlatformBackdropPruneResult) {
-	unlock := p.lockPhashTarget(pid.ConnectionID, pid.PlatformArtistID)
+	// A dry run writes nothing, so it takes the lock without announcing a
+	// write (the sweep would otherwise invalidate its own cache entry).
+	lock := p.lockPhashTarget
+	if scope.DryRun {
+		lock = p.lockPhashTargetQuiet
+	}
+	unlock := lock(pid.ConnectionID, pid.PlatformArtistID)
 	defer unlock()
-	redundant, _, perceptualErr, detErr := detectBackdropRedundancy(ctx, client, pid.PlatformArtistID, opts)
+	redundant, total, perceptualErr, detErr := detectBackdropRedundancy(ctx, client, pid.PlatformArtistID, opts)
 	if perceptualErr != nil {
 		p.logger.Warn("platform backdrop prune: perceptual tier skipped for connection",
 			slog.String("artist_id", a.ID), slog.String("connection", conn.Name), slog.String("error", perceptualErr.Error()))
@@ -991,6 +1012,9 @@ func (p *Publisher) pruneOneTarget(ctx context.Context, a *artist.Artist, conn *
 		result.Failures = append(result.Failures, PlatformBackdropPruneFailure{ArtistID: a.ID, ConnectionID: pid.ConnectionID, Err: detErr.Error()})
 		return
 	}
+	result.Examined = append(result.Examined, PlatformBackdropPruneTarget{
+		ConnectionID: pid.ConnectionID, Connection: conn.Name, PlatformArtistID: pid.PlatformArtistID, Backdrops: total,
+	})
 	if len(redundant) == 0 {
 		return
 	}

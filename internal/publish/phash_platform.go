@@ -96,12 +96,35 @@ func validPHashTolerance(t float64) error {
 // resolve->mutate->verify (delete or restore) and release only after it
 // finishes, so a concurrent duplicate observes the settled artifact rather than
 // racing a half-applied one.
+//
+// It is also where a write is announced to the observer (#3138: the platform
+// near-duplicate cache drops the artist's entry). Announced only once the lock
+// is HELD, so a reader that then waits for the lock sees the settled result.
+//
+// NOT every backdrop writer takes this lock. Two unindexed deletes in
+// internal/api do not: deleteImageFromPlatforms (handlers_image.go) and
+// handleDeletePushImage (handlers_push.go). A fanart delete through either is
+// not announced, so a cached entry for that artist stays stale until the next
+// sweep re-reads it or it ages out. A follow-up to #3138 S3a locks both.
 func (p *Publisher) lockPhashTarget(connectionID, platformArtistID string) func() {
-	key := connectionID + "\x00" + platformArtistID
+	unlock := p.lockPhashTargetQuiet(connectionID, platformArtistID)
+	if fn := p.backdropWriteObserver.Load(); fn != nil {
+		(*fn)(connectionID, platformArtistID)
+	}
+	return unlock
+}
+
+// lockPhashTargetQuiet is the same lock for a caller that only READS.
+func (p *Publisher) lockPhashTargetQuiet(connectionID, platformArtistID string) func() {
+	key := backdropTargetKey(connectionID, platformArtistID)
 	m, _ := p.phashTargetLocks.LoadOrStore(key, &sync.Mutex{})
 	mu := m.(*sync.Mutex)
 	mu.Lock()
 	return mu.Unlock
+}
+
+func backdropTargetKey(connectionID, platformArtistID string) string {
+	return connectionID + "\x00" + platformArtistID
 }
 
 // LockBackdropTarget exposes lockPhashTarget to an indexed backdrop writer
