@@ -201,6 +201,8 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 		writeImportErr(status, clientMsg)
 		return
 	}
+	// The import rewrites rule rows (config, mode, enabled) directly.
+	r.invalidateRuleCaches()
 
 	if req.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html")

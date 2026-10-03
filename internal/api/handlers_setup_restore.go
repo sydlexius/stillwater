@@ -74,6 +74,7 @@ func (r *Router) handleSetupRestore(w http.ResponseWriter, req *http.Request) {
 		r.writeRestoreErr(w, req, status, clientMsg)
 		return
 	}
+	r.invalidateRuleCaches() // the restore rewrote rule rows
 
 	// Mark onboarding complete so the user is bounced to /login on next
 	// request. We do this OUTSIDE the import transaction (the import is

@@ -185,6 +185,15 @@ func (r *Router) invalidatePlatformDupReport() {
 	r.platformDupReportInvalidatedAt = time.Now()
 }
 
+// InvalidatePlatformBackdropCaches drops both caches that list platform
+// backdrops: the report snapshot and the sidebar's dupimages counts. The
+// "No duplicate images" rule's platform phase calls it after a delete
+// (#3138), for the reasons the prune handler's success path spells out.
+func (r *Router) InvalidatePlatformBackdropCaches() {
+	r.invalidatePlatformDupReport()
+	r.dupImageCache().TriggerRefresh()
+}
+
 // platformDupReportSnapshot returns the cached report and when it was taken.
 // ok is false until the first sweep has ever landed, which is the page's
 // signal to render the pending notice instead of a table of zeros (rendering

@@ -1519,3 +1519,33 @@ func TestPlatformBackdropDuplicatesPrune_ErrorBodyCarriesPartialAccounting(t *te
 func allArtistsPruneBody() io.Reader {
 	return strings.NewReader(`{"all_artists": true}`)
 }
+
+// TestInvalidatePlatformBackdropCaches pins the hook the "No duplicate images"
+// rule's platform phase calls after a delete (#3138): BOTH caches must drop,
+// the report snapshot (else the page lists deleted backdrops, #3092) and the
+// sidebar's dupimages counts (asserted through the real TriggerRefresh chain
+// reaching the platform lister).
+//
+// NOT t.Parallel(): reaches dupimages.Shared(), process-wide state.
+func TestInvalidatePlatformBackdropCaches(t *testing.T) {
+	dupimages.Shared().Reset()
+	t.Cleanup(func() { dupimages.Shared().Reset() })
+	lister := newBlockingArtistLister()
+	t.Cleanup(func() { close(lister.release) })
+	r := testRouterWithPlatformLister(t, lister)
+	r.storePlatformDupReport(publish.PlatformBackdropDupReport{ArtistsAffected: 1, RedundantBackdrops: 2}, time.Now())
+	if _, _, ok := r.platformDupReportSnapshot(); !ok {
+		t.Fatal("precondition: the cached report must be populated")
+	}
+
+	r.InvalidatePlatformBackdropCaches()
+
+	if _, _, ok := r.platformDupReportSnapshot(); ok {
+		t.Error("report snapshot survived; the page would keep listing backdrops the rule just deleted")
+	}
+	select {
+	case <-lister.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("sidebar dupimages cache was not refreshed: no sweep reached the platform lister")
+	}
+}

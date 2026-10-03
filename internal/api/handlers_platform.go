@@ -230,7 +230,11 @@ func (r *Router) syncNFORuleToActiveProfile(ctx context.Context, w http.Response
 		// Re-enabling restores the default automation so the contract self-heals.
 		rl.AutomationMode = rule.AutomationModeAuto
 	}
-	if err := r.ruleService.Update(ctx, rl); err != nil {
+	err = r.ruleService.Update(ctx, rl)
+	// Clear even on error: Update commits the row before its cleanup step can
+	// fail, and the pipeline cache never expires on its own.
+	r.invalidateRuleCaches()
+	if err != nil {
 		r.logger.WarnContext(ctx, "failed toggling nfo_exists rule on profile activation", "error", err, "enabled", want)
 		return
 	}

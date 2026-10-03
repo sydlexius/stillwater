@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"log/slog"
@@ -492,5 +493,30 @@ func TestHandleSettingsImport_InvalidJSON(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+// TestHandleSettingsImport_ClearsPipelineRuleCache (#3138): an import rewrites
+// rule rows (config, mode, enabled), and the pipeline's rule cache never
+// expires, so a successful import must clear it.
+func TestHandleSettingsImport_ClearsPipelineRuleCache(t *testing.T) {
+	t.Parallel()
+	router, svc, _ := settingsIOTestDeps(t)
+	clears := &atomic.Int32{}
+	router.pipeline = &stubPipeline{ruleCacheClears: clears}
+	const passphrase = "cache-pass"
+	envBytes := buildExportedEnvelope(t, svc, passphrase)
+	body, _ := json.Marshal(map[string]interface{}{"passphrase": passphrase, "envelope": json.RawMessage(envBytes)})
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/settings/import", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.handleSettingsImport(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", w.Code, w.Body.String())
+	}
+	if n := clears.Load(); n != 1 {
+		t.Fatalf("pipeline ClearRuleCache calls after a successful import = %d, want 1", n)
 	}
 }

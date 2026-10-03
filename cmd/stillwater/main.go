@@ -204,6 +204,7 @@ type Application struct {
 	publisher           *publish.Publisher
 	collisionNotifier   *collision.Notifier
 	pipeline            *rule.Pipeline
+	imageDupFixer       *rule.ImageDuplicateFixer
 	bulkService         *rule.BulkService
 	bulkExecutor        *rule.BulkExecutor
 	eventBus            *event.Bus
@@ -676,6 +677,10 @@ func (a *Application) buildServices() error {
 	// NewRouter creates the gate from the same ConnectionService as the
 	// publisher; doing this after NewRouter avoids a two-phase construction.
 	a.publisher.SetImageWriteGate(a.router.ConflictGate())
+	// #3138: the duplicate-images rule's opt-in platform phase. Wired here, not
+	// at construction, because its post-delete cache invalidation lives on the
+	// Router; until this line the phase refuses rather than delete uninvalidated.
+	a.imageDupFixer.SetPlatformPruner(a.publisher, a.router.InvalidatePlatformBackdropCaches)
 
 	// Hand ownership to run(): the caller's deferred Stop now owns the
 	// bus lifecycle. Clearing the flag prevents the deferred Stop above
@@ -1025,6 +1030,10 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 	metadataFixer := rule.NewMetadataFixer(a.orchestrator, logger)
 	metadataFixer.SetAlbumGate(artist.NewFilesystemAlbumSource(), releaseGroupFetcher)
 
+	// #3138: held so its platform phase can be late-wired once the Router (the
+	// owner of the caches a platform delete must invalidate) exists.
+	a.imageDupFixer = rule.NewImageDuplicateFixer(a.db, a.platformService, a.fsCheck, a.artistService, logger)
+
 	fixers := []rule.Fixer{
 		rule.NewNFOFixer(a.nfoSnapshotService, a.nfoSettingsService, a.fsCheck, a.expectedWrites, a.publisher, a.platformService),
 		metadataFixer,
@@ -1034,7 +1043,7 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 		logoPaddingFixer,
 		rule.NewDirectoryRenameFixer(a.fsCheck, a.artistService, logger),
 		rule.NewBackdropSequencingFixer(a.platformService, a.fsCheck, a.artistService, logger),
-		rule.NewImageDuplicateFixer(a.db, a.platformService, a.fsCheck, a.artistService, logger),
+		a.imageDupFixer,
 		rule.NewDiscographyFixer(releaseGroupFetcher, a.fsCheck, a.nfoSnapshotService, logger),
 		rule.NewProviderIDBackfillFixer(a.orchestrator, a.artistService, logger),
 		collisionFixer,

@@ -97,6 +97,11 @@ type FixResult struct {
 	// This flag only answers "is a reconcile warranted at all", which a fixer
 	// CAN know for certain about its own actions.
 	RemovedFiles bool `json:"-"`
+
+	// Irreversible reports that the fix changed something the undo snapshot
+	// cannot restore (a platform backdrop delete, #3138), so the API must not
+	// offer an undo that would only revert half of it.
+	Irreversible bool `json:"-"`
 }
 
 // RunScope controls which artists "Run Rules" walks. Incremental (the
@@ -172,6 +177,11 @@ type PipelineRunner interface {
 	// RunRuleScoped is the dirty-aware variant of RunRule.
 	RunRuleScoped(ctx context.Context, ruleID string, scope RunScope) (*RunResult, error)
 	FixViolation(ctx context.Context, violationID string) (*FixResult, error)
+	// ClearRuleCache drops the pipeline's rule cache. Every production write
+	// to a rule's config, mode or enabled state must call it (via the API's
+	// invalidateRuleCaches), or Fix / Fix All / Run Rules keep acting on the
+	// old rule until restart (#3138: a revoked platform-prune consent).
+	ClearRuleCache()
 	// SetArtistWorkers tunes how many artists a RunAll/RunRule pass evaluates
 	// concurrently. Wired from the settings handler so the value is editable
 	// at runtime; the next pass reads it via getArtistWorkers.
@@ -233,6 +243,10 @@ type Pipeline struct {
 
 	ruleCacheMu sync.RWMutex
 	ruleCache   map[string]*Rule
+	// ruleCacheGen counts ClearRuleCache calls (under ruleCacheMu). A fill
+	// stores only if it is unchanged since the miss, so a rule read before an
+	// update cannot be cached after the update's clear (#3138).
+	ruleCacheGen uint64
 
 	// phashArtistMu holds one mutex per artist id, guarding the whole
 	// critical section of a cross-artist backdrop back-out (#2564):
@@ -2046,18 +2060,24 @@ func (p *Pipeline) getCachedRule(ctx context.Context, ruleID string) (*Rule, err
 		p.ruleCacheMu.RUnlock()
 		return r, nil
 	}
+	gen := p.ruleCacheGen
 	p.ruleCacheMu.RUnlock()
 
 	r, err := p.ruleService.GetByID(ctx, ruleID)
 	if err != nil {
 		return nil, err
 	}
+	if afterRuleCacheFetch != nil {
+		afterRuleCacheFetch()
+	}
 
 	p.ruleCacheMu.Lock()
-	if p.ruleCache == nil {
-		p.ruleCache = make(map[string]*Rule)
+	if p.ruleCacheGen == gen { // else a clear raced this read: use it, do not cache it
+		if p.ruleCache == nil {
+			p.ruleCache = make(map[string]*Rule)
+		}
+		p.ruleCache[ruleID] = r
 	}
-	p.ruleCache[ruleID] = r
 	p.ruleCacheMu.Unlock()
 
 	return r, nil
@@ -2068,8 +2088,13 @@ func (p *Pipeline) getCachedRule(ctx context.Context, ruleID string) (*Rule, err
 func (p *Pipeline) ClearRuleCache() {
 	p.ruleCacheMu.Lock()
 	p.ruleCache = nil
+	p.ruleCacheGen++
 	p.ruleCacheMu.Unlock()
 }
+
+// afterRuleCacheFetch is a test seam: when set, getCachedRule calls it between
+// its DB read and its cache store. Always nil in production.
+var afterRuleCacheFetch func()
 
 // persistPassResults writes a passed=1 rule_results row for every rule the
 // engine considered that did not appear in the violation set. The pipeline

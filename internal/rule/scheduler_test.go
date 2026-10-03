@@ -54,6 +54,7 @@ func (f *fakePipelineRunner) FixViolation(_ context.Context, _ string) (*FixResu
 }
 
 func (f *fakePipelineRunner) SetArtistWorkers(_ int) {}
+func (f *fakePipelineRunner) ClearRuleCache()        {}
 
 func (f *fakePipelineRunner) ArtistWorkers() int { return 1 }
 

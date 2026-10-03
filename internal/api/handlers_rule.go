@@ -159,6 +159,19 @@ func (r *Router) handleListRules(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
+// invalidateRuleCaches drops BOTH rule caches after any rule write: the
+// engine's list (a 5s TTL) and the pipeline's per-rule cache, which has no
+// TTL and would otherwise keep Fix / Fix All / Run Rules on the old config
+// and automation mode until restart (#3138).
+func (r *Router) invalidateRuleCaches() {
+	if r.ruleEngine != nil {
+		r.ruleEngine.InvalidateRuleCache()
+	}
+	if r.pipeline != nil {
+		r.pipeline.ClearRuleCache()
+	}
+}
+
 // handleUpdateRule updates a rule's enabled state and config.
 // PUT /api/v1/rules/{id}
 func (r *Router) handleUpdateRule(w http.ResponseWriter, req *http.Request) {
@@ -218,16 +231,14 @@ func (r *Router) handleUpdateRule(w http.ResponseWriter, req *http.Request) {
 		existing.Config = *body.Config
 	}
 
-	if err := r.ruleService.Update(req.Context(), existing); err != nil {
+	err = r.ruleService.Update(req.Context(), existing)
+	// Clear even on error: Update commits the row before its cleanup step can
+	// fail, and the pipeline cache never expires on its own.
+	r.invalidateRuleCaches()
+	if err != nil {
 		r.logger.Error("updating rule", "rule_id", ruleID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to update rule"})
 		return
-	}
-
-	// Invalidate the engine's rule list cache so the next evaluation reflects
-	// the updated rule immediately rather than waiting for the TTL to expire.
-	if r.ruleEngine != nil {
-		r.ruleEngine.InvalidateRuleCache()
 	}
 
 	// Also invalidate the health report cache since rule changes affect

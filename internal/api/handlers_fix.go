@@ -78,7 +78,9 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Register an undo entry when the fix succeeded and we have pre-fix state.
-	if fr.Fixed && r.undoStore != nil && pfs != nil {
+	// Never for an Irreversible fix (a platform delete, #3138): the snapshot
+	// restores local files only, so the undo would be a half-revert.
+	if fr.Fixed && !fr.Irreversible && r.undoStore != nil && pfs != nil {
 		revert := pfs.revert
 		// Directory renames: freeze the post-fix path NOW rather than lazily
 		// at revert time, so a second rename during the undo window cannot

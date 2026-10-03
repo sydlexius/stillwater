@@ -673,9 +673,11 @@ After:  /music/Pink Floyd/ contains fanart.jpg, fanart2.jpg  (duplicate fanart2.
 
 **Caveats:**
 
-- Runs in manual mode only; never auto-deletes files.
+- Ships in manual mode. Matching is a similarity judgment, so by default a person reviews each fix; an operator can opt the rule into auto mode, after which it deletes local duplicate files without review.
 - Skipped on shared-filesystem libraries.
 - Only within-type fanart duplicates are fixable; cross-type duplicates remain informational.
+- Optional platform cleanup, off by default: with the rule's prune_platform_copies option on (an administrator setting), each fix also removes near-duplicate backdrops from the artist's connected Emby and Jellyfin servers, after the local cleanup. Turning the option on is the consent: it then runs on every fix, including Fix All and auto mode. It keeps one copy of each picture per server (preferring the copy that matches a local fanart file), skips the near-duplicate pass for a locked artist or one with locked or hand-set fanart, and records every removal in the fix result and the log. A deletion on a media server cannot be undone, so a fix that removed anything there offers no undo.
+- The platform cleanup uses the rule's similarity threshold, but refuses to run below 85%, so a mistyped low threshold cannot strip distinct backdrops from a server. The local cleanup is unaffected by that floor.
 
 ---
 

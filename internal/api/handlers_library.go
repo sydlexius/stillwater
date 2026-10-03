@@ -320,6 +320,10 @@ func (r *Router) maybeDisableFilesystemRules(ctx context.Context) {
 	}
 
 	count, err := r.ruleService.DisableFilesystemRules(ctx)
+	// Clear even on error: the disable UPDATE commits before its cleanup can fail.
+	if err != nil || count > 0 {
+		r.invalidateRuleCaches()
+	}
 	if err != nil {
 		r.logger.Error("auto-disabling filesystem rules", "error", err)
 		return
@@ -327,9 +331,6 @@ func (r *Router) maybeDisableFilesystemRules(ctx context.Context) {
 	if count > 0 {
 		r.logger.Info("auto-disabled filesystem-dependent rules because no local library remains",
 			"rules_disabled", count)
-		if r.ruleEngine != nil {
-			r.ruleEngine.InvalidateRuleCache()
-		}
 	}
 }
 

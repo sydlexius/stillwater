@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 )
 
@@ -340,5 +341,30 @@ func TestRestoreOOBE_RoundTripSignIn(t *testing.T) {
 	// not reject the supplied password.
 	if _, err := routerB.authService.Login(ctx, username, password); err != nil {
 		t.Errorf("Login on B failed: %v", err)
+	}
+}
+
+// TestRestoreOOBE_ClearsPipelineRuleCache (#3138): a restore rewrites rule
+// rows, so the pipeline's never-expiring rule cache must be cleared.
+func TestRestoreOOBE_ClearsPipelineRuleCache(t *testing.T) {
+	t.Parallel()
+	_, svc, _ := settingsIOTestDeps(t)
+	const passphrase = "restore-cache-pass"
+	envBytes := buildExportedEnvelope(t, svc, passphrase)
+	target, _, _ := settingsIOTestDeps(t)
+	clears := &atomic.Int32{}
+	target.pipeline = &stubPipeline{ruleCacheClears: clears}
+
+	body, contentType := restoreMultipart(t, envBytes, passphrase)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/setup/restore", body)
+	req.Header.Set("Content-Type", contentType)
+	w := httptest.NewRecorder()
+	target.handleSetupRestore(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("restore status = %d; body: %s", w.Code, w.Body.String())
+	}
+	if n := clears.Load(); n != 1 {
+		t.Fatalf("pipeline ClearRuleCache calls after a successful restore = %d, want 1", n)
 	}
 }

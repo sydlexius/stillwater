@@ -807,3 +807,50 @@ func TestHandleUndoFix_HTMX(t *testing.T) {
 		t.Errorf("expected empty body, got: %s", body)
 	}
 }
+
+// TestHandleFixViolation_IrreversibleFixGetsNoUndo pins #3138: a fix that
+// deleted platform backdrops sets Irreversible, and the handler must then
+// withhold the undo entry -- its snapshot restores local files only, so an
+// offered undo would be a half-revert. Same seeded state as
+// TestHandleFixViolation_ReturnsUndoID, which proves the undo path is live.
+func TestHandleFixViolation_IrreversibleFixGetsNoUndo(t *testing.T) {
+	t.Parallel()
+	stub := &stubPipeline{
+		fixViolationFn: func(_ context.Context, _ string) (*rule.FixResult, error) {
+			return &rule.FixResult{RuleID: "nfo_exists", Fixed: true, Irreversible: true, Message: "fixed; platform: removed 2"}, nil
+		},
+	}
+	r, artistSvc := testRouterWithStubPipeline(t, stub)
+	a := addTestArtist(t, artistSvc, "Irreversible Artist")
+	v := &rule.RuleViolation{
+		RuleID: rule.RuleNFOExists, ArtistID: a.ID, ArtistName: a.Name,
+		Severity: "error", Message: "missing nfo", Fixable: true, Status: rule.ViolationStatusOpen,
+	}
+	if err := r.ruleService.UpsertViolation(context.Background(), v); err != nil {
+		t.Fatalf("seeding violation: %v", err)
+	}
+	violations, err := r.ruleService.ListViolationsFiltered(context.Background(), rule.ViolationListParams{Status: "active"})
+	if err != nil || len(violations) == 0 {
+		t.Fatalf("listing violations: %v (count=%d)", err, len(violations))
+	}
+	id := violations[0].ID
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/"+id+"/fix", nil)
+	req.SetPathValue("id", id)
+	w := httptest.NewRecorder()
+	r.handleFixViolation(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if resp["status"] != "fixed" {
+		t.Errorf("status = %v, want fixed", resp["status"])
+	}
+	if _, ok := resp["undo_id"]; ok {
+		t.Errorf("undo_id offered for an irreversible (platform-deleting) fix: %v", resp)
+	}
+}

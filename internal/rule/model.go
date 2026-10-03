@@ -68,6 +68,11 @@ type RuleConfig struct {
 	ReleaseTypes        string  `json:"release_types,omitempty"`         // discography_populated: comma-separated MB primary types to include (e.g. "Album,EP")
 	RequiredProviderIDs string  `json:"required_provider_ids,omitempty"` // provider_id_missing: comma-separated provider names to require (subset of discogs,deezer,spotify); empty = dynamic default (all available)
 	DiscoveryOnly       bool    `json:"-"`                               // transient: set by pipeline in manual mode, never persisted
+	// PrunePlatformCopies (image_duplicate only, #3138): after the local fix, also
+	// delete near-duplicate backdrops on connected platforms. Off when absent.
+	// Turning it on IS the consent: every fix path (manual, Fix All, auto) then
+	// runs the platform phase. Settable only through the admin-only rule PUT.
+	PrunePlatformCopies bool `json:"prune_platform_copies,omitempty"`
 }
 
 // Violation represents a single rule failure for an artist.
