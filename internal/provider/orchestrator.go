@@ -85,11 +85,15 @@ type FieldSource struct {
 //     for that, checked against the adapter source. A second copy is a second
 //     thing to drift.
 //
-// The settings UI (availableProviders in web/templates/settings.templ) now also
-// filters on ProviderCapabilities() (#3190), so this map is no longer what keeps
-// incapable providers out of the editor. It stays because the orchestrator still
-// reads it at runtime (see IsExcludedForField) and
-// TestIsExcludedForField_BiographyStructuralGuards pins it.
+// Legacy guard, kept deliberately:
+//   - Still read by two call sites, both through IsExcludedForField:
+//     Orchestrator.FetchMetadata (per-field provider loop) and
+//     Orchestrator.FetchFieldFromProviders (per-field comparison path).
+//     TestIsExcludedForField_BiographyStructuralGuards pins it.
+//   - The settings editor no longer relies on it: availableProviders in
+//     web/templates/settings.templ filters on ProviderCapabilities() (#3190),
+//     which supersedes this map there.
+//   - It can be deleted once those two call sites move to the capability model.
 var fieldProviderExclusions = map[string]map[ProviderName]bool{
 	"biography": {NameMusicBrainz: true, NameWikidata: true},
 }

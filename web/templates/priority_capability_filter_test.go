@@ -98,8 +98,7 @@ func TestPriorityChipRow_KeepsHiddenMarkerForIncapableProvider(t *testing.T) {
 		t.Fatalf("render: %v", err)
 	}
 	html := buf.String()
-	container := html[strings.Index(html, "data-sortable-field"):]
-	container = container[:strings.Index(container, "</div>")]
+	container := sortableContainer(t, html)
 	for _, name := range []string{"discogs", "lastfm"} {
 		marker := `data-hidden-provider="` + name + `"`
 		if !strings.Contains(html, marker) {
@@ -141,4 +140,37 @@ func TestAvailableProviders_UnknownProviderHidden(t *testing.T) {
 	if !slices.Equal(got, []provider.ProviderName{provider.NameAudioDB}) {
 		t.Errorf("availableProviders = %v, want [audiodb]", got)
 	}
+}
+
+// sortableContainer returns the HTML of the element carrying data-sortable-field,
+// from its opening <div to its matching </div>, balancing nested divs. It fails
+// the test if an anchor is missing or the tags do not balance.
+func sortableContainer(t *testing.T, html string) string {
+	t.Helper()
+	attr := strings.Index(html, "data-sortable-field")
+	if attr < 0 {
+		t.Fatalf("no data-sortable-field in rendered row: %s", html)
+	}
+	start := strings.LastIndex(html[:attr], "<div")
+	if start < 0 {
+		t.Fatalf("no opening <div before data-sortable-field: %s", html)
+	}
+	depth := 0
+	for i := start; i < len(html); {
+		switch {
+		case strings.HasPrefix(html[i:], "<div"):
+			depth++
+			i += len("<div")
+		case strings.HasPrefix(html[i:], "</div>"):
+			depth--
+			i += len("</div>")
+			if depth == 0 {
+				return html[start:i]
+			}
+		default:
+			i++
+		}
+	}
+	t.Fatalf("unbalanced <div> from the sortable container: %s", html[start:])
+	return ""
 }
