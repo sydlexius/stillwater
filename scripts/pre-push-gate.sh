@@ -600,6 +600,12 @@ echo "=== Worktree settings link (#2879) ==="
 # not looking at this script.
 bash "$SCRIPT_DIR/test-link-worktree-settings.sh"
 
+# Hermetic, no network, sub-second: runs unconditionally. What it guards is
+# invisible at runtime -- if make remove-worktree strips the tracker row when
+# cleanup fails, the row is gone and the worktree is orphaned, only surfaced
+# when someone tries to recreate it and finds a leftover directory.
+bash "$SCRIPT_DIR/test-remove-worktree.sh"
+
 echo ""
 echo "=== zizmor suppression scope ==="
 # A `# zizmor: ignore[dangerous-triggers]` suppresses the audit for the WHOLE

@@ -425,6 +425,7 @@ wait_for_nfo_change() {
 # Cleanup trap: revoke test token on exit
 # ---------------------------------------------------------------------------
 
+# shellcheck disable=SC2329 # invoked via trap cleanup EXIT
 cleanup() {
   if [[ -n "$TOKEN" && -n "$TOKEN_ID" ]]; then
     code=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
