@@ -14,6 +14,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/logging"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/publish"
 )
@@ -219,7 +220,10 @@ type Pipeline struct {
 	fixers        []Fixer
 	publisher     *publish.Publisher
 	logger        *slog.Logger
-	now           func() time.Time // clock seam for quarantineStrandedTomb names; time.Now in production
+	// baseLogger is the untagged logger NewPipeline received; handed to the
+	// components the pipeline constructs so they tag themselves once (#2787).
+	baseLogger *slog.Logger
+	now        func() time.Time // clock seam for quarantineStrandedTomb names; time.Now in production
 
 	// writeGateMu guards writeGate. SetWriteGate is documented as
 	// idempotent and safe to call after construction ("replace"), so
@@ -350,7 +354,7 @@ func (p *Pipeline) withEvalContext(ctx context.Context, a *artist.Artist) (conte
 	if prov == nil {
 		return ctx, func() (uint64, uint64) { return 0, 0 }
 	}
-	ec := NewEvaluationContext(a, prov, p.logger)
+	ec := NewEvaluationContext(a, prov, p.subLogger())
 	return WithEvaluationContext(ctx, ec), ec.Counters
 }
 
@@ -494,6 +498,16 @@ func (p *Pipeline) recordRuleFixHistory(ctx context.Context, artistID string, fr
 	}
 }
 
+// subLogger returns the logger to hand to a component the pipeline constructs.
+// That component tags itself, so it must receive the untagged base logger; a
+// Pipeline built without one (tests) falls back to its own logger.
+func (p *Pipeline) subLogger() *slog.Logger {
+	if p.baseLogger != nil {
+		return p.baseLogger
+	}
+	return p.logger
+}
+
 // NewPipeline creates a new fix pipeline.
 func NewPipeline(engine *Engine, artistService *artist.Service, ruleService *Service, fixers []Fixer, publisher *publish.Publisher, logger *slog.Logger) *Pipeline {
 	return &Pipeline{
@@ -502,7 +516,8 @@ func NewPipeline(engine *Engine, artistService *artist.Service, ruleService *Ser
 		ruleService:   ruleService,
 		fixers:        fixers,
 		publisher:     publisher,
-		logger:        logger.With(slog.String("component", "fix-pipeline")),
+		logger:        logging.WithComponent(logger, "fix-pipeline"),
+		baseLogger:    logger,
 		now:           time.Now,
 	}
 }
@@ -1553,7 +1568,7 @@ func (p *Pipeline) RunAllScoped(ctx context.Context, scope RunScope) (*RunResult
 	hasOrch := p.orchestrator != nil
 	p.orchestratorMu.RUnlock()
 	if hasOrch {
-		passCtx := NewPassContext(DefaultPassCacheSize, p.logger)
+		passCtx := NewPassContext(DefaultPassCacheSize, p.subLogger())
 		ctx = WithPassContext(ctx, passCtx)
 		defer p.logPassCounters(passCtx)
 	}

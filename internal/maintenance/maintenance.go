@@ -14,6 +14,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/foreign"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/logging"
 )
 
 // ForeignArtistLister mirrors the small slice of internal/artist that the
@@ -44,6 +45,10 @@ type Service struct {
 	dbPath        string
 	imageCacheDir string
 	logger        *slog.Logger
+	// baseLogger is the untagged logger NewService received. Sub-components
+	// that tag their own component (the foreign scanner, the registry repair)
+	// take this one, never logger, so the component key is not stacked (#2787).
+	baseLogger *slog.Logger
 
 	// lockDamageHistory and artistService are the locked-field damage
 	// repair's dependencies (#3075), attached via SetLockDamageDeps after
@@ -68,7 +73,8 @@ func NewService(db *sql.DB, dbPath string, imageCacheDir string, logger *slog.Lo
 		db:            db,
 		dbPath:        dbPath,
 		imageCacheDir: imageCacheDir,
-		logger:        logger.With(slog.String("component", "maintenance")),
+		logger:        logging.WithComponent(logger, "maintenance"),
+		baseLogger:    logger,
 	}
 }
 
@@ -1038,7 +1044,7 @@ func (s *Service) StartForeignFileScanner(ctx context.Context, artists ForeignAr
 		startupDelay = 30 * time.Second
 	}
 	repo := foreign.NewRepository(s.db)
-	scanner := foreign.NewScanner(repo, artists, s.logger)
+	scanner := foreign.NewScanner(repo, artists, s.baseLogger)
 	scanner.StartScheduler(ctx, interval, startupDelay)
 }
 

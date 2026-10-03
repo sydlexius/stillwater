@@ -32,6 +32,7 @@ import (
 
 	"github.com/google/uuid"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/logging"
 )
 
 // singleSlotTypes are the image types that occupy only ordinal 0.
@@ -138,8 +139,7 @@ type candidate struct {
 // stop the rest of the library from being repaired.
 func (s *Service) RepairImageRegistry(ctx context.Context, opts ImageRepairOpts) (*ImageRepairResult, error) {
 	res := &ImageRepairResult{OpID: uuid.New().String(), DryRun: !opts.Commit}
-	log := s.logger.With(
-		slog.String("component", "image-repair"),
+	log := logging.WithComponent(s.baseLogger, "image-repair").With(
 		slog.String("op_id", res.OpID),
 		slog.Bool("dry_run", res.DryRun))
 
