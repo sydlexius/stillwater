@@ -194,7 +194,7 @@ func moreTabItems(ctx context.Context, bp string, isAdmin bool) []components.Bot
 	}
 	if isAdmin {
 		items = append(items,
-			components.BottomSheetItemData{Label: t(ctx, "nav.reports.duplicates"), Icon: components.IconPhotoStack("h-5 w-5"), Href: bp + "/reports/duplicates"},
+			components.BottomSheetItemData{Label: t(ctx, "nav.reports.duplicates"), Icon: components.IconUserGroup("h-5 w-5"), Href: bp + "/reports/duplicates"},
 			components.BottomSheetItemData{Label: t(ctx, "nav.images.unmatched"), Icon: components.IconPhoto("h-5 w-5"), Href: bp + "/reports/foreign-files"},
 			components.BottomSheetItemData{Label: t(ctx, "nav.images.library_duplicates"), Icon: components.IconPhotoStack("h-5 w-5"), Href: bp + "/reports/backdrop-duplicates"},
 			components.BottomSheetItemData{Label: t(ctx, "nav.reports.platform_backdrop_duplicates"), Icon: components.IconPhotoStack("h-5 w-5"), Href: bp + "/reports/platform-backdrop-duplicates"},

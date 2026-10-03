@@ -19,6 +19,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/i18n"
 )
 
 // countTestRouter wires the minimum Router surface the count handler needs.
@@ -201,9 +202,14 @@ func TestHandleArtistDuplicatesCount_NextChannel(t *testing.T) {
 	r, db := countTestRouter(t)
 	seedTwoDuplicates(t, db)
 
+	bundle, err := i18n.LoadEmbedded()
+	if err != nil {
+		t.Fatalf("loading embedded locales: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/duplicates/count?ch=next", nil)
 	ctx := middleware.WithTestUserID(req.Context(), "admin-1")
 	ctx = middleware.WithTestRole(ctx, "administrator")
+	ctx = i18n.WithTranslator(ctx, bundle.Translator("en"))
 	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
@@ -217,11 +223,17 @@ func TestHandleArtistDuplicatesCount_NextChannel(t *testing.T) {
 		`href="/reports/duplicates"`,
 		`data-path="/reports/duplicates"`,
 		`sw-sidebar-count-pill`,
-		`>1<`,  // one duplicate group
-		`<svg`, // glyph present in next/ branch
+		`>1<`,                 // one duplicate group
+		`<svg`,                // glyph present in next/ branch
+		`>Duplicate Artists<`, // label renamed from "Duplicates"
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q\nfull body: %s", want, body)
 		}
+	}
+	// Confirm the new icon (user-group path) is present and the old icon (rect)
+	// is gone: if someone reverts to the stacked-boxes copy glyph, this catches it.
+	if strings.Contains(body, `<rect`) {
+		t.Errorf("body contains old <rect> element from stacked-boxes icon\nfull body: %s", body)
 	}
 }
