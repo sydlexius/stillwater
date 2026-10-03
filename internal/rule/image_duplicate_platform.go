@@ -65,7 +65,7 @@ func platformPruneTolerance(configured float64) (float64, bool) {
 }
 
 // PlatformDupSweepPolicy tells the background platform near-duplicate sweep
-// (#3138 S3a, a later slice) whether to run and at what tolerance.
+// (publish.PlatformDupSweep, #3138 S3a) whether to run and at what tolerance.
 // It is on only when the fixer's platform phase could act: the rule enabled,
 // prune_platform_copies set, and a tolerance platformPruneTolerance accepts.
 // Going through that same function is what keeps the sweep's findings and the
