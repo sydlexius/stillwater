@@ -2,6 +2,7 @@ package rule
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -61,6 +62,29 @@ func platformPruneTolerance(configured float64) (float64, bool) {
 		return img.DefaultDuplicateTolerance, true
 	}
 	return configured, configured >= platformPruneToleranceFloor && configured <= 1
+}
+
+// PlatformDupSweepPolicy tells the background platform near-duplicate sweep
+// (#3138 S3a, a later slice) whether to run and at what tolerance.
+// It is on only when the fixer's platform phase could act: the rule enabled,
+// prune_platform_copies set, and a tolerance platformPruneTolerance accepts.
+// Going through that same function is what keeps the sweep's findings and the
+// fixer's deletes in agreement. Every disabled answer carries tolerance 0.
+func (s *Service) PlatformDupSweepPolicy(ctx context.Context) (tolerance float64, enabled bool, err error) {
+	r, err := s.GetByID(ctx, RuleImageDuplicate)
+	if errors.Is(err, ErrNotFound) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	if !r.Enabled || !r.Config.PrunePlatformCopies {
+		return 0, false, nil
+	}
+	if tolerance, enabled = platformPruneTolerance(r.Config.Tolerance); !enabled {
+		return 0, false, nil // refused (below the floor or above 1)
+	}
+	return tolerance, true, nil
 }
 
 // runPlatformPhase prunes near-duplicate backdrops on the artist's connected

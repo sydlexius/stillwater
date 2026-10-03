@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -291,6 +292,9 @@ type Publisher struct {
 	// double delete or a duplicate upload. See lockPhashTarget in
 	// phash_platform.go. Keyed lazily; entries are cheap and never removed.
 	phashTargetLocks sync.Map
+	// backdropWriteObserver, when set, is told about every write-intent lock
+	// of a backdrop target. See lockPhashTarget.
+	backdropWriteObserver atomic.Pointer[func(connectionID, platformArtistID string)]
 }
 
 // Narrow interfaces keep the publish package decoupled from concrete types.
