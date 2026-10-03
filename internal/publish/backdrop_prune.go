@@ -950,13 +950,20 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, scope 
 	if scope.Perceptual && !a.Locked && len(platformIDs) > 0 {
 		var optsErr error
 		if opts, optsErr = p.perceptualOptsFor(ctx, a); optsErr != nil {
-			p.logger.Warn("platform backdrop prune: perceptual tier skipped for artist",
-				slog.String("artist_id", a.ID), slog.String("error", optsErr.Error()))
 			result.Failures = append(result.Failures, PlatformBackdropPruneFailure{ArtistID: a.ID, Err: optsErr.Error()})
 			var skip *pruneSkipError
-			if errors.As(optsErr, &skip) {
+			isSkip := errors.As(optsErr, &skip)
+			if isSkip {
 				result.Skipped = append(result.Skipped, PlatformBackdropPruneSkip{ArtistID: a.ID, Reason: skip.reason})
 			}
+			// A policy skip on a dry run is an expected answer carried in the
+			// result; the background sweep would otherwise Warn per artist.
+			level := slog.LevelWarn
+			if isSkip && scope.DryRun {
+				level = slog.LevelDebug
+			}
+			p.logger.Log(ctx, level, "platform backdrop prune: perceptual tier skipped for artist",
+				slog.String("artist_id", a.ID), slog.String("error", optsErr.Error()))
 		}
 		opts.Tolerance = scope.tolerance
 	}

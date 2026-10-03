@@ -205,6 +205,7 @@ type Application struct {
 	collisionNotifier   *collision.Notifier
 	pipeline            *rule.Pipeline
 	imageDupFixer       *rule.ImageDuplicateFixer
+	platformDupSweep    *publish.PlatformDupSweep
 	bulkService         *rule.BulkService
 	bulkExecutor        *rule.BulkExecutor
 	eventBus            *event.Bus
@@ -681,6 +682,12 @@ func (a *Application) buildServices() error {
 	// at construction, because its post-delete cache invalidation lives on the
 	// Router; until this line the phase refuses rather than delete uninvalidated.
 	a.imageDupFixer.SetPlatformPruner(a.publisher, a.router.InvalidatePlatformBackdropCaches)
+	// #3138 S3a: the detection-only sweep that caches per-artist platform
+	// near-duplicates for the rule's checker. Built here so its cache observes
+	// backdrop writes before any request can make one; started in startListeners.
+	// It does no platform I/O unless the rule's prune_platform_copies option is on.
+	a.platformDupSweep = publish.NewPlatformDupSweep(a.publisher, a.ruleService.PlatformDupSweepPolicy,
+		publish.PlatformDupSweepConfig{}, logger)
 
 	// Hand ownership to run(): the caller's deferred Stop now owns the
 	// bus lifecycle. Clearing the flag prevents the deferred Stop above
@@ -1458,6 +1465,11 @@ func (a *Application) startListeners() error {
 		go a.publisher.StartArtworkReconciler(ctx, time.Duration(reconcileHours)*time.Hour, 60*time.Second)
 	}
 
+	// Platform near-duplicate sweep (#3138 S3a); idle unless the rule option is on.
+	// Drained before the database closes: a pass reads artists and rules.
+	sweepDone := make(chan struct{})
+	go func() { defer close(sweepDone); a.platformDupSweep.Start(ctx) }()
+
 	// Background relink reconciliation: retries an unverified post-move peer
 	// link on an interval measured in minutes, so a peer whose library scan
 	// takes longer than the rename's poll budget still self-heals without an
@@ -1589,6 +1601,10 @@ func (a *Application) startListeners() error {
 	// the drains above; the helper owns its bound and logs a timeout.
 	a.drainAIBlocklistOnShutdown()
 
+	// Drain the platform near-duplicate sweep (#3138 S3a). stop() has already
+	// canceled its ctx, and a pass checks ctx between artists and fetches.
+	waitForSweep(sweepDone, logger)
+
 	// Drain the registry-repair detector (#2678): its dry run reads the DB, so
 	// it must finish (or be abandoned at the bound) before run closes it.
 	a.drainRegistryRepairCheckOnShutdown()
@@ -1687,6 +1703,15 @@ func (a *Application) drainAIBlocklistOnShutdown() {
 	defer cancel()
 	if err := a.drainAIBlocklist(ctx); err != nil {
 		a.logger.Warn("AI blocklist refresh drain did not complete cleanly", slog.String("error", err.Error()))
+	}
+}
+
+// waitForSweep bounds the shutdown wait for the platform near-duplicate sweep.
+func waitForSweep(done <-chan struct{}, logger *slog.Logger) {
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		logger.Warn("platform duplicate sweep did not stop within 10s of shutdown")
 	}
 }
 
