@@ -84,10 +84,10 @@ func (r *Router) libraryDupCount(ctx context.Context) (int, error) {
 		r.logger.Error("pipeline does not implement fanartDuplicateRepairer; library duplicate-image count unavailable")
 		return 0, errLibraryDupScanUnavailable
 	}
-	// Stamp the scan's START, not its completion: storeBackdropDupReport orders
-	// overlapping scans by when they began, so a long scan that finishes after a
-	// newer one cannot overwrite the newer result.
-	scanStartedAt := time.Now()
+	// Take the generation at the scan's START, not its completion:
+	// storeBackdropDupReport orders overlapping scans by when they began, so a
+	// long scan that finishes after a newer one cannot overwrite the newer result.
+	scanGen := nextBackdropScanGen()
 	report, err := repairer.ScanFanartDuplicates(ctx)
 	if err != nil {
 		return 0, err
@@ -99,7 +99,7 @@ func (r *Router) libraryDupCount(ctx context.Context) (int, error) {
 	// partial: the page surfaces ScanErrors explicitly rather than silently
 	// truncating, unlike the single aggregate count below which must not
 	// show an undercount as an established fact.
-	r.storeBackdropDupReport(report, scanStartedAt)
+	r.storeBackdropDupReport(report, scanGen)
 	if report.ScanErrors > 0 {
 		// PARTIAL scan -- report.ScanErrors artists could not be re-hashed (a
 		// dropped NFS/SMB mount is the ordinary cause) and were SKIPPED, yet

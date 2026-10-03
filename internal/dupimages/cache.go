@@ -64,6 +64,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -160,6 +161,11 @@ type Counts struct {
 	LibraryAt time.Time
 	// PlatformsAt is the same provenance stamp for the Platforms half.
 	PlatformsAt time.Time
+
+	// libraryGen / platformsGen order writes to each half. The *At stamps are
+	// display data only: wall-clock time can tie across two adjacent reads, so
+	// "which write is newer" is decided by a monotonic generation (#2938).
+	libraryGen, platformsGen uint64
 }
 
 // Empty reports whether no duplicate row has anything to show. An un-computed
@@ -186,6 +192,14 @@ func (c Counts) PlatformTotal() int {
 type Cache struct {
 	mu     sync.RWMutex
 	counts Counts
+
+	// gen is the monotonic write-ordering counter behind Counts.libraryGen and
+	// platformsGen. Taken when a write (or a refresh scan) STARTS.
+	gen atomic.Uint64
+
+	// clock overrides time.Now for the provenance stamps; nil means the real
+	// clock. Tests freeze it to prove ordering never depends on timestamps.
+	clock func() time.Time
 
 	// srcMu guards the source functions, which are installed after
 	// construction (the API router owns the pipeline/publisher handles).
@@ -341,7 +355,7 @@ func (c *Cache) Get() Counts {
 // half: Set claims provenance over the half it was not given, which would let a
 // stale value masquerade as fresh.
 func (c *Cache) Set(counts Counts) {
-	now := time.Now()
+	now := c.now()
 	if counts.LibraryAt.IsZero() {
 		counts.LibraryAt = now
 	}
@@ -349,6 +363,11 @@ func (c *Cache) Set(counts Counts) {
 		counts.PlatformsAt = now
 	}
 	c.mu.Lock()
+	// ONE generation for both halves, drawn under the lock so a concurrent
+	// refresh cannot start between two draws and overwrite only one half, and
+	// so lock order equals generation order.
+	gen := c.gen.Add(1)
+	counts.libraryGen, counts.platformsGen = gen, gen
 	c.counts = normalize(counts)
 	c.mu.Unlock()
 }
@@ -361,9 +380,23 @@ func (c *Cache) Set(counts Counts) {
 // is a LOST UPDATE: a concurrent StorePlatforms would be read before its write
 // and overwritten by this one's stale copy of the platform half.
 func (c *Cache) StoreLibrary(count int) {
+	c.storeLibraryGen(count, c.gen.Add(1))
+}
+
+// storeLibraryGen commits count only if gen is newer than the half's current
+// generation. The generation is drawn BEFORE the lock is taken, so two stores
+// can commit in the opposite order to their draws; without this check the
+// older one would land last and restore stale counts. A compare is simpler
+// than drawing under the lock because it also stays correct for refresh, whose
+// startGen is necessarily drawn before its (minutes-long) scan.
+func (c *Cache) storeLibraryGen(count int, gen uint64) {
 	c.update(func(cur Counts) Counts {
+		if cur.libraryGen >= gen {
+			return cur
+		}
 		cur.Library = count
-		cur.LibraryAt = time.Now()
+		cur.LibraryAt = c.now()
+		cur.libraryGen = gen
 		return cur
 	})
 }
@@ -371,11 +404,28 @@ func (c *Cache) StoreLibrary(count int) {
 // StorePlatforms records authoritative per-platform counts, leaving the library
 // half untouched. Same locking rationale as StoreLibrary.
 func (c *Cache) StorePlatforms(platforms []PlatformCount) {
+	c.storePlatformsGen(platforms, c.gen.Add(1))
+}
+
+// storePlatformsGen is storeLibraryGen for the platforms half.
+func (c *Cache) storePlatformsGen(platforms []PlatformCount, gen uint64) {
 	c.update(func(cur Counts) Counts {
+		if cur.platformsGen >= gen {
+			return cur
+		}
 		cur.Platforms = platforms
-		cur.PlatformsAt = time.Now()
+		cur.PlatformsAt = c.now()
+		cur.platformsGen = gen
 		return cur
 	})
+}
+
+// now is the provenance clock: display data only, never used for ordering.
+func (c *Cache) now() time.Time {
+	if c.clock != nil {
+		return c.clock()
+	}
+	return time.Now()
 }
 
 // update applies fn to the live snapshot with c.mu held for the whole
@@ -743,7 +793,7 @@ func (c *Cache) refresh(ctx context.Context) error {
 	// remediation plus a report-page visit can easily land mid-scan; comparing
 	// against this is how the write below detects that it is about to overwrite
 	// a value FRESHER than its own.
-	startedAt := time.Now()
+	startGen := c.gen.Add(1)
 
 	var (
 		firstErr    error
@@ -795,16 +845,16 @@ func (c *Cache) refresh(ctx context.Context) error {
 	// applied only if no fresher value landed while this scan was running.
 	var skippedStale []string
 	c.update(func(cur Counts) Counts {
-		now := time.Now()
+		now := c.now()
 		if libOK {
-			if cur.LibraryAt.After(startedAt) {
+			if cur.libraryGen > startGen {
 				skippedStale = append(skippedStale, "library")
 			} else {
-				cur.Library, cur.LibraryAt = libN, now
+				cur.Library, cur.LibraryAt, cur.libraryGen = libN, now, startGen
 			}
 		}
 		if platformsOK {
-			if cur.PlatformsAt.After(startedAt) {
+			if cur.platformsGen > startGen {
 				skippedStale = append(skippedStale, "platforms")
 			} else {
 				// Assign unconditionally, including an empty result: an empty
@@ -812,7 +862,7 @@ func (c *Cache) refresh(ctx context.Context) error {
 				// answer and must clear stale rows. This is safe ONLY because a
 				// partial sweep arrives as an error (see ErrPartialScan) and so
 				// never reaches this branch.
-				cur.Platforms, cur.PlatformsAt = platforms, now
+				cur.Platforms, cur.PlatformsAt, cur.platformsGen = platforms, now, startGen
 			}
 		}
 		return cur

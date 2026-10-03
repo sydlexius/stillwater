@@ -16,6 +16,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/dupimages"
@@ -256,28 +257,37 @@ const backdropRemediateWriteTimeout = 30 * time.Minute
 // /reports/backdrop-duplicates (#2684). Called by libraryDupCount (the
 // background scan shared with the sidebar's dupimages.Cache) and by
 // handleBackdropDuplicatesRemediate (an explicit post-collapse rescan).
-// startedAt is when the scan that produced report BEGAN. A report whose scan
-// started no later than the cached one's is DROPPED: scans overlap and finish
-// out of order, so accepting the last writer lets a scan that began before a
-// remediation land after it and quietly restore the counts the operator just
-// collapsed. The operator would then see their own remediation appear to have
-// done nothing.
-func (r *Router) storeBackdropDupReport(report rule.FanartDupReport, startedAt time.Time) {
+// gen is the scan's START generation from nextBackdropScanGen. A report whose
+// generation is not greater than the cached one's is DROPPED: scans overlap and
+// finish out of order, so accepting the last writer lets a scan that began
+// before a remediation land after it and quietly restore the counts the
+// operator just collapsed. Ordering is by a monotonic counter, never by
+// wall-clock time: two scans starting in the same clock tick would tie on a
+// timestamp and the newer would be discarded as stale (#2849, #2938).
+func (r *Router) storeBackdropDupReport(report rule.FanartDupReport, gen uint64) {
 	r.backdropDupReportMu.Lock()
 	defer r.backdropDupReportMu.Unlock()
-	if !r.backdropDupReportStartedAt.IsZero() && !startedAt.After(r.backdropDupReportStartedAt) {
+	if gen <= r.backdropDupReportGen {
 		// Not an error: losing this race is the normal, correct outcome for the
 		// older scan. Logged so an operator chasing a "stale" page can see that
 		// a result was deliberately discarded rather than silently lost.
 		r.logger.Debug("discarding fanart duplicate report from an older scan",
-			slog.Time("scan_started_at", startedAt),
-			slog.Time("cached_scan_started_at", r.backdropDupReportStartedAt))
+			slog.Uint64("scan_gen", gen),
+			slog.Uint64("cached_scan_gen", r.backdropDupReportGen))
 		return
 	}
 	r.backdropDupReport = report
 	r.backdropDupReportAt = time.Now()
-	r.backdropDupReportStartedAt = startedAt
+	r.backdropDupReportGen = gen
 }
+
+// backdropScanGen hands out scan generations. Package-level so every scan
+// path draws from one ordering.
+var backdropScanGen atomic.Uint64
+
+// nextBackdropScanGen returns a strictly increasing generation. Call it when a
+// scan STARTS, not when it finishes.
+func nextBackdropScanGen() uint64 { return backdropScanGen.Add(1) }
 
 // backdropDupReportSnapshot returns the cached report and when it was taken.
 // ok is false until the first scan has ever landed, which is the page's
