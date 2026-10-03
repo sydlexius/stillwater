@@ -8,8 +8,17 @@
 # no pattern, because it fails at tag time rather than at edit time.
 
 [build]
-working_dir = "."
 pre_checks = [
+    # Refuse to tag while an OPEN issue labelled `release-blocker` sits in the matching
+    # `v<MAJOR>.<MINOR>.x blockers` milestone (#2905). The milestone is a standing planning
+    # bucket; only the labelled subset blocks. pre_checks never receive the target version
+    # (/push-release substitutes {version} only in later steps), so the script derives it the
+    # way step 3 defaults it: a patch bump of the latest v* tag on origin/main. LIMIT: that is
+    # only the right milestone for a PATCH release. For a minor/major (or any non-default
+    # version) run first: RELEASE_TARGET_VERSION=<v> bash scripts/check-release-blockers.sh
+    # As a backstop the check fails closed if a higher v<M>.<m>.x bucket has open blockers.
+    # To ship a blocker knowingly: RELEASE_BLOCKERS_OVERRIDE='<reason>' /push-release ...
+    "bash scripts/check-release-blockers.sh",
     # Wait for ALL workflow runs on the current main tip to finish, then fail
     # only on a genuinely bad conclusion. Uses --commit <SHA> so every parallel
     # workflow (CI, Security, etc.) is checked, not just whichever run happens

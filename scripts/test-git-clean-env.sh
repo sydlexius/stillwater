@@ -160,6 +160,7 @@ HELPERS=(
     test-stylelint-diff-gate.sh
     test-check-commit-signing.sh
     test-link-worktree-settings.sh
+    test-check-release-blockers.sh
 )
 
 # check-commit-signing.sh runs `git init` too but is deliberately NOT above: a

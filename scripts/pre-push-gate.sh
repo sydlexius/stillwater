@@ -202,6 +202,10 @@ echo "=== Required workflows run on any PR base (#3002) ==="
 bash "$SCRIPT_DIR/check-pr-trigger-scope.sh"
 
 echo ""
+echo "=== release-blockers check self-test (#2905) ==="
+bash "$SCRIPT_DIR/test-check-release-blockers.sh"
+
+echo ""
 echo "=== git-init guard presence (#3051) ==="
 # `git init <path>` re-initializes an inherited GIT_DIR and IGNORES <path>. The
 # pre-push hook exports GIT_DIR, this gate inherits it, and several checks below
