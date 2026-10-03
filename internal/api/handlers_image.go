@@ -3398,6 +3398,8 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 // flag for every stale entry it encounters along the way. This self-heals the
 // DB so that exists_flag=1 stays accurate without a separate cleanup pass.
 // GET /api/v1/images/random-backdrop
+//
+//nolint:gocognit // Each failure path (query, scan, rows iteration, lookup, stat, flag clear) needs its own request-canceled check so a hung-up client is not logged as a fault; extracting them would hide the per-path ordering.
 func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) {
 	// Resolve naming patterns before opening the rows cursor. Drain the cursor
 	// into a slice before doing per-artist lookups so that the single-connection
@@ -3409,6 +3411,13 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 		 WHERE image_type = 'fanart' AND slot_index = 0 AND exists_flag = 1
 		 ORDER BY RANDOM()`)
 	if err != nil {
+		// A client that hung up is not a server error (see the loop below).
+		// database/sql also closes the Rows when the request context ends
+		// after this call returns, so rows.Scan and rows.Err() below can
+		// surface the cancellation too and carry the same check.
+		if req.Context().Err() != nil {
+			return
+		}
 		r.logger.Error("random backdrop query failed", slog.String("error", err.Error()))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
@@ -3424,6 +3433,9 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
+			if req.Context().Err() != nil {
+				return
+			}
 			r.logger.Error("random backdrop scan failed", slog.String("error", err.Error()))
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
@@ -3431,6 +3443,9 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 		artistIDs = append(artistIDs, id)
 	}
 	if err := rows.Err(); err != nil {
+		if req.Context().Err() != nil {
+			return
+		}
 		r.logger.Error("random backdrop iteration failed", slog.String("error", err.Error()))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
@@ -3439,6 +3454,16 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 	for _, artistID := range artistIDs {
 		a, err := r.artistService.GetByID(req.Context(), artistID)
 		if err != nil {
+			// A canceled request (tab closed, request aborted) is a normal
+			// event, not a server fault: stop walking the pool instead of
+			// logging one warning per remaining artist. The request context
+			// is checked rather than the error type so that any error the
+			// cancellation produces is treated the same way. The query,
+			// scan and iteration paths return on the same check, the flag-clear
+			// path breaks on it, and the stat path skips its Warn on it.
+			if req.Context().Err() != nil {
+				break
+			}
 			r.logger.Warn("random backdrop artist lookup failed",
 				slog.String("artist_id", artistID),
 				slog.String("error", err.Error()))
@@ -3458,14 +3483,22 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 		// and #2686 for the missing-directory extension.
 		filePath, found, statErr := img.FindExistingImageStrictVerifyDir(req.Context(), dir, patterns)
 		if statErr != nil {
-			r.logger.Warn("random backdrop: stat error probing artist dir; preserving exists_flag",
-				slog.String("artist_id", a.ID),
-				slog.String("error", statErr.Error()))
+			// A canceled request is not a filesystem fault. After a cancel the
+			// next lookup fails and ends the loop. This cancel case is not
+			// exercised by a test (no seam lands a cancel inside the stat).
+			if req.Context().Err() == nil {
+				r.logger.Warn("random backdrop: stat error probing artist dir; preserving exists_flag",
+					slog.String("artist_id", a.ID),
+					slog.String("error", statErr.Error()))
+			}
 			continue
 		}
 		if !found {
 			// File is genuinely gone despite exists_flag=1; clear the stale flag and keep looking.
 			if err := r.artistService.ClearImageFlag(req.Context(), a.ID, "fanart", 0); err != nil {
+				if req.Context().Err() != nil {
+					break
+				}
 				r.logger.Warn("failed to clear stale backdrop flag",
 					slog.String("artist_id", a.ID),
 					slog.String("error", err.Error()))
