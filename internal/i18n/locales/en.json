@@ -1481,7 +1481,7 @@
   "nav.logs": "Logs",
   "nav.reports": "Reports",
   "nav.reports.compliance": "Compliance",
-  "nav.reports.duplicates": "Duplicates",
+  "nav.reports.duplicates": "Duplicate Artists",
   "nav.images": "Images",
   "nav.images.unmatched": "Unmatched",
   "nav.images.unmatched.aria": "%d unrecognized images in your library",

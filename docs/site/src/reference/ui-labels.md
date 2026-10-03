@@ -16,9 +16,9 @@ These are the top-level items in the left-hand sidebar, as rendered to end users
 |---|---|
 | Dashboard | Main at-a-glance health view |
 | Artists | The artist list and grid |
-| Reports | Parent item; expands to Compliance, Duplicates, Unmatched Images |
+| Reports | Parent item; expands to Compliance, Duplicate Artists, Unmatched Images |
 | Reports > Compliance | Per-artist rule compliance table |
-| Reports > Duplicates | Near-duplicate artist detection |
+| Reports > Duplicate Artists | Near-duplicate artist detection |
 | Reports > Unmatched Images | Images without Stillwater provenance |
 | Rules | Top-level nav to the violations / rule-run surface |
 | Activity | Full metadata-change activity feed |

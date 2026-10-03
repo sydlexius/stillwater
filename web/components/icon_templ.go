@@ -1171,7 +1171,10 @@ func IconHome(size string) templ.Component {
 }
 
 // IconUserGroup renders the Heroicons "user-group" outline icon (24x24). Used
-// for the Artists nav item in the next/ sidebar.
+// for the Artists nav item in the next/ sidebar, and deliberately also for the
+// Duplicate Artists report entry (#2683), which reuses the people glyph because
+// the issue asks for a people icon from the existing set and the entry sits in
+// a different nav group from Artists, so no visual ambiguity results.
 func IconUserGroup(size string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context

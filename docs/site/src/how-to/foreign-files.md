@@ -37,4 +37,4 @@ Both pages support roving navigation over the table rows:
 
 ## See also
 
-- [View reports](view-reports.md#duplicate-and-foreign-file-reports) for how this report page fits alongside the two-pane Reports workspace and Duplicates.
+- [View reports](view-reports.md#duplicate-and-foreign-file-reports) for how this report page fits alongside the two-pane Reports workspace and Duplicate Artists.
