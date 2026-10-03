@@ -100,12 +100,25 @@ func (r *Router) handleSetupRestore(w http.ResponseWriter, req *http.Request) {
 	// against the freshly-restored users table. The HasUsers gate above
 	// guarantees no session existed before this handler ran, so there is
 	// no session to invalidate.
-	r.logger.Info("setup restore complete",
+	// Warn instead of Info when the restore dropped rows, so a partial restore
+	// stands out in the log. Only key NAMES and counts are logged, never values.
+	attrs := []any{
 		"users_imported", result.UsersImported,
 		"connections", result.Connections,
 		"libraries", result.Libraries,
 		"api_tokens", result.APITokens,
-	)
+		"libraries_skipped", result.LibrariesSkipped,
+		"api_tokens_skipped", result.APITokensSkipped,
+		"connection_features_ignored", result.ConnectionFeaturesIgnored,
+		"settings_rejected", result.SettingsRejected,
+		"settings_rejected_keys", result.SettingsRejectedKeys,
+		"settings_renamed_dropped", result.SettingsRenamedDropped,
+	}
+	if importDropWarning(result) != "" {
+		r.logger.Warn("setup restore complete with dropped rows", attrs...)
+	} else {
+		r.logger.Info("setup restore complete", attrs...)
+	}
 
 	loginPath := r.basePath + "/"
 	if req.Header.Get("HX-Request") == "true" {
@@ -123,6 +136,13 @@ func (r *Router) handleSetupRestore(w http.ResponseWriter, req *http.Request) {
 		"connections":    result.Connections,
 		"libraries":      result.Libraries,
 		"api_tokens":     result.APITokens,
+		// Drop counters (#3012), so an API caller can see a partial restore.
+		"libraries_skipped":           result.LibrariesSkipped,
+		"api_tokens_skipped":          result.APITokensSkipped,
+		"connection_features_ignored": result.ConnectionFeaturesIgnored,
+		"settings_rejected":           result.SettingsRejected,
+		"settings_rejected_keys":      result.SettingsRejectedKeys,
+		"settings_renamed_dropped":    result.SettingsRenamedDropped,
 	})
 }
 

@@ -2913,6 +2913,12 @@ paths:
                   connections: { type: integer }
                   libraries: { type: integer }
                   api_tokens: { type: integer }
+                  libraries_skipped: { type: integer, description: Libraries skipped because they could not be restored. }
+                  api_tokens_skipped: { type: integer, description: API tokens skipped (owner absent on the target). }
+                  connection_features_ignored: { type: integer, description: Per-feature write toggles ignored because the connection type does not support them. }
+                  settings_rejected: { type: integer, description: "Settings rows rejected as invalid and not applied; non-zero means the restore was partial." }
+                  settings_rejected_keys: { type: array, items: { type: string }, description: "Names of the rejected settings keys, capped at 100. Values are never included." }
+                  settings_renamed_dropped: { type: integer, description: Rows under a renamed settings key discarded because the file also carried the current name. }
             text/html:
               schema:
                 type: string
@@ -13533,6 +13539,23 @@ paths:
                   ownership_reassigned:
                     type: integer
                     description: Number of API tokens whose owner was absent on the target and were reassigned to the importing admin via admin_fallback_tokens=true.
+                  connection_features_ignored:
+                    type: integer
+                    description: Number of per-feature write toggles carried for a connection type that does not have them. The connection still imports; omitted when zero.
+                  settings_rejected:
+                    type: integer
+                    description: Number of settings rows whose value failed validation and were NOT applied. Non-zero means the restore was partial; omitted when zero.
+                  settings_rejected_keys:
+                    type: array
+                    items:
+                      type: string
+                    description: Names of the rejected settings keys, capped at 100 entries (settings_rejected keeps the true total). Values are never included.
+                  settings_renamed:
+                    type: integer
+                    description: Number of rows carried under a renamed settings key and applied under the current name; omitted when zero.
+                  settings_renamed_dropped:
+                    type: integer
+                    description: Number of rows carried under a renamed settings key that were discarded because the envelope also carried the current name; omitted when zero.
             text/html:
               schema:
                 type: string

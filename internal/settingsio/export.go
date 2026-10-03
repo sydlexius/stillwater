@@ -256,9 +256,9 @@ type ImportResult struct {
 	ScraperConfigs   int `json:"scraper_configs"`
 	UserPreferences  int `json:"user_preferences"`
 	Libraries        int `json:"libraries"`
-	LibrariesSkipped int `json:"libraries_skipped,omitempty"`
+	LibrariesSkipped int `json:"libraries_skipped"`
 	APITokens        int `json:"api_tokens"`
-	APITokensSkipped int `json:"api_tokens_skipped,omitempty"`
+	APITokensSkipped int `json:"api_tokens_skipped"`
 	// UsersImported counts user rows freshly inserted on the target from
 	// the envelope because they were absent under both id and username
 	// (#1283). The id-hit refresh path (envelope brought a user whose UUID
@@ -267,7 +267,7 @@ type ImportResult struct {
 	// increment this counter -- those are refresh/skip, not recreation,
 	// and folding them in would overreport on subsequent re-imports
 	// against the same target.
-	UsersImported int `json:"users_imported,omitempty"`
+	UsersImported int `json:"users_imported"`
 	// ConnectionFeaturesIgnored counts per-feature write toggles carried in
 	// the envelope for a connection type that does not have them (#2579).
 	// The connection itself still imports -- an envelope is a batch restore,
@@ -279,7 +279,7 @@ type ImportResult struct {
 	// on the target AND who were attributed to the importing admin via the
 	// admin-fallback opt-in. This is a deliberate ownership change and is
 	// surfaced in the result so it cannot be silent (#1283).
-	OwnershipReassigned int `json:"ownership_reassigned,omitempty"`
+	OwnershipReassigned int `json:"ownership_reassigned"`
 	// SettingsRejected counts settings rows the envelope carried whose value
 	// failed validation and were therefore NOT applied (#3008). Each is also
 	// logged at Warn naming the key and the reason.

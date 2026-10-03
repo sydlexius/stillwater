@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/settingsio"
 )
 
 // restoreMultipart builds a multipart/form-data body containing an envelope
@@ -366,5 +368,46 @@ func TestRestoreOOBE_ClearsPipelineRuleCache(t *testing.T) {
 	}
 	if n := clears.Load(); n != 1 {
 		t.Fatalf("pipeline ClearRuleCache calls after a successful restore = %d, want 1", n)
+	}
+}
+
+// TestRestoreOOBE_JSONReportsDroppedRows (#3012): the restore path imports with
+// the same service as /settings/import, so the rows it drops must reach the
+// JSON response, and the response must conform to openapi.yaml.
+func TestRestoreOOBE_JSONReportsDroppedRows(t *testing.T) {
+	t.Parallel()
+	const passphrase = "restore-drop-pass"
+	env := sealImportPayload(t, settingsio.Payload{
+		Settings: map[string]string{
+			"mbid_revalidate.name_similarity_threshold": "0.5",
+			"mbid_revalidate.name_similarity":           "80",
+		},
+		Libraries: []settingsio.LibraryExport{
+			{Name: "", Path: "/a", Type: "regular", Source: "manual"},
+			{Name: "", Path: "/b", Type: "regular", Source: "manual"},
+		},
+		APITokens: []settingsio.APITokenExport{{Name: "t", TokenHash: ""}},
+	}, passphrase)
+	router, _, _ := settingsIOTestDeps(t)
+	body, contentType := restoreMultipart(t, env, passphrase)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/setup/restore", body)
+	req.Header.Set("Content-Type", contentType)
+	w := serveValidated(t, http.HandlerFunc(router.handleSetupRestore), req)
+
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	want := map[string]string{
+		"settings_rejected":        "1",
+		"settings_rejected_keys":   `["mbid_revalidate.name_similarity_threshold"]`,
+		"settings_renamed_dropped": "1",
+		"libraries_skipped":        "2",
+		"api_tokens_skipped":       "1",
+	}
+	for k, v := range want {
+		if string(got[k]) != v {
+			t.Errorf("%s = %s, want %s", k, got[k], v)
+		}
 	}
 }
