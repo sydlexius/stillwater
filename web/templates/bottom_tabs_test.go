@@ -75,6 +75,16 @@ func TestBottomTabs_MoreSheet_AdminCoverage(t *testing.T) {
 			t.Errorf("admin More sheet missing expected label %q", label)
 		}
 	}
+
+	// Pin the user-group icon so a revert to IconPhotoStack fails. IconUserGroup is
+	// used for the Duplicate Artists More sheet entry, so the count must be at
+	// least 1. Use Count instead of Contains so a plain Contains could spuriously
+	// pass on other text containing the substring; Count verifies it actually
+	// appears the expected minimum number of times.
+	userGroupCount := strings.Count(html, `M18 18.72a9.094`)
+	if userGroupCount < 1 {
+		t.Errorf("More sheet Duplicate Artists icon: user-group path appeared %d times, want >= 1", userGroupCount)
+	}
 }
 
 // TestBottomTabs_MoreSheet_NonAdminOmitsAdminOnly mirrors sidebar_test.go's
