@@ -2002,12 +2002,13 @@ components:
             What SUPPLIED the value, distinct from source (issue #3078).
             Empty string ("") means unrecorded -- the writer did not say,
             which is neither a claim that a human nor an automated process
-            supplied the value. Every row currently in the database has
-            producer "" (no write path stamps a real value yet); the
-            non-empty vocabulary ("operator", "restore", "nfo",
-            "filesystem", "provider:<name>", "platform:<type>",
-            "rule:<rule_id>") is defined but not yet written by any
-            handler.
+            supplied the value. Rows written before the producer column
+            existed, and writes from paths that do not stamp one yet, are "".
+            Provider refresh ("provider:<name>"), platform pull
+            ("platform:<type>"), field edit and field clear ("operator" or
+            "provider:<name>") stamp a producer; the rule engine, scanner and
+            restore paths ("rule:<rule_id>", "nfo", "filesystem", "restore")
+            are not stamped yet.
         created_at:
           type: string
           format: date-time
@@ -14157,6 +14158,9 @@ paths:
               properties:
                 value:
                   type: string
+                producer:
+                  type: string
+                  description: Optional claim of who supplied the value, recorded in the change history. Only "operator" and "provider:<known provider>" are honored; any other value is recorded as unrecorded.
               required: [value]
           application/x-www-form-urlencoded:
             schema:
@@ -14164,6 +14168,9 @@ paths:
               properties:
                 value:
                   type: string
+                producer:
+                  type: string
+                  description: Optional claim of who supplied the value, recorded in the change history. Only "operator" and "provider:<known provider>" are honored; any other value is recorded as unrecorded.
               required: [value]
       responses:
         "200":

@@ -20,8 +20,8 @@ var ErrChangeNotFound = fmt.Errorf("metadata change not found")
 // Producer (issue #3078) is a SEPARATE fact from Source: Source records WHAT
 // TRIGGERED the write, Producer records WHAT SUPPLIED THE VALUE. See
 // history_producer.go for the vocabulary and why the two are independent
-// columns rather than one richer Source. As of this PR every row's Producer
-// is ProducerUnrecorded ("") -- no write path stamps a real value yet.
+// columns rather than one richer Source. A write path that does not stamp a
+// producer records ProducerUnrecorded ("").
 type MetadataChange struct {
 	ID        string    `json:"id"`
 	ArtistID  string    `json:"artist_id"`

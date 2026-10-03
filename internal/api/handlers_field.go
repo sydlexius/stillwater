@@ -185,7 +185,7 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	value, err := extractFieldValue(req, field)
+	value, producerClaim, err := extractFieldRequest(req, field)
 	if err != nil {
 		r.logger.Warn("invalid field value",
 			slog.String("field", field),
@@ -220,6 +220,18 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// #3078: record who supplied the value. Source stays "manual" (the operator
+	// triggered the write); the producer says whether the operator typed it or
+	// chose a provider's value in the modal. Allow-listed, never defaulted.
+	producer := sanitizeProducerClaim(producerClaim)
+	if producer == artist.ProducerUnrecorded && producerClaim != "" {
+		// Log the rejected TOKEN only, never the field value.
+		r.logger.Warn("rejected producer claim, recording unrecorded",
+			slog.String("field", field),
+			slog.String("producer_claim", producerClaim))
+	}
+	writeCtx := artist.ContextWithProducer(req.Context(), producer)
+
 	switch {
 	case artist.IsProviderIDField(field):
 		// This is the operator editing their own data, so a lock on this field
@@ -250,7 +262,7 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 		// check INSIDE the transaction that performs the write, so only one
 		// of a racing pair can commit. The guard above stays as the fast
 		// path for the ordinary uncontended case; this call is the authority.
-		collision, _, err := r.artistService.UpdateNameGuarded(req.Context(), artistID, value)
+		collision, _, err := r.artistService.UpdateNameGuarded(writeCtx, artistID, value)
 		if err != nil {
 			r.logger.Error("guarded artist rename",
 				slog.String("artist_id", artistID),
@@ -267,7 +279,7 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	default:
-		if _, err := r.artistService.UpdateField(req.Context(), artistID, field, value); err != nil {
+		if _, err := r.artistService.UpdateField(writeCtx, artistID, field, value); err != nil {
 			writeError(w, req, http.StatusInternalServerError, "failed to update field")
 			return
 		}
@@ -357,7 +369,7 @@ func (r *Router) handleFieldClear(w http.ResponseWriter, req *http.Request) {
 			writeError(w, req, http.StatusInternalServerError, "failed to clear field")
 			return
 		}
-	} else if _, err := r.artistService.ClearField(req.Context(), artistID, field); err != nil {
+	} else if _, err := r.artistService.ClearField(artist.ContextWithProducer(req.Context(), artist.ProducerOperator), artistID, field); err != nil {
 		writeError(w, req, http.StatusInternalServerError, "failed to clear field")
 		return
 	}
@@ -577,35 +589,78 @@ func (r *Router) handleFieldProviders(w http.ResponseWriter, req *http.Request) 
 // The form path uses req.PostForm to avoid accepting values from query
 // parameters.
 func extractFieldValue(req *http.Request, field string) (string, error) {
+	value, _, err := extractFieldRequest(req, field)
+	return value, err
+}
+
+// extractFieldRequest is extractFieldValue plus the RAW, UNVALIDATED producer
+// claim the client sent beside the value (#3078). The claim is returned
+// untouched; sanitizeProducerClaim is the only thing that may turn it into a
+// stored producer. The body can be read only once, so both are parsed here.
+func extractFieldRequest(req *http.Request, field string) (value, producerClaim string, err error) {
 	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
 		var body struct {
-			Value json.RawMessage `json:"value"`
+			Value    json.RawMessage `json:"value"`
+			Producer json.RawMessage `json:"producer"`
 		}
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-			return "", fmt.Errorf("invalid JSON body: %w", err)
+			return "", "", fmt.Errorf("invalid JSON body: %w", err)
 		}
 		if len(body.Value) == 0 || string(body.Value) == "null" {
-			return "", nil
+			return "", jsonProducerClaim(body.Producer), nil
 		}
 		// Try string first (most common case).
 		var s string
 		if err := json.Unmarshal(body.Value, &s); err == nil {
-			return s, nil
+			return s, jsonProducerClaim(body.Producer), nil
 		}
 		// Try array of strings only for slice fields (genres, styles, moods).
 		if artist.IsSliceField(field) {
 			var arr []string
 			if err := json.Unmarshal(body.Value, &arr); err == nil {
-				return strings.Join(arr, ", "), nil
+				return strings.Join(arr, ", "), jsonProducerClaim(body.Producer), nil
 			}
-			return "", fmt.Errorf("value must be a string or array of strings")
+			return "", "", fmt.Errorf("value must be a string or array of strings")
 		}
-		return "", fmt.Errorf("value must be a string")
+		return "", "", fmt.Errorf("value must be a string")
 	}
 	if err := req.ParseForm(); err != nil {
-		return "", fmt.Errorf("parsing form: %w", err)
+		return "", "", fmt.Errorf("parsing form: %w", err)
 	}
-	return req.PostForm.Get("value"), nil
+	return req.PostForm.Get("value"), req.PostForm.Get("producer"), nil
+}
+
+// jsonProducerClaim best-effort decodes the JSON producer member to a string.
+// A producer of any other JSON type (number, object, array) becomes "": a bad
+// producer must never fail the write (history_producer.go contract), it only
+// degrades to unrecorded.
+func jsonProducerClaim(raw json.RawMessage) string {
+	var s string
+	if len(raw) == 0 || json.Unmarshal(raw, &s) != nil {
+		return ""
+	}
+	return s
+}
+
+// sanitizeProducerClaim turns a client-supplied producer claim into the value
+// recorded in metadata_changes.producer (#3078). It is a POSITIVE ALLOW-LIST:
+// only "operator" and "provider:<known provider>" pass. Everything else
+// (rule:, platform:, restore, nfo, filesystem are server-side facts; unknown
+// providers; absent or malformed claims) degrades to ProducerUnrecorded. It
+// never defaults to "operator": an unrecognized claim is unknown, and
+// guessing "operator" would launder an automated write as a human one.
+func sanitizeProducerClaim(claim string) string {
+	if claim == artist.ProducerOperator {
+		return artist.ProducerOperator
+	}
+	if name, ok := strings.CutPrefix(claim, "provider:"); ok {
+		for _, known := range provider.AllProviderNames() {
+			if name == string(known) {
+				return claim
+			}
+		}
+	}
+	return artist.ProducerUnrecorded
 }
 
 // fieldProviderNames returns the provider name strings for a given field,

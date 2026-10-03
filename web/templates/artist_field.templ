@@ -634,6 +634,7 @@ templ tagFieldEdit(a *artist.Artist, field, label string, tags []string, provide
 			hx-target={ "#field-" + field + "-" + a.ID }
 			hx-swap="outerHTML"
 		>
+			<input type="hidden" name="producer" value="operator"/>
 			<input
 				type="text"
 				name="value"
@@ -752,6 +753,7 @@ templ detailFieldEdit(a *artist.Artist, field, label, value string, providers []
 				hx-target={ "#field-" + field + "-" + a.ID }
 				hx-swap="outerHTML"
 			>
+				<input type="hidden" name="producer" value="operator"/>
 				<input
 					type="text"
 					name="value"
@@ -853,7 +855,7 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 										hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
 										hx-target={ "#field-" + field + "-" + a.ID }
 										hx-swap="outerHTML"
-										hx-vals={ hxValsJSON(map[string]string{"value": strings.Join(r.Values, ", ")}) }
+										hx-vals={ hxValsJSON(map[string]string{"value": strings.Join(r.Values, ", "), "producer": "provider:" + string(r.Provider)}) }
 										hx-headers='{"Content-Type":"application/json"}'
 										hx-on::after-request="hideFieldProviderModal()"
 									>
@@ -865,7 +867,7 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 										hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
 										hx-target={ "#field-" + field + "-" + a.ID }
 										hx-swap="outerHTML"
-										hx-vals={ hxValsJSON(map[string]string{"value": mergeSliceValues(artist.SliceFieldFromArtist(a, field), r.Values)}) }
+										hx-vals={ hxValsJSON(map[string]string{"value": mergeSliceValues(artist.SliceFieldFromArtist(a, field), r.Values), "producer": "provider:" + string(r.Provider)}) }
 										hx-headers='{"Content-Type":"application/json"}'
 										hx-on::after-request="hideFieldProviderModal()"
 									>
@@ -902,7 +904,7 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 										hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
 										hx-target={ "#field-" + field + "-" + a.ID }
 										hx-swap="outerHTML"
-										hx-vals={ hxValsJSON(map[string]string{"value": r.Value}) }
+										hx-vals={ hxValsJSON(map[string]string{"value": r.Value, "producer": "provider:" + string(r.Provider)}) }
 										hx-headers='{"Content-Type":"application/json"}'
 										hx-on::after-request="hideFieldProviderModal()"
 									>

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
@@ -145,10 +146,15 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// #3078: the operator clicked Pull (source stays "manual"), but the VALUES
+	// come from the platform, so the history rows record platform:<type> as
+	// their producer rather than leaving the write looking operator-authored.
+	pullCtx := artist.ContextWithProducer(req.Context(), "platform:"+conn.Type)
+
 	var updated []string
 
 	if state.Biography != "" {
-		changed, err := r.artistService.UpdateField(req.Context(), artistID, "biography", state.Biography)
+		changed, err := r.artistService.UpdateField(pullCtx, artistID, "biography", state.Biography)
 		if err != nil {
 			r.logger.Warn("updating biography from platform", "error", err)
 		} else if changed {
@@ -157,7 +163,7 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if len(state.Genres) > 0 {
-		if r.pullGenres(req.Context(), artistID, state.Genres) {
+		if r.pullGenres(pullCtx, artistID, state.Genres) {
 			updated = append(updated, "genres")
 		}
 	}
@@ -169,7 +175,7 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if state.PremiereDate != "" {
-		changed, err := r.artistService.UpdateField(req.Context(), artistID, premiereField, dateOnly(state.PremiereDate))
+		changed, err := r.artistService.UpdateField(pullCtx, artistID, premiereField, dateOnly(state.PremiereDate))
 		if err != nil {
 			r.logger.Warn("updating date from platform", "field", premiereField, "error", err)
 		} else if changed {
@@ -178,7 +184,7 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if state.EndDate != "" {
-		changed, err := r.artistService.UpdateField(req.Context(), artistID, endField, dateOnly(state.EndDate))
+		changed, err := r.artistService.UpdateField(pullCtx, artistID, endField, dateOnly(state.EndDate))
 		if err != nil {
 			r.logger.Warn("updating date from platform", "field", endField, "error", err)
 		} else if changed {

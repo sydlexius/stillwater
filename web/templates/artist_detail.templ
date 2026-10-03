@@ -1170,6 +1170,7 @@ templ artistDetailPageScript() {
 			// failed) does not re-PATCH an already-persisted value.
 			function swMarkCommitted(input) {
 				if (!input) return;
+				delete input.dataset.swStaged;
 				if ((input.tagName || '').toLowerCase() === 'select') {
 					Array.prototype.forEach.call(input.options, function (o) { o.defaultSelected = o.selected; });
 				} else {
@@ -1258,6 +1259,9 @@ templ artistDetailPageScript() {
 						var input = container.querySelector('[name="value"]');
 						if (input) {
 							input.value = v;
+							// #3078: a staged prior value may be provider text, so it must
+							// NOT be committed as operator-authored. Done reads this flag.
+							input.dataset.swStaged = '1';
 							input.dispatchEvent(new Event('input', { bubbles: true }));
 						}
 					}
@@ -1297,7 +1301,7 @@ templ artistDetailPageScript() {
 					var url = form.getAttribute('hx-patch');
 					var input = form.querySelector('[name="value"]');
 					if (url && fieldChanged(input)) {
-						jobs.push({ url: bp + url, rawUrl: url, value: input.value, input: input });
+						jobs.push({ url: bp + url, rawUrl: url, value: input.value, input: input, staged: input.dataset.swStaged === '1' });
 					}
 				});
 				// Nothing dirty, but every editor is still open: swap the sections
@@ -1323,7 +1327,7 @@ templ artistDetailPageScript() {
 							method: 'PATCH',
 							headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrf },
 							credentials: 'same-origin',
-							body: 'value=' + encodeURIComponent(job.value)
+							body: 'value=' + encodeURIComponent(job.value) + (job.staged ? '' : '&producer=operator')
 						}).then(function (r) {
 							if (r.ok) { swMarkCommitted(job.input); return undefined; }
 							return r.text().then(function (body) {
