@@ -383,6 +383,9 @@ func TestBytesPerPixel_NeverUnderestimatesRealDecodes(t *testing.T) {
 		// Lossy WebP with alpha.
 		{"WebP lossy WITH alpha (decodes NYCbCrA)", mustReadTestdata(t, "lossy_alpha_16x16.webp")},
 		{"WebP lossless WITH alpha", mustReadTestdata(t, "lossless_alpha_16x16.webp")},
+		// VP8X header with the alpha flag CLEAR wrapping a VP8L chunk: the
+		// config path reports YCbCrModel, but VP8L always decodes to NRGBA.
+		{"WebP lossless in VP8X, alpha flag clear (header says YCbCr, decodes NRGBA)", mustReadTestdata(t, "lossless_vp8x_noalpha_16x16.webp")},
 	}
 
 	for _, tc := range cases {
@@ -420,24 +423,54 @@ func mustReadTestdata(t *testing.T, name string) []byte {
 	return data
 }
 
-// TestLossyWebPAlpha_FixtureIsAlphaBearing pins the precondition of the WebP
-// case above: the fixture must really decode to *image.NYCbCrA (so the case
-// exercises the alpha footprint) and the header must report NYCbCrAModel.
-func TestLossyWebPAlpha_FixtureIsAlphaBearing(t *testing.T) {
-	data := mustReadTestdata(t, "lossy_alpha_16x16.webp")
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil {
-		t.Fatalf("DecodeConfig: %v", err)
+// TestWebPFixtures_Preconditions pins what each WebP case above relies on, so
+// swapping a fixture for a different one cannot leave the case green while
+// verifying nothing: the alpha fixtures must carry a pixel with alpha < 255,
+// the lossy one must decode to *image.NYCbCrA with NYCbCrAModel in the header,
+// and the VP8X/no-alpha one must really disagree (YCbCr header, NRGBA decode).
+func TestWebPFixtures_Preconditions(t *testing.T) {
+	hasTranslucent := func(img image.Image) bool {
+		b := img.Bounds()
+		for y := b.Min.Y; y < b.Max.Y; y++ {
+			for x := b.Min.X; x < b.Max.X; x++ {
+				if _, _, _, a := img.At(x, y).RGBA(); a < 0xffff {
+					return true
+				}
+			}
+		}
+		return false
 	}
-	if cfg.ColorModel != color.NYCbCrAModel {
-		t.Errorf("DecodeConfig reports %v, want color.NYCbCrAModel", cfg.ColorModel)
+	cases := []struct {
+		file      string
+		wantModel color.Model
+		wantType  string
+		wantAlpha bool
+	}{
+		{"lossy_alpha_16x16.webp", color.NYCbCrAModel, "*image.NYCbCrA", true},
+		{"lossless_alpha_16x16.webp", color.NRGBAModel, "*image.NRGBA", true},
+		{"lossless_vp8x_noalpha_16x16.webp", color.YCbCrModel, "*image.NRGBA", false},
 	}
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		t.Fatalf("Decode: %v", err)
-	}
-	if _, ok := img.(*image.NYCbCrA); !ok {
-		t.Errorf("Decode returned %T, want *image.NYCbCrA", img)
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			data := mustReadTestdata(t, tc.file)
+			cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+			if err != nil {
+				t.Fatalf("DecodeConfig: %v", err)
+			}
+			img, _, err := image.Decode(bytes.NewReader(data))
+			if err != nil {
+				t.Fatalf("Decode: %v", err)
+			}
+			if cfg.ColorModel != tc.wantModel {
+				t.Errorf("DecodeConfig reports %v, want %v", cfg.ColorModel, tc.wantModel)
+			}
+			if got := fmt.Sprintf("%T", img); got != tc.wantType {
+				t.Errorf("Decode returned %s, want %s", got, tc.wantType)
+			}
+			if tc.wantAlpha && !hasTranslucent(img) {
+				t.Errorf("fixture has no pixel with alpha < 255; it no longer exercises alpha")
+			}
+		})
 	}
 }
 
