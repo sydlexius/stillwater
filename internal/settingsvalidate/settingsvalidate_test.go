@@ -1,6 +1,7 @@
 package settingsvalidate
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -235,22 +236,30 @@ func TestValidateRuleScheduleMinutes(t *testing.T) {
 	cases := []struct {
 		input   string
 		wantErr bool
+		wantVal string // canonical form; only checked when !wantErr
 	}{
-		{"0", false}, // disabled
-		{"5", false}, // minimum non-zero
-		{"60", false},
-		{"1", true}, // 1-4 rejected
-		{"4", true},
-		{"-1", true},
-		{"abc", true},
+		{"0", false, "0"}, // disabled
+		{"5", false, "5"}, // minimum non-zero
+		{"60", false, "60"},
+		{"+60", false, "60"},  // leading + removed
+		{"0060", false, "60"}, // leading zeros removed
+		{fmt.Sprintf("%d", MaxRuleScheduleMinutes), false, fmt.Sprintf("%d", MaxRuleScheduleMinutes)}, // at max
+		{"1", true, ""}, // 1-4 rejected
+		{"4", true, ""},
+		{"-1", true, ""},
+		{fmt.Sprintf("%d", MaxRuleScheduleMinutes+1), true, ""}, // over max
+		{"abc", true, ""},
 	}
 	for _, c := range cases {
-		_, err := validateRuleScheduleMinutes(c.input)
+		got, err := validateRuleScheduleMinutes(c.input)
 		if c.wantErr && err == nil {
 			t.Errorf("input %q: expected error", c.input)
 		}
 		if !c.wantErr && err != nil {
 			t.Errorf("input %q: unexpected error: %v", c.input, err)
+		}
+		if !c.wantErr && got != c.wantVal {
+			t.Errorf("input %q: got %q, want %q", c.input, got, c.wantVal)
 		}
 	}
 }

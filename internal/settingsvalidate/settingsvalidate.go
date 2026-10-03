@@ -30,20 +30,31 @@ type validator func(v string) (canonical string, err error)
 // (and to keep downstream arithmetic such as MB*1024*1024 or hours*time.Hour
 // far from int64 overflow), not to police a plausible operator choice.
 const (
-	// maxIntervalHours is one year. It matches the 24*365 cap in
+	// MaxIntervalHours is one year. It matches the 24*365 cap in
 	// cmd/stillwater (resolveMBIDRevalidateSchedule), which silently falls back
 	// to the default past it, so a larger value would be stored then ignored.
-	maxIntervalHours = 24 * 365
-	// maxBackupRetentionCount: backups are whole-database files; 10000 of them
+	MaxIntervalHours = 24 * 365
+	// MaxRuleScheduleMinutes is one year in minutes. Prevents overflow when
+	// multiplied by time.Minute in cmd/stillwater/main.go.
+	MaxRuleScheduleMinutes = 24 * 365 * 60
+	// MaxBackupRetentionCount: backups are whole-database files; 10000 of them
 	// is already far beyond any real disk budget.
-	maxBackupRetentionCount = 10000
-	// maxBackupMaxAgeDays is 100 years; 0 still means "no age limit".
-	maxBackupMaxAgeDays = 36500
-	// maxImageCacheMB is 16 TiB; 0 still means "unlimited".
-	maxImageCacheMB = 16 * 1024 * 1024
-	// maxMBIDPerPass: the sweep clamps to the remaining population, so this
+	MaxBackupRetentionCount = 10000
+	// MaxBackupMaxAgeDays is 100 years; 0 still means "no age limit".
+	MaxBackupMaxAgeDays = 36500
+	// MaxImageCacheMB is 16 TiB; 0 still means "unlimited".
+	MaxImageCacheMB = 16 * 1024 * 1024
+	// MaxMBIDPerPass: the sweep clamps to the remaining population, so this
 	// only needs to exceed any real library (one million artists).
-	maxMBIDPerPass = 1_000_000
+	MaxMBIDPerPass = 1_000_000
+
+	// For internal use in validateIntRange.
+	maxIntervalHours        = MaxIntervalHours
+	maxRuleScheduleMinutes  = MaxRuleScheduleMinutes
+	maxBackupRetentionCount = MaxBackupRetentionCount
+	maxBackupMaxAgeDays     = MaxBackupMaxAgeDays
+	maxImageCacheMB         = MaxImageCacheMB
+	maxMBIDPerPass          = MaxMBIDPerPass
 )
 
 // registry maps setting keys to their validation functions.
@@ -162,13 +173,14 @@ func validateEnum(key string, allowed ...string) validator {
 	}
 }
 
-// validateRuleScheduleMinutes accepts 0 (disabled) or any value >= 5.
+// validateRuleScheduleMinutes accepts 0 (disabled) or values in [5, maxRuleScheduleMinutes].
+// Returns the canonical form with leading zeros and leading + removed.
 func validateRuleScheduleMinutes(v string) (string, error) {
 	n, err := strconv.Atoi(v)
-	if err != nil || (n != 0 && n < 5) {
-		return "", errors.New("rule_schedule.interval_minutes must be 0 (disabled) or >= 5")
+	if err != nil || (n != 0 && (n < 5 || n > maxRuleScheduleMinutes)) {
+		return "", fmt.Errorf("rule_schedule.interval_minutes must be 0 (disabled) or between 5 and %d", maxRuleScheduleMinutes)
 	}
-	return v, nil
+	return strconv.Itoa(n), nil
 }
 
 // validateBasePath validates the server.base_path setting.
