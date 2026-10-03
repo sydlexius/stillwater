@@ -28,7 +28,7 @@ pre_checks = [
     #
     # Deliberately NOT `gh run watch --exit-status`: that flag treats any
     # conclusion other than "success" as failure, including "skipped". Several
-    # workflows here (Claude Code, Merge approved Dependabot PRs) skip on every
+    # workflows here (Merge approved Dependabot PRs) skip on every
     # commit, so the old form exited non-zero on a perfectly green tip and the
     # check could never pass. Status ("is anything still running?") and
     # conclusion ("did anything fail?") are separate questions; conflating them
