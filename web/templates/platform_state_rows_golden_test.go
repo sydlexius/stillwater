@@ -12,6 +12,7 @@ package templates
 import (
 	"bytes"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -75,8 +76,20 @@ func TestPlatformStateCardReadOnly_Golden(t *testing.T) {
 				t.Fatalf("read golden %s: %v (run with -update-platform-state-golden)", path, err)
 			}
 			if !bytes.Equal(golden, buf.Bytes()) {
-				t.Errorf("platform-state markup drifted from golden %s", path)
+				t.Errorf("platform-state markup drifted from golden %s: %s", path, describeDrift(golden, buf.Bytes()))
 			}
 		})
 	}
+}
+
+// describeDrift locates the first differing byte between two renders and shows
+// ~80 bytes of each around it. Goldens are single-line, so a bare path says
+// nothing about which row drifted.
+func describeDrift(want, got []byte) string {
+	i := 0
+	for i < len(want) && i < len(got) && want[i] == got[i] {
+		i++
+	}
+	ctx := func(b []byte) []byte { return b[max(i-80, 0):min(i+80, len(b))] }
+	return fmt.Sprintf("first difference at byte %d (want len %d, got len %d)\n want: ...%s...\n  got: ...%s...", i, len(want), len(got), ctx(want), ctx(got))
 }
