@@ -984,8 +984,9 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, scope 
 // pruneOneTarget runs detect, plan and delete for one artist on one connection
 // under lockPhashTarget (#3316), which every Stillwater indexed backdrop writer
 // also holds: the polluted-backdrop delete and restore, uploadFanartForSync,
-// both branches of pushFanartSetToPeer, and the push handler (via
-// LockBackdropTarget). A write by the platform itself is outside it, so each
+// both branches of pushFanartSetToPeer, and the push handler plus the
+// two platform fanart delete paths, deleteImageFromPlatforms and
+// handleDeletePushImage (all via LockBackdropTarget). A write by the platform itself is outside it, so each
 // delete still re-verifies. Detect-to-delete is one read-modify-verify, and the
 // perceptual tier's per-backdrop decode widens the window a concurrent resync
 // could otherwise interleave with. Re-entrancy: no caller of pruneOneArtist
