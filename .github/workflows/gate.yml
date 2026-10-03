@@ -845,17 +845,30 @@ jobs:
           # pull_request AND push (to main); github-pr-check assumes PR
           # context and github-check works either way.
           reporter: github-check
-          # Explicit tool_name (#2506): reviewdog's default is the bare tool
-          # name "shellcheck", which collides case-insensitively with this
-          # job's own always-reporting status check "Shellcheck" (see the
-          # comment block above). That collision is confusing and this
-          # check-run only ever appears on same-repo PRs that touch the
+          # Explicit check-run name (#2506, #3283): reviewdog's default is the
+          # bare tool name "shellcheck", which collides case-insensitively
+          # with this job's own always-reporting status check "Shellcheck"
+          # (see the comment block above). That collision is confusing and
+          # this check-run only ever appears on same-repo PRs that touch the
           # gated paths, so it must never be mistaken for (or required in
-          # place of) the job-level check. Renaming makes the two
-          # unambiguous: "Shellcheck" (job, always reports, safe to
-          # require) vs. "shellcheck-annotations" (inline findings only,
-          # paths-gated, never required).
-          tool_name: shellcheck-annotations
+          # place of) the job-level check. action-shellcheck has NO
+          # `tool_name` input (an unknown input is ignored with a warning) and
+          # hardcodes `-name="shellcheck"`, so the name is overridden via
+          # reviewdog_flags instead: the flags are appended after the
+          # action's own -name, and Go's flag parsing lets the last one win.
+          # Result: "Shellcheck" (job, always reports, safe to require) vs.
+          # "shellcheck-annotations" (inline findings only, paths-gated,
+          # never required). The same flags are also appended to the action's
+          # second (suggestion, github-pr-review) pass, so that label becomes
+          # "shellcheck-annotations" too.
+          # -level= (empty) is also passed (#3283). The action defaults -level
+          # to error, and with any non-empty level reviewdog concludes the
+          # check-run from that level alone, so even an info-level finding
+          # concluded `failure`. With an empty level the conclusion follows
+          # each finding's own severity: error -> failure, warning or
+          # info/style -> neutral, none -> success. (`level: ''` as an input
+          # may be swapped back to the default, so the flag is used.)
+          reviewdog_flags: -name=shellcheck-annotations -level=
           fail_level: error
           # .githooks/pre-commit and .githooks/pre-push have no .sh extension
           # (standard hook naming); reviewdog's default *.sh pattern would
