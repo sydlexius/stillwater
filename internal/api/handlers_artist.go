@@ -11,6 +11,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/components"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -150,29 +151,30 @@ func parseIDsParam(raw string) []string {
 	return ids
 }
 
-// handleArtistsPage renders the artist list HTML page.
-// GET /artists
-//
-// buildArtistListData assembles the ArtistListData for the artists list page
-// from the request query (sort/order/flyout filters/pagination/off-page ids)
-// plus best-effort compliance and platform-presence lookups. It returns
-// ok=false after writing a login or error response, so callers can simply
-// return.
-//
-//nolint:gocognit // Artists page handler (cog 50): resolves auth, parses paging/sort/filter params, validates "show selected" IDs, queries the page slice + total counts + facet counts, then renders both full-page and HTMX-partial responses. The parse/query/render stages could move into named helpers reading from a shared request-context struct without reshuffling render-time fields. Refactor tracked in #1550.
-func (r *Router) buildArtistListData(w http.ResponseWriter, req *http.Request) (templates.ArtistListData, bool) {
+// artistListRequest holds the parsed request state for the artists list page,
+// shared by the query, enrich, and assemble stages of buildArtistListData
+// (same shape as dashboardFilterParams in handlers_dashboard.go).
+type artistListRequest struct {
+	params artist.ListParams
+	view   string // resolved to "grid" or "table"
+}
+
+// parseArtistListRequest runs the auth gate and parses the sort/order/paging/
+// filter/view query state. It returns ok=false after writing a login or 400
+// response, so callers can simply return.
+func (r *Router) parseArtistListRequest(w http.ResponseWriter, req *http.Request) (artistListRequest, bool) {
 	if !r.requireAuth(w, req) {
-		return templates.ArtistListData{}, false
+		return artistListRequest{}, false
 	}
 	userID := middleware.UserIDFromContext(req.Context())
 
 	sortKey, ok := validateSortParam(w, req, allowedArtistSort)
 	if !ok {
-		return templates.ArtistListData{}, false
+		return artistListRequest{}, false
 	}
 	order, ok := validateOrderParam(w, req)
 	if !ok {
-		return templates.ArtistListData{}, false
+		return artistListRequest{}, false
 	}
 	params := artist.ListParams{
 		Page:      intQuery(req, "page", 1),
@@ -194,6 +196,86 @@ func (r *Router) buildArtistListData(w http.ResponseWriter, req *http.Request) (
 	if view != "grid" {
 		view = "table"
 	}
+	return artistListRequest{params: params, view: view}, true
+}
+
+// fetchArtistListEnrichments loads per-artist compliance status (from active
+// rule violations) and platform presence (Emby, Jellyfin, Lidarr) for the
+// page slice. Both are best-effort: a failure is logged and the corresponding
+// map stays nil so the page still renders.
+func (r *Router) fetchArtistListEnrichments(ctx context.Context, artists []artist.Artist) (map[string]artist.ComplianceStatus, map[string]artist.PlatformPresence) {
+	if len(artists) == 0 {
+		return nil, nil
+	}
+	artistIDs := make([]string, len(artists))
+	for i := range artists {
+		artistIDs[i] = artists[i].ID
+	}
+
+	var complianceMap map[string]artist.ComplianceStatus
+	if r.ruleService != nil {
+		cm, err := r.ruleService.GetComplianceForArtists(ctx, artistIDs)
+		if err != nil {
+			r.logger.Error("fetching compliance for artist list", "error", err)
+		} else {
+			complianceMap = cm
+		}
+	}
+
+	var platformPresence map[string]artist.PlatformPresence
+	pp, err := r.artistService.GetPlatformPresenceForArtists(ctx, artistIDs)
+	if err != nil {
+		r.logger.Warn("fetching platform presence for artist list", "error", err)
+	} else {
+		platformPresence = pp
+	}
+	return complianceMap, platformPresence
+}
+
+// loadLibrarySources lists libraries and builds the source-info map for
+// imported (non-manual) ones, resolving each connection name once. The list
+// error is logged and the (possibly nil) result is still returned.
+func (r *Router) loadLibrarySources(ctx context.Context) ([]library.Library, map[string]templates.LibrarySourceInfo) {
+	libs, err := r.libraryService.List(ctx)
+	if err != nil {
+		r.logger.Warn("listing libraries for artists page", "error", err)
+	}
+
+	sources := make(map[string]templates.LibrarySourceInfo)
+	connNames := map[string]string{} // cache connection ID -> name
+	for i := range libs {
+		lib := &libs[i]
+		if lib.Source == "" || lib.Source == "manual" {
+			continue
+		}
+		info := templates.LibrarySourceInfo{Source: lib.Source}
+		if lib.ConnectionID != "" {
+			if name, ok := connNames[lib.ConnectionID]; ok {
+				info.ConnectionName = name
+			} else if conn, connErr := r.connectionService.GetByID(ctx, lib.ConnectionID); connErr == nil {
+				info.ConnectionName = conn.Name
+				connNames[lib.ConnectionID] = conn.Name
+			}
+		}
+		if info.ConnectionName == "" {
+			info.ConnectionName = lib.SourceDisplayName()
+		}
+		sources[lib.ID] = info
+	}
+	return libs, sources
+}
+
+// buildArtistListData assembles the ArtistListData for the artists list page
+// from the request query (sort/order/flyout filters/pagination/off-page ids)
+// plus best-effort compliance and platform-presence lookups. It returns
+// ok=false after writing a login or error response, so callers can simply
+// return. It is an orchestrator: parse -> query -> enrich -> assemble.
+func (r *Router) buildArtistListData(w http.ResponseWriter, req *http.Request) (templates.ArtistListData, bool) {
+	lr, ok := r.parseArtistListRequest(w, req)
+	if !ok {
+		return templates.ArtistListData{}, false
+	}
+	params, view := lr.params, lr.view
 
 	artists, total, err := r.artistService.List(req.Context(), params)
 	if err != nil {
@@ -207,38 +289,7 @@ func (r *Router) buildArtistListData(w http.ResponseWriter, req *http.Request) (
 		totalPages++
 	}
 
-	// Collect artist IDs for batch lookups (compliance, platform presence).
-	var artistIDs []string
-	if len(artists) > 0 {
-		artistIDs = make([]string, len(artists))
-		for i := range artists {
-			artistIDs[i] = artists[i].ID
-		}
-	}
-
-	// Fetch per-artist compliance status from active rule violations.
-	// Best-effort: a failure does not prevent the page from rendering.
-	var complianceMap map[string]artist.ComplianceStatus
-	if r.ruleService != nil && len(artistIDs) > 0 {
-		cm, err := r.ruleService.GetComplianceForArtists(req.Context(), artistIDs)
-		if err != nil {
-			r.logger.Error("fetching compliance for artist list", "error", err)
-		} else {
-			complianceMap = cm
-		}
-	}
-
-	// Fetch per-artist platform presence (Emby, Jellyfin, Lidarr) from
-	// artist_platform_ids joined with connections. Best-effort.
-	var platformPresence map[string]artist.PlatformPresence
-	if len(artistIDs) > 0 {
-		pp, err := r.artistService.GetPlatformPresenceForArtists(req.Context(), artistIDs)
-		if err != nil {
-			r.logger.Warn("fetching platform presence for artist list", "error", err)
-		} else {
-			platformPresence = pp
-		}
-	}
+	complianceMap, platformPresence := r.fetchArtistListEnrichments(req.Context(), artists)
 
 	// BaseURL drives pagination links, the "show all" affordance, and the shared
 	// sort/selection JS fragment-swap path. Since the artists-list promotion
@@ -274,36 +325,8 @@ func (r *Router) buildArtistListData(w http.ResponseWriter, req *http.Request) (
 	}
 
 	if r.libraryService != nil {
-		libs, err := r.libraryService.List(req.Context())
-		if err != nil {
-			r.logger.Warn("listing libraries for artists page", "error", err)
-		}
+		libs, sources := r.loadLibrarySources(req.Context())
 		data.Libraries = libs
-
-		// Build source info map for imported libraries (non-manual).
-		sources := make(map[string]templates.LibrarySourceInfo)
-		connNames := map[string]string{} // cache connection ID -> name
-		for i := range libs {
-			lib := &libs[i]
-			if lib.Source == "" || lib.Source == "manual" {
-				continue
-			}
-			info := templates.LibrarySourceInfo{Source: lib.Source}
-			if lib.ConnectionID != "" {
-				if name, ok := connNames[lib.ConnectionID]; ok {
-					info.ConnectionName = name
-				} else {
-					if conn, connErr := r.connectionService.GetByID(req.Context(), lib.ConnectionID); connErr == nil {
-						info.ConnectionName = conn.Name
-						connNames[lib.ConnectionID] = conn.Name
-					}
-				}
-			}
-			if info.ConnectionName == "" {
-				info.ConnectionName = lib.SourceDisplayName()
-			}
-			sources[lib.ID] = info
-		}
 		if len(sources) > 0 {
 			data.LibrarySources = sources
 		}

@@ -12,6 +12,8 @@ import (
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
+	"github.com/sydlexius/stillwater/internal/library"
+	"github.com/sydlexius/stillwater/web/templates"
 )
 
 func TestHandleArtistsBadge_ZeroCount(t *testing.T) {
@@ -824,5 +826,56 @@ func TestHandleArtistsPage_InvalidSortReturnsBadRequest(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
+	}
+}
+
+// TestBuildArtistListData_LibrarySourcesAndViewFallback pins two branches of
+// the data assembly that no other test reaches (#1550 characterization): only
+// imported (non-manual) libraries get a LibrarySources entry, with the source
+// display name as the connection-name fallback; and the view falls back to the
+// stored ui.artists_view setting when the URL carries none, while an explicit
+// ?view= still wins.
+func TestBuildArtistListData_LibrarySourcesAndViewFallback(t *testing.T) {
+	t.Parallel()
+	r, libSvc, _ := testRouterWithLibrary(t)
+	ctx := context.Background()
+
+	manual := &library.Library{Name: "Manual", Path: t.TempDir(), Type: library.TypeRegular, Source: library.SourceManual}
+	if err := libSvc.Create(ctx, manual); err != nil {
+		t.Fatalf("creating manual library: %v", err)
+	}
+	imported := &library.Library{Name: "Imported", Path: t.TempDir(), Type: library.TypeRegular, Source: library.SourceEmby}
+	if err := libSvc.Create(ctx, imported); err != nil {
+		t.Fatalf("creating imported library: %v", err)
+	}
+	if _, err := r.db.ExecContext(ctx,
+		`INSERT INTO settings (key, value, updated_at) VALUES ('ui.artists_view', 'grid', datetime('now'))
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`); err != nil {
+		t.Fatalf("seeding ui.artists_view: %v", err)
+	}
+
+	build := func(url string) templates.ArtistListData {
+		t.Helper()
+		req := httptest.NewRequestWithContext(middleware.WithTestUserID(ctx, "test-user"), http.MethodGet, url, nil)
+		data, ok := r.buildArtistListData(httptest.NewRecorder(), req)
+		if !ok {
+			t.Fatalf("buildArtistListData(%q) ok = false, want true", url)
+		}
+		return data
+	}
+
+	data := build("/artists")
+	if data.View != "grid" || data.Pagination.View != "grid" {
+		t.Errorf("view = %q / pagination %q, want stored setting grid", data.View, data.Pagination.View)
+	}
+	if len(data.LibrarySources) != 1 {
+		t.Fatalf("LibrarySources len = %d, want 1 (manual skipped): %+v", len(data.LibrarySources), data.LibrarySources)
+	}
+	info, ok := data.LibrarySources[imported.ID]
+	if !ok || info.Source != library.SourceEmby || info.ConnectionName != "Emby" {
+		t.Errorf("LibrarySources[imported] = %+v (present=%v), want Emby source with display-name fallback", info, ok)
+	}
+	if got := build("/artists?view=table").View; got != "table" {
+		t.Errorf("explicit view=table = %q, want table", got)
 	}
 }
