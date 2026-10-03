@@ -6944,6 +6944,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal error while deleting the connection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /connections/{id}/test:
     post:

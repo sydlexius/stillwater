@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -605,6 +606,53 @@ func TestHandleDeleteConnection_NotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `"connection not found"`) || strings.Contains(body, "no-such-id") {
+		t.Errorf("body = %s, want sanitized message without the id", body)
+	}
+}
+
+// A database failure during delete must surface as a sanitized 500, not a 404
+// carrying raw error text, and the detail must go to the log.
+func TestHandleDeleteConnection_DBFailureIs500(t *testing.T) {
+	t.Parallel()
+	r := newConnectionTestRouter(t)
+	var logs bytes.Buffer
+	r.logger = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	c := &connection.Connection{Name: "Boom", Type: connection.TypeEmby, URL: "http://boom:8096", APIKey: "k", Enabled: true}
+	if err := r.connectionService.Create(context.Background(), c); err != nil {
+		t.Fatalf("create connection: %v", err)
+	}
+	if _, err := r.db.Exec(`CREATE TRIGGER boom_conn_delete BEFORE DELETE ON connections
+		BEGIN SELECT RAISE(ABORT, 'boom'); END`); err != nil {
+		t.Fatalf("installing trigger: %v", err)
+	}
+
+	// Service level: a database failure is not ErrNotFound; a missing id is.
+	err := r.connectionService.Delete(context.Background(), c.ID)
+	if err == nil || errors.Is(err, connection.ErrNotFound) {
+		t.Fatalf("Delete err = %v, want a non-ErrNotFound failure", err)
+	}
+	if err := r.connectionService.Delete(context.Background(), "missing"); !errors.Is(err, connection.ErrNotFound) {
+		t.Fatalf("Delete(missing) err = %v, want ErrNotFound", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/connections/"+c.ID, nil)
+	req.SetPathValue("id", c.ID)
+	w := httptest.NewRecorder()
+	r.handleDeleteConnection(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "internal error") || strings.Contains(body, "boom") || strings.Contains(body, "constraint") {
+		t.Errorf("body = %s, want sanitized internal error", body)
+	}
+	if !strings.Contains(logs.String(), "level=ERROR") || !strings.Contains(logs.String(), "boom") {
+		t.Errorf("expected an Error log carrying the detail, got %q", logs.String())
 	}
 }
 

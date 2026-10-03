@@ -612,8 +612,16 @@ func (r *Router) handleDeleteConnection(w http.ResponseWriter, req *http.Request
 		}
 	}
 
+	// Both detaches are intentional: the branch above handles library rows per
+	// the caller's choice, while Delete detaches again (a no-op here) so it is
+	// safe for any caller. Do not remove either.
 	if err := r.connectionService.Delete(req.Context(), id); err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		if errors.Is(err, connection.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+			return
+		}
+		r.logger.Error("deleting connection", "connection_id", id, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
