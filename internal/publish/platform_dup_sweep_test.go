@@ -260,6 +260,18 @@ func TestPlatformDupSweep_NoOverlapConcurrentReadsAndShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { defer close(done); fx.sweep.Start(ctx) }()
+	// Registered before any fatal assertion: an early failure must still
+	// unpark the pass (it waits on release), stop the loop and join it.
+	releasePass := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(func() {
+		releasePass()
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("the sweep loop was still running when the test ended")
+		}
+	})
 
 	select {
 	case <-entered:
@@ -277,7 +289,6 @@ func TestPlatformDupSweep_NoOverlapConcurrentReadsAndShutdown(t *testing.T) {
 			t.Errorf("second Run during a pass: err %v, want ErrPlatformDupSweepRunning", err)
 		}
 	case <-time.After(5 * time.Second):
-		close(release)
 		t.Fatal("a second Run started while a pass was in flight")
 	}
 	// No cache lock is held across that read: readers and writers do not block.
@@ -292,7 +303,7 @@ func TestPlatformDupSweep_NoOverlapConcurrentReadsAndShutdown(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	close(release)
+	releasePass()
 	deadline := time.After(5 * time.Second)
 	for fx.sweep.Cache().Lookup("a2", 0.90).State == PlatformDupUnknown {
 		select {
