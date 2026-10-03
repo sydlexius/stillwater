@@ -165,23 +165,6 @@ func (s *Service) GetByTypeAndURL(ctx context.Context, connType, url string) (*C
 	return c, nil
 }
 
-// DeduplicateByTypeURL removes duplicate connection rows, keeping only the most
-// recent row per type+url combination. Returns the number of rows removed.
-func (s *Service) DeduplicateByTypeURL(ctx context.Context) (int64, error) {
-	result, err := s.db.ExecContext(ctx, `
-		DELETE FROM connections WHERE id NOT IN (
-			SELECT id FROM (
-				SELECT id, ROW_NUMBER() OVER (PARTITION BY type, url ORDER BY created_at DESC) AS rn
-				FROM connections
-			) WHERE rn = 1
-		)
-	`)
-	if err != nil {
-		return 0, fmt.Errorf("deduplicating connections: %w", err)
-	}
-	return result.RowsAffected()
-}
-
 // Update modifies an existing connection. The API key is re-encrypted before storage.
 func (s *Service) Update(ctx context.Context, c *Connection) error {
 	if err := c.Validate(); err != nil {
@@ -239,15 +222,34 @@ func (s *Service) Update(ctx context.Context, c *Connection) error {
 	return nil
 }
 
-// Delete removes a connection by ID.
+// Delete removes a connection by ID. Libraries that reference the connection
+// are detached (connection_id set to NULL) rather than deleted.
+//
+// libraries.connection_id has a NO ACTION foreign key, so a bare DELETE fails
+// while any library still points at the connection. The detach and the delete
+// share one transaction so a failure part-way leaves the libraries attached
+// instead of detached from a connection that still exists.
 func (s *Service) Delete(ctx context.Context, id string) error {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM connections WHERE id = ?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning connection delete: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after a successful Commit
+
+	if _, err := tx.ExecContext(ctx, `UPDATE libraries SET connection_id = NULL, updated_at = ? WHERE connection_id = ?`,
+		time.Now().UTC().Format(time.RFC3339), id); err != nil {
+		return fmt.Errorf("detaching libraries from connection: %w", err)
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM connections WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("deleting connection: %w", err)
 	}
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
 		return fmt.Errorf("connection not found: %s", id)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing connection delete: %w", err)
 	}
 	return nil
 }
