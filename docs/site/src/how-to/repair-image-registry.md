@@ -105,6 +105,12 @@ those four always account for the whole library.
 A non-zero `write_failures` means the run did **not** fully complete, even though the request
 succeeded. Re-run the operation; it is safe to repeat.
 
+## Background Check
+
+Stillwater runs a preview in the background every 12 hours (the first one two minutes after startup) and
+remembers whether anything needed repair. The check never runs on demand, so the answer can be up to 12 hours old. Completing a repair of the whole library updates
+it immediately.
+
 ## What It Cannot Fix
 
 Repair works from what is on disk, so it can only help artists it can locate. An artist with no

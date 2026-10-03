@@ -878,6 +878,24 @@ components:
                 DISCARDED because the envelope also carried the current name,
                 which wins. Counted separately from settings_renamed because
                 the operator loses a value here (the staler of the two).
+    RegistryRepairBanner:
+      type: object
+      description: Cached registry-repair detector result (#2678).
+      required: [needs_repair, count, ok]
+      properties:
+        needs_repair:
+          type: boolean
+          description: True when ok and count is above zero.
+        count:
+          type: integer
+          description: Rows a dry repair would rebuild or restore (or failed writes after a repair).
+        checked_at:
+          type: string
+          format: date-time
+          description: When the count was recorded; omitted when never checked.
+        ok:
+          type: boolean
+          description: False when never checked or the last check failed.
     RegistryRepairStatus:
       type: object
       description: Polled state of the async image registry repair job (#2678).
@@ -4072,6 +4090,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RegistryRepairStatus"
+        "401":
+          description: Authentication required.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "403":
+          description: Administrator role required.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /reports/registry-repair/banner:
+    get:
+      tags: [Reports]
+      summary: Cached "needs image registry repair" state
+      description: >-
+        Result of the background registry-repair check (#2678), which runs a
+        dry repair every 12 hours. Reads the cache only and never starts a scan.
+        ok is false when the registry was never checked or the last check
+        failed; needs_repair is then false. After a library-wide committed
+        repair the cache is set from that run's report. Admin-only.
+      operationId: getRegistryRepairBanner
+      responses:
+        "200":
+          description: The cached state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryRepairBanner"
         "401":
           description: Authentication required.
           content:

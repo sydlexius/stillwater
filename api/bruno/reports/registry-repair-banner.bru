@@ -1,0 +1,35 @@
+meta {
+  name: Registry Repair Banner
+  type: http
+  seq: 21
+}
+
+get {
+  url: {{apiBase}}/reports/registry-repair/banner
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  Cached "needs image registry repair" state (#2678 slice 2a). Reads the
+  background detector's cache only; never starts a scan. ok=false means never
+  checked or the last check failed (needs_repair is then false). Admin-only.
+}
+
+tests {
+  test("banner returns 200 JSON", function() {
+    expect(res.status).to.equal(200);
+    expect(res.headers['content-type']).to.include('application/json');
+  });
+
+  test("banner body has the documented shape", function() {
+    expect(res.body.needs_repair).to.be.a("boolean");
+    expect(res.body.count).to.be.a("number");
+    expect(res.body.ok).to.be.a("boolean");
+    if (!res.body.ok) { expect(res.body.needs_repair).to.equal(false); }
+  });
+}

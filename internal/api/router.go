@@ -70,11 +70,14 @@ type RouterDeps struct {
 	BackupService      *backup.Service
 	LogManager         *logging.Manager
 	MaintenanceService *maintenance.Service
-	SettingsIOService  *settingsio.Service
-	UpdaterService     *updater.Service
-	ProbeCache         *watcher.ProbeCache
-	ExpectedWrites     *watcher.ExpectedWrites
-	EventBus           *event.Bus
+	// RepairCache is the cached registry-repair detector result the banner
+	// endpoint reads (#2678). Optional: NewRouter makes a private one when nil.
+	RepairCache       *maintenance.RegistryRepairCache
+	SettingsIOService *settingsio.Service
+	UpdaterService    *updater.Service
+	ProbeCache        *watcher.ProbeCache
+	ExpectedWrites    *watcher.ExpectedWrites
+	EventBus          *event.Bus
 	// CollisionNotifier fires the #2540 cross-artist backdrop-collision
 	// notifications from the write-time populate chokepoint. May be nil in
 	// tests/headless (the notifier's nil-receiver Notify is a safe no-op).
@@ -298,6 +301,12 @@ type Router struct {
 	// (#2678), guarded by registryRepairMu. Nil until the first run.
 	registryRepair        *registryRepairStatus
 	registryRepairRunning bool
+	// registryRepairChecking is set while the background detector's dry run
+	// holds the claim from TryClaimRegistryRepairCheck, guarded by
+	// registryRepairMu; startRegistryRepair refuses while it is set.
+	registryRepairChecking bool
+	// registryRepairCache is the detector's cached count (#2678); never nil.
+	registryRepairCache *maintenance.RegistryRepairCache
 	// blastRestoreRunning guards the singleton blast-radius restore run
 	// (#2750): only one restore may be in flight, so a concurrent
 	// POST /api/v1/reports/blast-radius/restore gets 409 instead of two runs
@@ -447,6 +456,7 @@ func NewRouter(deps RouterDeps) *Router {
 		backupService:            deps.BackupService,
 		logManager:               deps.LogManager,
 		maintenanceService:       deps.MaintenanceService,
+		registryRepairCache:      cmpOrNewRegistryRepairCache(deps.RepairCache),
 		settingsIOService:        deps.SettingsIOService,
 		updaterService:           deps.UpdaterService,
 		probeCache:               deps.ProbeCache,
@@ -1140,6 +1150,8 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/reports/registry-repair/remediate", wrapAuth(r.handleRegistryRepairRemediate, authMw))
 	// Poll target for the async run above (#2678); admin-gated in-handler.
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/registry-repair/status", wrapAuth(r.handleRegistryRepairStatus, authMw))
+	// Cache-only banner read (#2678); never scans. Admin-gated in-handler.
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/registry-repair/banner", wrapAuth(r.handleRegistryRepairBanner, authMw))
 	mux.HandleFunc("GET "+bp+"/settings/artist-duplicates", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
 		target := r.basePath + "/reports/duplicates"
 		if raw := req.URL.RawQuery; raw != "" {

@@ -896,6 +896,13 @@
     "covered": true
   },
   {
+    "operationId": "getRegistryRepairBanner",
+    "method": "GET",
+    "path": "/reports/registry-repair/banner",
+    "handler": "handleRegistryRepairBanner",
+    "covered": true
+  },
+  {
     "operationId": "getRegistryRepairStatus",
     "method": "GET",
     "path": "/reports/registry-repair/status",

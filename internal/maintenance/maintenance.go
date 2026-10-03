@@ -51,6 +51,10 @@ type Service struct {
 	// run without them.
 	lockDamageHistory artist.HistoryRepository
 	artistService     *artist.Service
+
+	// registryScan overrides the registry-repair detector's dry run; nil in
+	// production. Tests install a fake (registry_repair_check.go).
+	registryScan func(ctx context.Context) (int, error)
 }
 
 // NewService creates a maintenance service. imageCacheDir is the directory
