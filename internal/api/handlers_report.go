@@ -14,6 +14,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/i18n"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/library"
@@ -168,7 +169,9 @@ func (r *Router) renderHealthResponse(w http.ResponseWriter, req *http.Request, 
 // InvalidateHealthCache is a no-op retained for API compatibility with
 // callers added by PR #700. Health scores are now read from stored
 // per-artist values (updated via the event bus), so there is no
-// in-memory cache to invalidate.
+// in-memory cache to invalidate. The one count that IS cached, the sidebar's
+// non-compliant count, does not depend on this being called: it watches the
+// artists write generation instead (see complianceCountState, #2395).
 func (r *Router) InvalidateHealthCache() {}
 
 // handleReportHealthHistory returns health history data for charting.
@@ -804,28 +807,47 @@ func (r *Router) handleReportRulePassRates(w http.ResponseWriter, req *http.Requ
 	writeJSON(w, http.StatusOK, map[string]any{"rates": rates})
 }
 
-// complianceCountTTL bounds the load that sidebar polling places on the DB.
-// With a 60s sidebar poll per active tab, this TTL means at most one Count
-// query every 5 minutes regardless of tab count.
+// complianceCountTTL is the longest a cached count is served when no artists
+// row was written in this process. It is only a backstop for writes the
+// generation below cannot see (another process writing the same database
+// file); every write made by this server drops the cached count at once.
 const complianceCountTTL = 5 * time.Minute
 
 // complianceCountState memoizes the most recent non-compliant-artist count so
 // the sidebar badge endpoint does not re-query on every poll. Module-level
 // (rather than Router-scoped) so the cache survives across hypothetical
 // multi-router test setups; in production there is one Router.
+//
+// INVALIDATION (#2395). The count is "artists rows with health_score < 100",
+// so it can only change when an artists row is inserted, updated, or deleted.
+// database.ArtistsGeneration goes up on every such write, whoever makes it
+// (rule runs, fixes, scans, merges, library removal, raw SQL). The cache keeps
+// the generation it was computed at and is fresh only while that number is
+// unchanged. No writer has to remember to call anything, which is how the
+// count came to be invalidated by nobody.
 type complianceCountState struct {
-	mu        sync.Mutex
-	count     int
-	expiresAt time.Time
+	mu         sync.Mutex
+	count      int
+	generation uint64 // artists write generation the count was computed at
+	expiresAt  time.Time
 }
 
 // get returns the cached count when fresh; otherwise refreshes via fn and
-// caches the result for complianceCountTTL. Concurrent callers serialize on
-// mu so the refresh fires at most once per TTL window even under burst load.
+// caches the result. Concurrent callers serialize on mu, so a burst of polls
+// after a write costs one query, not one per poll.
+//
+// THE ORDER MATTERS. The generation is read BEFORE fn queries the database and
+// stored with the result. If a write lands while fn is running (or after it
+// returns and before the store), the write moves the generation past the one
+// stored here, so the next get sees a mismatch and recounts. Reading the
+// generation AFTER fn would label a pre-write count with the post-write
+// generation and serve it as fresh for the whole TTL: a stale result
+// repopulating the cache after its invalidation.
 func (c *complianceCountState) get(ctx context.Context, fn func(context.Context) (int, error)) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if time.Now().Before(c.expiresAt) {
+	gen := database.ArtistsGeneration()
+	if gen == c.generation && time.Now().Before(c.expiresAt) {
 		return c.count, nil
 	}
 	n, err := fn(ctx)
@@ -833,12 +855,14 @@ func (c *complianceCountState) get(ctx context.Context, fn func(context.Context)
 		return 0, err
 	}
 	c.count = n
+	c.generation = gen
 	c.expiresAt = time.Now().Add(complianceCountTTL)
 	return n, nil
 }
 
 // invalidate drops the cached value, forcing the next get call to refresh.
-// Exposed for tests; production code relies on TTL expiry.
+// Tests use it to start from an empty cache. Production code does not call it:
+// writes are detected through the artists write generation (see get).
 func (c *complianceCountState) invalidate() {
 	c.mu.Lock()
 	c.count = 0
