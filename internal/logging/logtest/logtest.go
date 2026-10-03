@@ -47,8 +47,8 @@ func DuplicateKeys(output string) []string {
 			continue
 		}
 		dec := json.NewDecoder(strings.NewReader(line))
-		if _, err := dec.Token(); err != nil { // opening brace
-			dups = append(dups, fmt.Sprintf("unparsable line %q: %v", line, err))
+		if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+			dups = append(dups, fmt.Sprintf("unparsable line %q: not a JSON object", line))
 			continue
 		}
 		seen := map[string]bool{}
@@ -63,9 +63,15 @@ func DuplicateKeys(output string) []string {
 			}
 			seen[key] = true
 			var skip json.RawMessage
-			if err := dec.Decode(&skip); err != nil && err != io.EOF {
+			if err := dec.Decode(&skip); err != nil {
 				break
 			}
+		}
+		// The line must be one complete object: a closing brace, then nothing.
+		if tok, err := dec.Token(); err != nil || tok != json.Delim('}') {
+			dups = append(dups, fmt.Sprintf("unparsable line %q: truncated or malformed object", line))
+		} else if _, err := dec.Token(); err != io.EOF {
+			dups = append(dups, fmt.Sprintf("unparsable line %q: trailing content after the object", line))
 		}
 	}
 	return dups

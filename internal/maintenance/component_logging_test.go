@@ -62,3 +62,14 @@ func TestServiceSubComponentsDoNotStackComponentKey(t *testing.T) {
 		t.Fatalf("service handed its tagged logger to a sub-component: %s", out)
 	}
 }
+
+// A nil logger is normalized once, so the foreign scanner (which does not
+// nil-check) gets the same default logger the service itself uses. Before the
+// normalization baseLogger stayed nil and NewScanner panicked on it.
+func TestNewServiceNilLoggerReachesForeignScanner(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	svc := NewService(db, dbPath, "", nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // StartScheduler logs its start line and returns at once
+	svc.StartForeignFileScanner(ctx, emptyLister{}, time.Hour, time.Hour)
+}

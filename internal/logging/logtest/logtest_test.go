@@ -18,6 +18,9 @@ func TestDuplicateKeys(t *testing.T) {
 		{"same name nested in a group", `{"component":"a","g":{"component":"b"}}`, 0},
 		{"empty output", "", 0},
 		{"malformed line is reported, not skipped", `not json`, 1},
+		{"truncated object is reported", `{"component":"a"`, 1},
+		{"truncated mid-value is reported", `{"component":"a","msg":`, 1},
+		{"trailing content is reported", `{"component":"a"} {"x":1}`, 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

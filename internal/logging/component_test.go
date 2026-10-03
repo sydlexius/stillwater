@@ -57,3 +57,18 @@ func TestDuplicateKeysDetectsRawStacking(t *testing.T) {
 		t.Fatalf("detector missed a raw stacked key: %v / %s", d, buf.String())
 	}
 }
+
+// Re-tagging with the SAME name is not a wiring bug worth an Error record, but
+// it must still yield exactly one key.
+func TestWithComponent_SameNameRetagIsSilent(t *testing.T) {
+	base, buf := logtest.NewJSONLogger()
+	WithComponent(WithComponent(base, "same"), "same").Info("work")
+
+	out := buf.String()
+	if d := logtest.DuplicateKeys(out); len(d) != 0 {
+		t.Fatalf("duplicate keys: %v\n%s", d, out)
+	}
+	if strings.Contains(out, `"`+PreviousComponentKey+`"`) || strings.Count(out, "\n") != 1 {
+		t.Fatalf("same-name re-tag must not log an Error record: %s", out)
+	}
+}

@@ -42,3 +42,12 @@ func TestPipelineSubComponentsDoNotStackComponentKey(t *testing.T) {
 		t.Fatalf("pipeline handed a tagged logger to a sub-component: %s", out)
 	}
 }
+
+// A nil logger must not leave baseLogger nil: subLogger would then hand the
+// tagged logger down and re-tag it.
+func TestNewPipelineNilLoggerKeepsUntaggedBase(t *testing.T) {
+	p := NewPipeline(nil, nil, nil, nil, nil, nil)
+	if p.baseLogger == nil || p.subLogger() != p.baseLogger {
+		t.Fatal("a nil logger must normalize to a non-nil untagged base logger")
+	}
+}

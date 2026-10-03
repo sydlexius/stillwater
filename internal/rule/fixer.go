@@ -510,6 +510,9 @@ func (p *Pipeline) subLogger() *slog.Logger {
 
 // NewPipeline creates a new fix pipeline.
 func NewPipeline(engine *Engine, artistService *artist.Service, ruleService *Service, fixers []Fixer, publisher *publish.Publisher, logger *slog.Logger) *Pipeline {
+	if logger == nil {
+		logger = slog.Default() // baseLogger must be the untagged one, never nil
+	}
 	return &Pipeline{
 		engine:        engine,
 		artistService: artistService,

@@ -69,6 +69,9 @@ type Service struct {
 // cached images live -- passing a different value here would silently diverge
 // the scanner from the writers.
 func NewService(db *sql.DB, dbPath string, imageCacheDir string, logger *slog.Logger) *Service {
+	if logger == nil {
+		logger = slog.Default() // one logger for both fields; sub-components do not nil-check
+	}
 	return &Service{
 		db:            db,
 		dbPath:        dbPath,
