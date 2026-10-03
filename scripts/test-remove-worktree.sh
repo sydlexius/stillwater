@@ -8,10 +8,11 @@
 #
 # Run: bash scripts/test-remove-worktree.sh
 #
-# Three cases:
+# Four cases:
 # - Case A: cleanup script fails and leaves the worktree dir intact -> make exits non-zero AND row is preserved
 # - Case B: cleanup script succeeds and deletes the worktree dir -> make exits 0 AND row is removed
 # - Case C: cleanup script fails BUT deletes the worktree dir -> make exits 0 AND row is removed
+# - Case D: override path is stale/nonexistent but real path still exists -> make exits non-zero AND row is preserved
 
 set -euo pipefail
 
@@ -64,16 +65,26 @@ CASE_A_MD="$CASE_A_HOME/worktrees.md"
 
 # Run the make target with custom HOME, WORKTREES_MD, and REMOVE_WORKTREE_TEST_DIR
 rc=0
-HOME="$CASE_A_HOME" \
-WORKTREES_MD="$CASE_A_MD" \
-REMOVE_WORKTREE_TEST_DIR="$CASE_A_WT" \
-make -C "$REPO_ROOT" remove-worktree NAME=x >/dev/null 2>&1 || rc=$?
+case_a_output=""
+case_a_output=$(
+  HOME="$CASE_A_HOME" \
+  WORKTREES_MD="$CASE_A_MD" \
+  REMOVE_WORKTREE_TEST_DIR="$CASE_A_WT" \
+  make -C "$REPO_ROOT" remove-worktree NAME=x 2>&1
+) || rc=$?
 
 # Exit code must be non-zero
 if [ "$rc" -ne 0 ]; then
     ok "case A: make exits non-zero when cleanup fails"
 else
-    bad "case A: make exits non-zero when cleanup fails" "exit was $rc"
+    bad "case A: make exits non-zero when cleanup fails" "exit was $rc" "output: $case_a_output"
+fi
+
+# Output must contain the specific error message
+if printf '%s' "$case_a_output" | grep -q "still present after cleanup-worktree.sh"; then
+    ok "case A: error message indicates worktree still present"
+else
+    bad "case A: error message indicates worktree still present" "output: $case_a_output"
 fi
 
 # Worktree dir must still exist
@@ -205,6 +216,69 @@ if ! grep -q '^| stillwater-z ' "$CASE_C_MD"; then
     ok "case C: tracker row is removed when cleanup fails but dir is gone"
 else
     bad "case C: tracker row is removed when cleanup fails but dir is gone" "row still exists"
+fi
+
+# --------------------------------------------------------------------------
+# CASE D: override path is stale/nonexistent, but real path still exists.
+# make remove-worktree must exit non-zero and PRESERVE the tracker row.
+# (Detects exported stale REMOVE_WORKTREE_TEST_DIR; the target must check
+# the real ../stillwater-$(NAME) path in addition to the override.)
+# --------------------------------------------------------------------------
+
+# Create a unique real worktree directory as a sibling to REPO_ROOT
+UNIQUE_ID="sw-test-$$RANDOM-$$"
+REAL_WT_PATH="$REPO_ROOT/../stillwater-$UNIQUE_ID"
+# Refuse to run if it already exists (safety check)
+if [ -d "$REAL_WT_PATH" ]; then
+    echo "ERROR: Real worktree path already exists: $REAL_WT_PATH" >&2
+    exit 1
+fi
+mkdir -p "$REAL_WT_PATH"
+
+CASE_D_HOME="$WORK/case-d"
+mkdir -p "$CASE_D_HOME"/.claude/scripts "$CASE_D_HOME"/repo
+
+# Stub cleanup script (returns 0, doesn't delete anything for this case)
+cat > "$CASE_D_HOME"/.claude/scripts/cleanup-worktree.sh << 'STUB'
+#!/bin/bash
+exit 0
+STUB
+chmod +x "$CASE_D_HOME"/.claude/scripts/cleanup-worktree.sh
+
+# Temp worktrees.md with a row
+cat > "$CASE_D_HOME"/worktrees.md << 'MD'
+| Name | Branch | Issue |
+| --- | --- | --- |
+| stillwater-sw-test-dummy | fix/test | #6666 |
+MD
+
+CASE_D_MD="$CASE_D_HOME"/worktrees.md
+
+# Override points to a nonexistent temp path, but the REAL path exists
+NONEXISTENT_OVERRIDE="$WORK/does-not-exist"
+
+# Run the make target: override is stale, but real path exists
+rc=0
+HOME="$CASE_D_HOME" \
+WORKTREES_MD="$CASE_D_MD" \
+REMOVE_WORKTREE_TEST_DIR="$NONEXISTENT_OVERRIDE" \
+make -C "$REPO_ROOT" remove-worktree NAME="$UNIQUE_ID" >/dev/null 2>&1 || rc=$?
+
+# Clean up the real worktree directory we created
+rm -rf "$REAL_WT_PATH"
+
+# Exit code must be non-zero (real path still exists)
+if [ "$rc" -ne 0 ]; then
+    ok "case D: make exits non-zero when real path exists despite override override being stale"
+else
+    bad "case D: make exits non-zero when real path exists despite override being stale" "exit was $rc"
+fi
+
+# Tracker row must still exist (real dir exists, so row is kept)
+if grep -q '^| stillwater-sw-test-dummy ' "$CASE_D_MD"; then
+    ok "case D: tracker row is preserved when real path exists despite override being stale"
+else
+    bad "case D: tracker row is preserved when real path exists despite override being stale" "row was removed"
 fi
 
 echo

@@ -358,8 +358,11 @@ remove-worktree:
 		fi; \
 	fi
 	@$(HOME)/.claude/scripts/cleanup-worktree.sh "$(NAME)" && cleanup_rc=0 || cleanup_rc=$$?; \
-	if [ -d "$(REMOVE_WORKTREE_TEST_DIR)" ]; then \
-		echo "error: worktree $(REMOVE_WORKTREE_TEST_DIR) still present after cleanup-worktree.sh (exit $$cleanup_rc); keeping tracker row"; \
+	wt_override="$(REMOVE_WORKTREE_TEST_DIR)"; \
+	wt_real="../stillwater-$(NAME)"; \
+	if [ -d "$$wt_override" ] || [ -d "$$wt_real" ]; then \
+		if [ -d "$$wt_override" ]; then wt_exists="$$wt_override"; else wt_exists="$$wt_real"; fi; \
+		echo "error: worktree $$wt_exists still present after cleanup-worktree.sh (exit $$cleanup_rc); keeping tracker row"; \
 		exit 1; \
 	fi; \
 	if [ "$$cleanup_rc" -ne 0 ]; then \
