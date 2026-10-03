@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// Per-artist cache of platform near-duplicate backdrops (#3138 S3a). A
-// background sweep (a later slice) writes it; the "No duplicate images" rule's
+// Per-artist cache of platform near-duplicate backdrops (#3138 S3a). The
+// background sweep (platform_dup_sweep.go) writes it; the "No duplicate images" rule's
 // checker reads it, so the checker does no platform I/O.
 //
 // In memory only, like the report snapshot (#3092): a restart costs one sweep.
@@ -86,6 +86,11 @@ type platformDupCached struct {
 // that take the per-target lock, and nothing else: not a platform mapping
 // added or removed, an artist lock, protected fanart, a connection toggled, or
 // an artist deleted. The checker that reads this cache must handle those.
+// Two more for the checker: the sweep caches Found for artists the FIXER
+// always refuses (a shared-filesystem library, an artist with no local path),
+// so filter those before raising a violation; and after the rule option is
+// turned off, entries survive until the next pass clears them, so gate on the
+// option itself and not on the cache being empty.
 type PlatformDupCache struct {
 	mu       sync.RWMutex
 	entries  map[string]platformDupCached // by artist ID
