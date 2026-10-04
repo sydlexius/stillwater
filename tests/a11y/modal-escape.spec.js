@@ -100,3 +100,20 @@ test('Escape closing the hero Actions menu keeps edit mode', async ({ page }) =>
   await settle(page);
   await expect(page.locator(ROOT)).toHaveClass(/is-editing/);
 });
+
+// The mobile "More" nav sheet (#bs-more-nav) is the one .ctx-bottom-sheet
+// reachable from this page (the hero Actions menu has no sheet form). The page
+// handler's open-overlay check has a branch for it; without that branch Escape
+// would close the sheet and also leave edit mode.
+test('Escape closing the mobile More nav sheet keeps edit mode', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await enterEditMode(page);
+  await page.locator('button[aria-controls="bs-more-nav"]').first().click();
+  const sheet = page.locator('#bs-more-nav');
+  await expect(sheet, 'precondition: More sheet open').toHaveClass(/ctx-sheet-open/);
+
+  await page.keyboard.press('Escape');
+  await expect(sheet).not.toHaveClass(/ctx-sheet-open/);
+  await settle(page);
+  await expect(page.locator(ROOT)).toHaveClass(/is-editing/);
+});
