@@ -106,6 +106,27 @@ type ruleTarget struct {
 	appendBackdrop                        func(ctx context.Context, position int, data []byte) error
 }
 
+// ruleRefuseNonEmpty is the guard that runs before the first delete. The
+// measurement clears the item before seeding and again in cleanup, so an item
+// id that points at real artwork would lose it. An item that already holds ANY
+// backdrop is refused, with no override; a read failure is refused too (the
+// state is unknown, so nothing may be deleted). It issues no delete.
+//
+// A clean sequential run cannot trip it: every run that seeds an item
+// registers a t.Cleanup that clears it (and verifies zero), so each test starts
+// from an empty item, and the seeding path runs once per test.
+func ruleRefuseNonEmpty(ctx context.Context, tg ruleTarget) error {
+	st, err := tg.client.GetArtistDetail(ctx, tg.itemID)
+	if err != nil {
+		return fmt.Errorf("cannot read item %s on %s before clearing it, so refusing to delete anything: %w", tg.itemID, tg.connType, err)
+	}
+	if st.BackdropCount > 0 {
+		return fmt.Errorf("item %s on %s already holds %d backdrop(s); this test deletes every backdrop on its item, so the item must be a disposable scratch item with zero backdrops. Nothing was deleted. To recover, clear the item's backdrops on the server (or point SW_LIVE_* at a scratch item) and re-run",
+			tg.itemID, tg.connType, st.BackdropCount)
+	}
+	return nil
+}
+
 func ruleClear(ctx context.Context, t *testing.T, tg ruleTarget) {
 	t.Helper()
 	st, err := tg.client.GetArtistDetail(ctx, tg.itemID)
@@ -224,6 +245,11 @@ func measureRulePathPlatformPrune(t *testing.T, tg ruleTarget, pruneOn bool) {
 		}
 	}
 
+	// Before the first delete AND before the cleanup is registered: a refused
+	// item must not be cleared by the cleanup either.
+	if err := ruleRefuseNonEmpty(ctx, tg); err != nil {
+		t.Fatalf("%v", err)
+	}
 	ruleClear(ctx, t, tg)
 	t.Cleanup(func() {
 		cctx, ccancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -384,6 +410,13 @@ func measureRulePathPlatformPrune(t *testing.T, tg ruleTarget, pruneOn bool) {
 	t.Logf("SUMMARY rule path %s item %s: uploaded=6 before=6 afterRuleFix=3 afterSecondRun=3 afterReFix=3", tg.connType, tg.itemID)
 }
 
+// SHARED SCRATCH ITEM. These live tests read the same SW_LIVE_EMBY_ITEM_ID /
+// SW_LIVE_JELLYFIN_ITEM_ID (Jellyfin: SW_LIVE_JELLYFIN_PRUNE_ITEM_ID first) as
+// the internal/publish live suites, which also clear and seed it. Run them ONE
+// PACKAGE AT A TIME (`-p 1`, a single package per invocation); `go test -tags
+// integration ./...` runs package binaries concurrently. ruleRefuseNonEmpty
+// turns a collision that leaves backdrops on the item into a loud failure, not
+// silent corruption; it cannot catch every interleaving.
 func liveRuleEmby(t *testing.T) ruleTarget {
 	url, key := os.Getenv("SW_LIVE_EMBY_URL"), os.Getenv("SW_LIVE_EMBY_API_KEY")
 	user, item := os.Getenv("SW_LIVE_EMBY_USER_ID"), os.Getenv("SW_LIVE_EMBY_ITEM_ID")
@@ -431,24 +464,66 @@ func TestLiveRulePathOptionOffLeavesPlatformAlone_Jellyfin(t *testing.T) {
 
 // modelledPeer is a minimal in-process stand-in for one item's backdrop list
 // (GET detail, GET/POST/DELETE an indexed backdrop; a delete renumbers). It
-// exists only for the self-check below.
+// exists only for the self-check below, and it is strict: it answers only for
+// itemID and only with the credential the real client sends (Emby:
+// X-Emby-Token; Jellyfin: Authorization: MediaBrowser Token="<key>", per
+// internal/connection/mediabrowser), else 404 / 401. Every rejected or
+// malformed request is recorded in errs so the self-check fails loudly.
 type modelledPeer struct {
-	mu   sync.Mutex
-	data [][]byte
+	connType, itemID, apiKey string
+	mu                       sync.Mutex
+	data                     [][]byte
+	deletes                  int
+	errs                     []string
+}
+
+func (s *modelledPeer) reject(w http.ResponseWriter, code int, why string) {
+	s.errs = append(s.errs, why)
+	http.Error(w, why, code)
+}
+
+func (s *modelledPeer) problems() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.errs...)
+}
+
+func (s *modelledPeer) deleteCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.deletes
 }
 
 func (s *modelledPeer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	authOK := false
+	if s.connType == connection.TypeEmby {
+		authOK = r.Header.Get("X-Emby-Token") == s.apiKey
+	} else {
+		authOK = r.Header.Get("Authorization") == fmt.Sprintf(`MediaBrowser Token="%s"`, s.apiKey)
+	}
+	if !authOK {
+		s.reject(w, http.StatusUnauthorized, "missing or wrong credential on "+r.Method+" "+r.URL.Path)
+		return
+	}
 	const marker = "/Images/Backdrop/"
 	at := strings.Index(r.URL.Path, marker)
 	if at < 0 {
+		if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/Items/"+s.itemID) {
+			s.reject(w, http.StatusNotFound, "unexpected request "+r.Method+" "+r.URL.Path)
+			return
+		}
 		tags := make([]string, len(s.data))
 		for i := range tags {
 			tags[i] = "t" + strconv.Itoa(i)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"Name": "peer item", "BackdropImageTags": tags})
+		return
+	}
+	if !strings.HasSuffix(r.URL.Path[:at], "/Items/"+s.itemID) {
+		s.reject(w, http.StatusNotFound, "backdrop request for the wrong item: "+r.URL.Path)
 		return
 	}
 	idx, _ := strconv.Atoi(r.URL.Path[at+len(marker):])
@@ -461,10 +536,14 @@ func (s *modelledPeer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/jpeg")
 		_, _ = w.Write(s.data[idx])
 	case http.MethodPost:
-		raw, _ := io.ReadAll(r.Body)
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			s.reject(w, http.StatusBadRequest, "reading upload body: "+err.Error())
+			return
+		}
 		b, err := base64.StdEncoding.DecodeString(string(raw))
 		if err != nil {
-			http.Error(w, "bad body", http.StatusBadRequest)
+			s.reject(w, http.StatusBadRequest, "bad upload body: "+err.Error())
 			return
 		}
 		s.data = append(s.data, b)
@@ -474,6 +553,7 @@ func (s *modelledPeer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
+		s.deletes++
 		s.data = append(s.data[:idx], s.data[idx+1:]...)
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -485,8 +565,9 @@ func (s *modelledPeer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // agree with the production rule path, so a red live run is about the peer.
 func TestRulePathPlatformPruneMeasurement_HarnessSelfCheck(t *testing.T) {
 	for _, connType := range []string{connection.TypeEmby, connection.TypeJellyfin} {
-		modelled := func(t *testing.T) ruleTarget {
-			srv := httptest.NewServer(&modelledPeer{})
+		modelled := func(t *testing.T) (ruleTarget, *modelledPeer) {
+			peer := &modelledPeer{connType: connType, itemID: "p1", apiKey: "k"}
+			srv := httptest.NewServer(peer)
 			t.Cleanup(srv.Close)
 			var c interface {
 				rulePeer
@@ -500,9 +581,119 @@ func TestRulePathPlatformPruneMeasurement_HarnessSelfCheck(t *testing.T) {
 			return ruleTarget{connType, srv.URL, "k", "u1", "p1", c,
 				func(ctx context.Context, position int, b []byte) error {
 					return c.UploadImageAtIndex(ctx, "p1", "fanart", position, b, "image/jpeg")
-				}}
+				}}, peer
 		}
-		t.Run(connType+"/option-on", func(t *testing.T) { measureRulePathPlatformPrune(t, modelled(t), true) })
-		t.Run(connType+"/option-off", func(t *testing.T) { measureRulePathPlatformPrune(t, modelled(t), false) })
+		run := func(on bool) func(t *testing.T) {
+			return func(t *testing.T) {
+				tg, peer := modelled(t)
+				measureRulePathPlatformPrune(t, tg, on)
+				if errs := peer.problems(); len(errs) != 0 {
+					t.Errorf("the modelled peer rejected or could not parse %d request(s): %v", len(errs), errs)
+				}
+			}
+		}
+		t.Run(connType+"/option-on", run(true))
+		t.Run(connType+"/option-off", run(false))
+	}
+}
+
+// TestRulePathPlatformPruneMeasurement_RefusesNonEmptyItem proves the
+// non-empty refusal: a modelled item that starts with one backdrop is refused
+// and not a single delete reaches the peer. An empty item is accepted.
+func TestRulePathPlatformPruneMeasurement_RefusesNonEmptyItem(t *testing.T) {
+	for _, connType := range []string{connection.TypeEmby, connection.TypeJellyfin} {
+		t.Run(connType, func(t *testing.T) {
+			target := func(peer *modelledPeer) ruleTarget {
+				srv := httptest.NewServer(peer)
+				t.Cleanup(srv.Close)
+				var c rulePeer
+				if connType == connection.TypeEmby {
+					c = emby.New(srv.URL, "k", "u1", testLogger())
+				} else {
+					c = jellyfin.New(srv.URL, "k", "u1", testLogger())
+				}
+				return ruleTarget{connType: connType, url: srv.URL, apiKey: "k", userID: "u1", itemID: "p1", client: c}
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			occupied := &modelledPeer{connType: connType, itemID: "p1", apiKey: "k", data: [][]byte{[]byte("someone's real artwork")}}
+			err := ruleRefuseNonEmpty(ctx, target(occupied))
+			if err == nil {
+				t.Fatal("ruleRefuseNonEmpty accepted an item that already holds a backdrop")
+			}
+			if !strings.Contains(err.Error(), "disposable scratch item") {
+				t.Errorf("refusal does not tell the operator what to do: %v", err)
+			}
+			if n := occupied.deleteCount(); n != 0 {
+				t.Errorf("deleteCount = %d, want 0: the refusal must come before any delete", n)
+			}
+			occupied.mu.Lock()
+			held := len(occupied.data)
+			occupied.mu.Unlock()
+			if held != 1 {
+				t.Errorf("occupied item holds %d backdrops after the refusal, want 1", held)
+			}
+			empty := &modelledPeer{connType: connType, itemID: "p1", apiKey: "k"}
+			if err := ruleRefuseNonEmpty(ctx, target(empty)); err != nil {
+				t.Errorf("an empty item was refused: %v", err)
+			}
+		})
+	}
+}
+
+// TestRulePathPlatformPruneMeasurement_ModelledPeerIsStrict proves the
+// self-check peer rejects a wrong item id, a missing key and an unreadable
+// upload body, and records each.
+func TestRulePathPlatformPruneMeasurement_ModelledPeerIsStrict(t *testing.T) {
+	for _, connType := range []string{connection.TypeEmby, connection.TypeJellyfin} {
+		t.Run(connType, func(t *testing.T) {
+			peer := &modelledPeer{connType: connType, itemID: "p1", apiKey: "k"}
+			srv := httptest.NewServer(peer)
+			t.Cleanup(srv.Close)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			mk := func(key string) rulePeer {
+				if connType == connection.TypeEmby {
+					return emby.New(srv.URL, key, "u1", testLogger())
+				}
+				return jellyfin.New(srv.URL, key, "u1", testLogger())
+			}
+			if _, err := mk("k").GetArtistDetail(ctx, "p1"); err != nil {
+				t.Fatalf("correct item and key rejected: %v", err)
+			}
+			if got := len(peer.problems()); got != 0 {
+				t.Fatalf("a correct request was recorded as a problem: %v", peer.problems())
+			}
+			if _, err := mk("k").GetArtistDetail(ctx, "other-item"); err == nil {
+				t.Error("a request for the wrong item id was answered")
+			}
+			if _, err := mk("").GetArtistDetail(ctx, "p1"); err == nil {
+				t.Error("a request with no API key was answered")
+			}
+			if got := len(peer.problems()); got != 2 {
+				t.Errorf("recorded %d problems, want 2 (wrong item, missing key): %v", got, peer.problems())
+			}
+
+			// An upload body that is not valid base64 (stands in for a body that
+			// could not be read in full) is a 400 and is recorded.
+			req, _ := http.NewRequestWithContext(ctx, http.MethodPost, srv.URL+"/Items/p1/Images/Backdrop/0", strings.NewReader("%%not base64%%"))
+			if connType == connection.TypeEmby {
+				req.Header.Set("X-Emby-Token", "k")
+			} else {
+				req.Header.Set("Authorization", `MediaBrowser Token="k"`)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Errorf("bad upload body: status %d, want 400", resp.StatusCode)
+			}
+			if got := len(peer.problems()); got != 3 {
+				t.Errorf("recorded %d problems, want 3 after the bad body: %v", got, peer.problems())
+			}
+		})
 	}
 }
