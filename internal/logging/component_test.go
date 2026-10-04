@@ -66,20 +66,10 @@ var attrStart = map[string]int{
 // TestNoRawComponentTagging is the class guard for #2787: the component key may
 // only be set through WithComponent, because a raw logger.With("component", ...)
 // stacks a second key onto an already-tagged logger and the compiler cannot
-// see it. It parses every non-test Go file under the repo's internal/ and cmd/
-// trees and fails on a literal "component" (interpreted or raw string) in a KEY
-// position of a With/Debug/Info/Warn/Error/Log/LogAttrs call (or a Context
-// variant), whether as a bare key, a slog.String-style constructor, or a
-// slog.Attr{Key: ...} literal. Value positions are not inspected, so
-// With("name", "component") passes.
-//
-// This is a syntactic check and has two blind spots by design: a constant or
-// computed key, and a spread attrs... slice, cannot be seen without type
-// information. WithComponent itself uses the componentKey constant, which is
-// why it does not trip the scan.
+// see it. It runs rawComponentOffenders over every non-test Go file under the
+// repo's internal/ and cmd/ trees.
 func TestNoRawComponentTagging(t *testing.T) {
 	root := filepath.Join("..", "..")
-	fset := token.NewFileSet()
 	var offenders []string
 	for _, dir := range []string{"internal", "cmd"} {
 		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d fs.DirEntry, err error) error {
@@ -90,40 +80,9 @@ func TestNoRawComponentTagging(t *testing.T) {
 			if rerr != nil {
 				return rerr
 			}
-			f, perr := parser.ParseFile(fset, path, src, 0)
-			if perr != nil {
-				return perr
-			}
-			ast.Inspect(f, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				sel, ok := call.Fun.(*ast.SelectorExpr)
-				if !ok {
-					return true
-				}
-				start, ok := attrStart[sel.Sel.Name]
-				if !ok {
-					return true
-				}
-				for i := start; i < len(call.Args); {
-					a := call.Args[i]
-					if key, isAttr := attrKey(a); isAttr {
-						if key != nil && isComponentLiteral(key) {
-							offenders = append(offenders, fset.Position(a.Pos()).String())
-						}
-						i++
-						continue
-					}
-					if isComponentLiteral(a) {
-						offenders = append(offenders, fset.Position(a.Pos()).String())
-					}
-					i += 2 // bare key and its value
-				}
-				return true
-			})
-			return nil
+			got, perr := rawComponentOffenders(path, src)
+			offenders = append(offenders, got...)
+			return perr
 		})
 		if err != nil {
 			t.Fatalf("walking %s: %v", dir, err)
@@ -131,6 +90,109 @@ func TestNoRawComponentTagging(t *testing.T) {
 	}
 	if len(offenders) > 0 {
 		t.Fatalf("raw \"component\" key found; use logging.WithComponent:\n%s", strings.Join(offenders, "\n"))
+	}
+}
+
+// rawComponentOffenders parses one file and returns the position of every
+// literal "component" (interpreted or raw string) that could be a KEY in a
+// With/Debug/Info/Warn/Error/Log/LogAttrs call (or a Context variant), as a
+// bare key, a slog.String-style constructor, or a slog.Attr{Key: ...} literal.
+//
+// Key/value pairing is followed exactly while every key position holds a string
+// literal or a recognized slog Attr form, so With("name", "component") passes.
+// A key position holding anything else (for example an Attr variable) makes the
+// alignment unknowable without type information, so from there to the end of
+// the call EVERY "component" literal is flagged, whichever slot it is in.
+// Still out of reach of a syntactic check: a constant or computed key, and a
+// spread attrs... slice. WithComponent itself uses the componentKey constant,
+// which is why it does not trip the scan.
+func rawComponentOffenders(filename string, src []byte) ([]string, error) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, filename, src, 0)
+	if err != nil {
+		return nil, err
+	}
+	var offenders []string
+	flag := func(e ast.Expr) { offenders = append(offenders, fset.Position(e.Pos()).String()) }
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		start, ok := attrStart[sel.Sel.Name]
+		if !ok {
+			return true
+		}
+		aligned := true
+		for i := start; i < len(call.Args); {
+			a := call.Args[i]
+			if !aligned {
+				// Alignment lost: any literal, or Attr key, could be a key.
+				if isComponentLiteral(a) {
+					flag(a)
+				} else if key, isAttr := attrKey(a); isAttr && key != nil && isComponentLiteral(key) {
+					flag(a)
+				}
+				i++
+				continue
+			}
+			if key, isAttr := attrKey(a); isAttr {
+				if key != nil && isComponentLiteral(key) {
+					flag(a)
+				}
+				i++
+			} else if lit, ok := a.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+				if isComponentLiteral(a) {
+					flag(a)
+				}
+				i += 2 // bare key and its value
+			} else {
+				aligned = false // an Attr variable or other expression: unknowable
+				i++
+			}
+		}
+		return true
+	})
+	return offenders, nil
+}
+
+// TestRawComponentDetector feeds source snippets through the detector, so a
+// regression in attrStart, attrKey or isComponentLiteral cannot make the repo
+// walk pass vacuously.
+func TestRawComponentDetector(t *testing.T) {
+	tests := []struct {
+		name, body string
+		want       int
+	}{
+		{"bare key/value", `l.With("component", "x")`, 1},
+		{"bare key after other pairs", `l.With("a", "b", "component", "x")`, 1},
+		{"slog.String constructor", `l.With(slog.String("component", "x"))`, 1},
+		{"slog.Attr literal", `l.With(slog.Attr{Key: "component"})`, 1},
+		{"raw-string key", "l.With(`component`, \"x\")", 1},
+		{"Context variant", `l.InfoContext(ctx, "m", "component", "x")`, 1},
+		{"Log offset", `l.Log(ctx, lvl, "m", "component", "x")`, 1},
+		{"LogAttrs offset", `l.LogAttrs(ctx, lvl, "m", slog.String("component", "x"))`, 1},
+		{"Attr variable then raw pair", `l.Log(ctx, lvl, "m", attr, "component", "x")`, 1},
+		{"value position is not a key", `l.With("name", "component")`, 0},
+		{"message text is not a key", `l.Info("component", "k", "v")`, 0},
+		{"through WithComponent", `WithComponent(l, "component")`, 0},
+		{"different key", `l.With(slog.String("name", "x"))`, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "package p\nimport \"log/slog\"\nvar _ = slog.LevelInfo\nfunc f() {\n" + tc.body + "\n}\n"
+			got, err := rawComponentOffenders("snippet.go", []byte(src))
+			if err != nil {
+				t.Fatalf("snippet did not parse: %v\n%s", err, src)
+			}
+			if len(got) != tc.want {
+				t.Fatalf("got %d offenders %v, want %d\n%s", len(got), got, tc.want, src)
+			}
+		})
 	}
 }
 
