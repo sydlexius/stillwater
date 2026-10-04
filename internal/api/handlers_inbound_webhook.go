@@ -16,9 +16,29 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/event"
+	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/scanner"
 	"github.com/sydlexius/stillwater/internal/webhook"
 )
+
+// webhookWorkCtx builds the context the asynchronous work of one inbound
+// webhook runs on: a 5 minute bound derived from webhookShutdownCtx (so the work
+// is canceled on app shutdown), carrying a provider cause naming the webhook
+// source so provider log lines say a webhook started the work (#2784).
+//
+// WithCause REPLACES any cause already on the context; it never enriches. The
+// base context has no cause today, but if a later change derives this context
+// from the request, the request's "user:<route>" cause must not win, because
+// the user did not start this work, the media server did. Every handler calls
+// this helper, so a new webhook source cannot forget to set a cause.
+//
+// SECURITY: class must be one of the provider.CauseClassWebhook* constants.
+// Never put a payload field (artist name, MBID, ...) in the cause: payloads are
+// controlled by whatever sent the webhook.
+func (r *Router) webhookWorkCtx(class string) (context.Context, context.CancelFunc) {
+	ctx := provider.WithCause(r.webhookShutdownCtx, provider.Cause{Class: class})
+	return context.WithTimeout(ctx, 5*time.Minute)
+}
 
 // handleLidarrWebhook receives inbound webhook events from Lidarr.
 // POST /api/v1/webhooks/inbound/lidarr
@@ -62,7 +82,7 @@ func (r *Router) handleLidarrWebhook(w http.ResponseWriter, req *http.Request) {
 
 	// Process asynchronously with a bounded context derived from the
 	// webhook shutdown context so the goroutine is canceled on app shutdown.
-	ctx, cancel := context.WithTimeout(r.webhookShutdownCtx, 5*time.Minute)
+	ctx, cancel := r.webhookWorkCtx(provider.CauseClassWebhookLidarr)
 	r.webhookWg.Add(1)
 	go func() {
 		defer r.webhookWg.Done()
@@ -248,7 +268,7 @@ func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
 
-	ctx, cancel := context.WithTimeout(r.webhookShutdownCtx, 5*time.Minute)
+	ctx, cancel := r.webhookWorkCtx(provider.CauseClassWebhookEmby)
 	r.webhookWg.Add(1)
 	go func() {
 		defer r.webhookWg.Done()
@@ -395,7 +415,7 @@ func (r *Router) handleJellyfinWebhook(w http.ResponseWriter, req *http.Request)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
 
-	ctx, cancel := context.WithTimeout(r.webhookShutdownCtx, 5*time.Minute)
+	ctx, cancel := r.webhookWorkCtx(provider.CauseClassWebhookJellyfin)
 	r.webhookWg.Add(1)
 	go func() {
 		defer r.webhookWg.Done()
