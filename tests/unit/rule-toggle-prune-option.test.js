@@ -168,6 +168,51 @@ describe('prune switch: stored on, switch on asks too', () => {
   });
 });
 
+describe('prune switch: a save or an open confirmation holds the form', () => {
+  function holdPuts(win) { // later requests wait; returns release()
+    const held = win.fetch;
+    let rel = () => {};
+    win.fetch = (url, options) => { held.calls.push({ url, options }); return new Promise((r) => { rel = r; }); };
+    win.fetch.calls = held.calls;
+    return (v) => rel(v);
+  }
+  it('a click during an in-flight save changes nothing; after it settles a click works', async () => {
+    const { win, sw, submit } = setup({ stored: true });
+    win.togglePrunePlatformCopies(sw);
+    const release = holdPuts(win);
+    submit();
+    win.togglePrunePlatformCopies(sw);
+    assert.equal(isOn(sw), false, 'a click during the save must not flip the switch');
+    release({ ok: true, status: 200 }); await flush();
+    win.togglePrunePlatformCopies(sw);
+    assert.equal(isOn(sw), true);
+  });
+  it('dialog open then an off-save: accepting late sends no ON, in flight or completed', async () => {
+    for (const hold of [true, false]) {
+      const { win, sw, submit, dialogs, puts, sentConfigs, errors } = setup({ stored: false });
+      win.togglePrunePlatformCopies(sw);
+      submit();
+      win.togglePrunePlatformCopies(sw); // off
+      if (hold) holdPuts(win);
+      submit();
+      await flush();
+      dialogs[0].onConfirm(); await flush();
+      assert.equal(puts().length, 1, 'only the off-save is sent, held: ' + hold);
+      assert.equal('prune_platform_copies' in sentConfigs()[0], false);
+      assert.match(errors.join('\n'), /form changed while/);
+    }
+  });
+  it('cancel leaves the form usable, and accept sends one PUT carrying true', async () => {
+    const { win, sw, submit, dialogs, sentConfigs } = setup({ stored: false });
+    win.togglePrunePlatformCopies(sw);
+    submit(); submit();
+    assert.equal(dialogs.length, 2, 'no stuck reservation');
+    holdPuts(win);
+    dialogs[1].onConfirm(); dialogs[0].onConfirm(); await flush(); // a second accept while the first PUT is in flight
+    assert.deepEqual(sentConfigs().map((c) => c.prune_platform_copies), [true]);
+  });
+});
+
 describe('prune switch: saves that need no dialog', () => {
   it('the guard is released after a FAILED PUT: a later Save works', async () => {
     const { submit, puts } = setup({ stored: false, response: { ok: false, status: 500 } });

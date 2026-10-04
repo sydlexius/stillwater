@@ -237,6 +237,8 @@
   // togglePrunePlatformCopies flips the switch on screen only. Nothing is sent
   // until Save, like every other field in the config form.
   function togglePrunePlatformCopies(sw) {
+    var form = sw.closest('form');
+    if (form && form.dataset.inflight === '1') return; // the settling save repaints the switch
     var isOn = sw.getAttribute('aria-checked') === 'true';
     // Refused tolerance: turning off always works. Turning on is allowed only
     // to undo an unsaved turn-off of an option that is stored on.
@@ -379,9 +381,18 @@
       failToast();
       return;
     }
-    // A null key means no "Don't ask again": consent to deleting on a remote
-    // server is asked for every time.
-    window.showConfirmDialog(pruneSw.dataset.pruneConfirmBody, null, save, {
+    // No cancel callback, so the form is not reserved while the dialog is open;
+    // the accept re-checks instead. A null key means no "Don't ask again".
+    function confirmed() {
+      if (form.dataset.inflight === '1' || pruneSw.getAttribute('aria-checked') !== 'true') {
+        var stale = 'Not saved. The form changed while the confirmation was open. Save again.';
+        console.error('rule-toggle: ' + stale);
+        if (typeof showToast === 'function') showToast(stale);
+        return;
+      }
+      save();
+    }
+    window.showConfirmDialog(pruneSw.dataset.pruneConfirmBody, null, confirmed, {
       title: pruneSw.dataset.pruneConfirmTitle,
       acceptText: pruneSw.dataset.pruneConfirmAccept
     });
