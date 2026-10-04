@@ -16,8 +16,11 @@
 //                              saved order so a reorder does not delete it (#3190).
 //   [id^="priority-row-"]    -- the row wrapper used to find disabled/hidden entries.
 //
-// Cross-script contract: depends on the global Sortable (Sortable.min.js, loaded
-// before this module) and the optional global showToast (probed with typeof).
+// Cross-script contract: depends on the global Sortable (Sortable.min.js) and the
+// optional global showToast (probed with typeof). Sortable is NOT guaranteed to
+// precede this module in document order: the single app-wide copy is emitted by
+// LayoutGlobalChrome AFTER the page content, so the initial init is deferred to
+// DOMContentLoaded (#2189).
 //
 // Network contract (base-path aware via meta[name="htmx-base-path"]):
 //   PUT {base}/api/v1/providers/priorities -- {priorities:[{field,providers}]}
@@ -40,7 +43,10 @@
   // that do not already have a Sortable instance. Called on initial page load and after
   // every HTMX swap so that newly rendered priority rows are draggable immediately.
   function initSortableContainers() {
-    if (typeof Sortable === 'undefined') return;
+    if (typeof Sortable === 'undefined') {
+      console.error('sortable-init: SortableJS not loaded; provider priority drag-reorder disabled');
+      return;
+    }
     document.querySelectorAll('[data-sortable-field]').forEach(function(container) {
       if (container._sortable) return; // already initialised
       var field = container.dataset.sortableField;
@@ -112,8 +118,14 @@
       });
     });
   }
-  // Initial setup on page load.
-  initSortableContainers();
+  // Initial setup on page load. Deferred past parse so the layout's Sortable
+  // tag (which follows this script) has executed; a late-mounted script (readyState
+  // already past loading) runs immediately.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initSortableContainers);
+  } else {
+    initSortableContainers();
+  }
   // Re-attach after any HTMX swap so newly rendered priority rows are draggable.
   document.addEventListener('htmx:afterSwap', function() {
     initSortableContainers();
