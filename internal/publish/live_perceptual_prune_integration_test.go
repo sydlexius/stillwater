@@ -301,10 +301,36 @@ func s0SamePlan(a, b []s0PlanRow) bool {
 
 func s0SameNames(a, b []string) bool { return strings.Join(a, "|") == strings.Join(b, "|") }
 
-// s0Seed clears the item, appends seed in order, and asserts the peer holds
-// exactly that list.
+// s0RefuseNonEmpty is the guard that runs before s0Seed's first delete. The
+// measurement clears the item before seeding and again in cleanup, so an item
+// id that points at real artwork would lose it. An item that already holds ANY
+// backdrop is therefore refused, with no override: a read failure is refused
+// too (the state is unknown, so nothing may be deleted). It issues no delete.
+//
+// A clean sequential run cannot trip it: every test that seeds an item
+// registers a t.Cleanup that clears it (and verifies zero), so each test
+// starts from an empty item, and s0Seed is called once per test.
+func s0RefuseNonEmpty(ctx context.Context, tg s0Target) error {
+	st, err := tg.client.GetArtistDetail(ctx, tg.itemID)
+	if err != nil {
+		return fmt.Errorf("cannot read item %s on %s before clearing it, so refusing to delete anything: %w", tg.itemID, tg.connType, err)
+	}
+	if st.BackdropCount > 0 {
+		return fmt.Errorf("item %s on %s already holds %d backdrop(s); this test deletes every backdrop on its item, so the item must be a disposable scratch item with zero backdrops. Nothing was deleted. To recover, clear the item's backdrops on the server (or point SW_LIVE_* at a scratch item) and re-run",
+			tg.itemID, tg.connType, st.BackdropCount)
+	}
+	return nil
+}
+
+// s0Seed refuses a non-empty item, clears it, appends seed in order, and
+// asserts the peer holds exactly that list.
 func s0Seed(ctx context.Context, t *testing.T, tg s0Target, f s0Fixture, seed []s0Slot) {
 	t.Helper()
+	// Before the first delete AND before the cleanup is registered: a refused
+	// item must not be cleared by the cleanup either.
+	if err := s0RefuseNonEmpty(ctx, tg); err != nil {
+		t.Fatalf("%v", err)
+	}
 	clearAllBackdrops(ctx, t, tg.itemID, tg.client)
 	t.Cleanup(func() {
 		cctx, cancel := context.WithTimeout(context.Background(), liveBackdropCleanupTimeout)
@@ -510,6 +536,13 @@ func s0LogServerVersion(t *testing.T, url string) {
 	t.Logf("SERVER %s public info: %s", url, body)
 }
 
+// SHARED SCRATCH ITEM. These live tests read the same SW_LIVE_EMBY_ITEM_ID /
+// SW_LIVE_JELLYFIN_ITEM_ID (Jellyfin: SW_LIVE_JELLYFIN_PRUNE_ITEM_ID first) as
+// the other live suites, which also clear and seed it. Run them ONE PACKAGE AT A
+// TIME (`-p 1`, a single package per invocation); `go test -tags integration
+// ./...` runs package binaries concurrently. s0RefuseNonEmpty turns a
+// collision that leaves backdrops on the item into a loud failure, not silent
+// corruption; it cannot catch every interleaving (see s0RefuseNonEmpty).
 func s0LiveEmby(t *testing.T) s0Target {
 	env := loadLiveEmbyEnv(t)
 	s0LogServerVersion(t, env.url)
@@ -561,6 +594,31 @@ func TestLivePerceptualPruneDistinctOnlyDeletesNothing_Jellyfin(t *testing.T) {
 	measurePerceptualPruneNegativeControl(t, s0LiveJellyfin(t))
 }
 
+// s0GuardedPeer wraps the modelled peer so the self-check only passes when the
+// client addresses the expected item with the credential the real client sends
+// (Emby: X-Emby-Token; Jellyfin: Authorization: MediaBrowser Token="<key>", per
+// internal/connection/mediabrowser). Anything else gets 401 / 404, so a client
+// that asks for the wrong item or sends no key fails the run.
+func s0GuardedPeer(connType, itemID, apiKey string, inner http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ok := false
+		if connType == connection.TypeEmby {
+			ok = r.Header.Get("X-Emby-Token") == apiKey
+		} else {
+			ok = r.Header.Get("Authorization") == fmt.Sprintf(`MediaBrowser Token="%s"`, apiKey)
+		}
+		if !ok {
+			http.Error(w, "missing or wrong credential", http.StatusUnauthorized)
+			return
+		}
+		if !strings.HasSuffix(r.URL.Path, "/Items/"+itemID) && !strings.Contains(r.URL.Path, "/Items/"+itemID+"/") {
+			http.NotFound(w, r)
+			return
+		}
+		inner.ServeHTTP(w, r)
+	})
+}
+
 // TestPerceptualPruneMeasurement_HarnessSelfCheck runs the SAME measurement
 // bodies against statefulBackdropPeer, the in-process model of a peer. It is
 // NOT the #3138 measurement and proves nothing about a real server: it exists
@@ -571,7 +629,7 @@ func TestPerceptualPruneMeasurement_HarnessSelfCheck(t *testing.T) {
 	for _, connType := range []string{connection.TypeEmby, connection.TypeJellyfin} {
 		modelled := func(t *testing.T) s0Target {
 			peer := &statefulBackdropPeer{appendAll: connType == connection.TypeJellyfin}
-			srv := httptest.NewServer(peer)
+			srv := httptest.NewServer(s0GuardedPeer(connType, "p1", "k", peer))
 			t.Cleanup(srv.Close)
 			var c interface {
 				s0Peer
@@ -591,5 +649,74 @@ func TestPerceptualPruneMeasurement_HarnessSelfCheck(t *testing.T) {
 		t.Run(connType+"/duplicates", func(t *testing.T) { measurePerceptualPrune(t, modelled(t), s0DuplicatesScenario) })
 		t.Run(connType+"/twin-is-smaller", func(t *testing.T) { measurePerceptualPrune(t, modelled(t), s0TwinIsSmallerScenario) })
 		t.Run(connType+"/distinct-only", func(t *testing.T) { measurePerceptualPruneNegativeControl(t, modelled(t)) })
+	}
+}
+
+// TestPerceptualPruneMeasurement_RefusesNonEmptyItem proves the non-empty
+// refusal: a modelled item that starts with one backdrop is refused, and not a
+// single delete reaches the peer. An empty item is accepted.
+func TestPerceptualPruneMeasurement_RefusesNonEmptyItem(t *testing.T) {
+	for _, connType := range []string{connection.TypeEmby, connection.TypeJellyfin} {
+		t.Run(connType, func(t *testing.T) {
+			target := func(peer *statefulBackdropPeer) s0Target {
+				srv := httptest.NewServer(s0GuardedPeer(connType, "p1", "k", peer))
+				t.Cleanup(srv.Close)
+				var c s0Peer
+				if connType == connection.TypeEmby {
+					c = emby.New(srv.URL, "k", "u1", silentLogger())
+				} else {
+					c = jellyfin.New(srv.URL, "k", "u1", silentLogger())
+				}
+				return s0Target{connType: connType, url: srv.URL, apiKey: "k", userID: "u1", itemID: "p1", client: c}
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			occupied := &statefulBackdropPeer{data: [][]byte{[]byte("someone's real artwork")}}
+			err := s0RefuseNonEmpty(ctx, target(occupied))
+			if err == nil {
+				t.Fatal("s0RefuseNonEmpty accepted an item that already holds a backdrop")
+			}
+			if !strings.Contains(err.Error(), "disposable scratch item") {
+				t.Errorf("refusal does not tell the operator what to do: %v", err)
+			}
+			if n := occupied.deleteCount(); n != 0 {
+				t.Errorf("deleteCount = %d, want 0: the refusal must come before any delete", n)
+			}
+			if data, _ := occupied.state(); len(data) != 1 {
+				t.Errorf("occupied item holds %d backdrops after the refusal, want 1", len(data))
+			}
+			if err := s0RefuseNonEmpty(ctx, target(&statefulBackdropPeer{})); err != nil {
+				t.Errorf("an empty item was refused: %v", err)
+			}
+		})
+	}
+}
+
+// TestPerceptualPruneMeasurement_GuardedPeerRejectsMisaddressedClients proves
+// the self-check peer is strict: a wrong item id or a missing key fails.
+func TestPerceptualPruneMeasurement_GuardedPeerRejectsMisaddressedClients(t *testing.T) {
+	for _, connType := range []string{connection.TypeEmby, connection.TypeJellyfin} {
+		t.Run(connType, func(t *testing.T) {
+			srv := httptest.NewServer(s0GuardedPeer(connType, "p1", "k", &statefulBackdropPeer{}))
+			t.Cleanup(srv.Close)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			mk := func(key string) s0Peer {
+				if connType == connection.TypeEmby {
+					return emby.New(srv.URL, key, "u1", silentLogger())
+				}
+				return jellyfin.New(srv.URL, key, "u1", silentLogger())
+			}
+			if _, err := mk("k").GetArtistDetail(ctx, "p1"); err != nil {
+				t.Fatalf("correct item and key rejected: %v", err)
+			}
+			if _, err := mk("k").GetArtistDetail(ctx, "other-item"); err == nil {
+				t.Error("a request for the wrong item id was answered")
+			}
+			if _, err := mk("").GetArtistDetail(ctx, "p1"); err == nil {
+				t.Error("a request with no API key was answered")
+			}
+		})
 	}
 }
