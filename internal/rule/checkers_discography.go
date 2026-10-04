@@ -171,7 +171,11 @@ func (e *Engine) countMBReleaseGroups(ctx context.Context, a *artist.Artist, cfg
 		e.logger.Warn("discography_populated: release-group fetch failed",
 			slog.String("artist", a.Name),
 			slog.String("mbid", a.MusicBrainzID),
-			slog.String("error", err.Error()))
+			slog.String("error", err.Error()),
+			// The EvaluationContext may coalesce this fetch but does not log
+			// failures. Each caller logs this line with its own fetchCtx, so
+			// callers of a shared failed fetch each record their own cause.
+			provider.CauseAttr(fetchCtx))
 		return 0
 	}
 

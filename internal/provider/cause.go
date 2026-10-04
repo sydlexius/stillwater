@@ -125,7 +125,11 @@ func causeAttr(ctx context.Context) slog.Attr { return CauseAttr(ctx) }
 // Limits, so nobody reads more into it: those lines are emitted only on a
 // not-found, an error or a skip, so a fetch that succeeds logs no cause; and a
 // call that bypasses the shared fetch points (GetReleaseGroups, the #2476
-// path) logs no cause at all.
+// path) adds the cause to its own existing failure line, and when that call
+// succeeds it logs nothing. Two kinds of bypassing call do NOT add it: the
+// discography fixer (its failure surfaces in the "fix attempt failed" line,
+// which names the rule but not the outer trigger) and the provider
+// test-connection lines.
 func CauseAttr(ctx context.Context) slog.Attr {
 	if s := CauseFromContext(ctx).String(); s != "" {
 		return slog.String(causeLogKey, s)
