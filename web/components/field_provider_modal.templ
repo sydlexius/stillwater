@@ -22,6 +22,7 @@ templ FieldProviderModal() {
 					<button
 						type="button"
 						class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+						aria-label="Close"
 						onclick="hideFieldProviderModal()"
 					>
 						@IconXMark("h-5 w-5")
@@ -37,13 +38,55 @@ templ FieldProviderModal() {
 			var backdrop = document.getElementById('field-provider-backdrop');
 			var body = document.getElementById('field-provider-modal-body');
 
+			var opener = null;
+
+			// #2511: shared focus-restore helpers for the dialogs that take
+			// focus on open (this modal, the fetch-from-URL modal, the crop
+			// modal). The element focused at open time is usually a menu item
+			// that is hidden again by close time, and a hidden element cannot
+			// take focus, so the opener's menu trigger is captured at OPEN time
+			// as the fallback (closest() cannot be used later on a node that is
+			// hidden or detached).
+			window.swCaptureOpener = function() {
+				var el = document.activeElement;
+				if (!el || el === document.body) return null;
+				var menu = el.closest ? el.closest('[data-context-menu]') : null;
+				return { el: el, trigger: menu ? menu.querySelector('[aria-haspopup]') : null };
+			};
+			window.swRestoreOpener = function(op) {
+				if (!op) return;
+				var usable = function(n) {
+					return !!n && n.isConnected && typeof n.focus === 'function' && n.getClientRects().length > 0;
+				};
+				var target = usable(op.el) ? op.el : (usable(op.trigger) ? op.trigger : null);
+				if (!target) {
+					console.error('dialog opener and its menu trigger are both hidden or detached; focus not restored');
+					return;
+				}
+				target.focus();
+			};
+
+			// #2511: the body arrives via an HTMX swap, where `autofocus`
+			// on inserted content is unreliable, so focus the first field
+			// (or the close button) explicitly once the modal is shown.
 			window.showFieldProviderModal = function() {
+				if (modal.classList.contains('hidden')) opener = swCaptureOpener();
 				modal.classList.remove('hidden');
+				var target = body.querySelector('input:not([type=hidden]), textarea, select')
+					|| modal.querySelector('button[onclick="hideFieldProviderModal()"]');
+				if (!target) {
+					console.error('field provider modal: nothing focusable found; focus not moved into the dialog');
+					return;
+				}
+				target.focus();
 			};
 
 			window.hideFieldProviderModal = function() {
 				modal.classList.add('hidden');
 				body.innerHTML = '';
+				var op = opener;
+				opener = null;
+				swRestoreOpener(op);
 			};
 
 			document.body.addEventListener('htmx:afterSwap', function(e) {
