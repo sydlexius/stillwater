@@ -12,6 +12,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/logging"
+	"github.com/sydlexius/stillwater/internal/provider"
 )
 
 // LibraryLister retrieves the list of configured libraries.
@@ -133,7 +134,7 @@ func (s *Service) Start(ctx context.Context) {
 			if scanPending {
 				scanPending = false
 				s.logger.Info("debounce elapsed, triggering scan")
-				if err := s.scanFn(ctx); err != nil {
+				if err := s.scanFn(provider.WithCause(ctx, provider.Cause{Class: provider.CauseClassWatcher})); err != nil {
 					s.logger.Error("scan triggered by fs watcher failed", "error", err)
 				}
 			}

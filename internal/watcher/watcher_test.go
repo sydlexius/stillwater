@@ -12,6 +12,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/library"
+	"github.com/sydlexius/stillwater/internal/provider"
 )
 
 // waitFor polls cond every 10ms for up to 1s. It calls t.Fatalf(msg) if the
@@ -476,5 +477,48 @@ func TestUnsupportedFSNotifySkipsWatch(t *testing.T) {
 
 	if watchCount != 0 {
 		t.Errorf("expected 0 watched paths for unsupported fsnotify, got %d", watchCount)
+	}
+}
+
+// TestCause_WatcherTriggeredScan drives the real watcher: a real directory
+// create produces a real fsnotify event, the debounce fires, and the scan
+// function must receive a context whose cause class is "watcher" (#2784).
+func TestCause_WatcherTriggeredScan(t *testing.T) {
+	root := t.TempDir()
+	libs := &mockLibraryLister{libs: []library.Library{
+		{ID: "1", Name: "Test", Path: root, Type: "regular", FSWatch: library.FSModeWatch},
+	}}
+
+	logger := testLogger()
+	bus := event.NewBus(logger, 64)
+	go bus.Start()
+	t.Cleanup(bus.Stop)
+
+	var mu sync.Mutex
+	var got provider.Cause
+	called := false
+	scanFn := func(ctx context.Context) error {
+		mu.Lock()
+		defer mu.Unlock()
+		got = provider.CauseFromContext(ctx)
+		called = true
+		return nil
+	}
+	svc := NewService(scanFn, libs, bus, logger, testProbeCache(root), nil)
+	svc.SetDebounce(50 * time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go svc.Start(ctx)
+	waitWatcherReady(t, svc)
+	if err := os.Mkdir(filepath.Join(root, "New Artist"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	waitFor(t, func() bool { mu.Lock(); defer mu.Unlock(); return called }, "scan not triggered within 1s")
+	mu.Lock()
+	defer mu.Unlock()
+	if got.Class != provider.CauseClassWatcher {
+		t.Errorf("cause class = %q, want %q", got.Class, provider.CauseClassWatcher)
 	}
 }

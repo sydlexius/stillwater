@@ -20,6 +20,7 @@ import (
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
+	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
@@ -243,9 +244,14 @@ func (s *Service) Run(ctx context.Context) (*ScanResult, error) {
 	s.mu.Unlock()
 
 	// Use the shutdown context so the scan outlives the HTTP request but
-	// is still canceled on application shutdown.
+	// is still canceled on application shutdown. The caller's context is not
+	// used for the work (its cancellation must not stop the scan), so the
+	// operation cause is copied across by hand with CarryCause, then the scan
+	// class is added. Built per call and never stored on the Service, so a
+	// later scan cannot inherit an earlier scan's cause.
+	scanCtx := provider.EnrichCause(provider.CarryCause(s.shutdownCtx, ctx), provider.CauseClassScan, "")
 	s.scanWg.Add(1)
-	go s.runScan(s.shutdownCtx, result) //nolint:contextcheck // intentional -- scan goroutine must outlive request; scoped to shutdownCtx for app-level cancellation
+	go s.runScan(scanCtx, result)
 
 	return &snapshot, nil
 }
