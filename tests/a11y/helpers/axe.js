@@ -127,33 +127,68 @@ export async function applyTheme(expect, page, theme) {
   expect(isDark, `theme "${theme}" did not take effect on <html>`).toBe(theme === 'dark');
 }
 
-// renderedContrast measures the contrast ratio of an element AS RENDERED, from a
-// screenshot of it. Needed where axe reports color-contrast as "incomplete"
-// (never pass/fail) because the background is a translucent surface over an
-// image, so a deliberate low-contrast defect scans clean (#3012). The
-// background is the most frequent pixel (modal); the foreground is the pixel
-// furthest in contrast from it (a glyph's solid core; antialiased edge pixels
-// always score lower, so the result never overstates the ratio).
+// renderedContrast measures the contrast ratio of an element's TEXT AS
+// RENDERED, from pixels. Needed where axe reports color-contrast as
+// "incomplete" (never pass/fail) because the background is a translucent
+// surface over an image, so a deliberate low-contrast defect scans clean (#3012).
+//
+// Method: screenshot the element twice, once normal and once with its text made
+// invisible. Pixels that differ between the two are glyph pixels, and the second
+// shot is the true background directly behind each of them. Only glyph CORE
+// pixels (differing by >= 98% of the largest difference) are scored, because
+// antialiased edge pixels are blends of text and background. Each core pixel is
+// contrasted against its OWN background pixel and the MINIMUM is returned, so a
+// border, icon or image highlight in the box can never lift the result, and one
+// weak glyph pixel is not averaged away. Throws when no text pixels are found:
+// a number for an element with no visible text would be a silent pass.
 export async function renderedContrast(page, locator) {
-  const b64 = (await locator.screenshot({ animations: 'disabled' })).toString('base64');
-  return page.evaluate(async (data) => {
+  const shoot = async () => (await locator.screenshot({ animations: 'disabled' })).toString('base64');
+  const withText = await shoot();
+  await locator.evaluate((el) => {
+    const st = document.createElement('style');
+    st.id = 'sw-no-text-probe';
+    st.textContent = '[data-sw-no-text], [data-sw-no-text] * { color: transparent !important; '
+      + '-webkit-text-fill-color: transparent !important; text-decoration: none !important; '
+      + 'text-shadow: none !important; transition: none !important; }';
+    document.head.appendChild(st);
+    el.setAttribute('data-sw-no-text', '');
+  });
+  let withoutText;
+  try {
+    withoutText = await shoot();
+  } finally {
+    await locator.evaluate((el) => {
+      el.removeAttribute('data-sw-no-text');
+      document.getElementById('sw-no-text-probe')?.remove();
+    });
+  }
+  return page.evaluate(async ([a, b]) => {
     // No fetch(data:): the app's CSP connect-src blocks it.
-    const img = await createImageBitmap(new Blob([Uint8Array.from(atob(data), (c) => c.charCodeAt(0))], { type: 'image/png' }));
-    const cv = new OffscreenCanvas(img.width, img.height);
-    const ctx = cv.getContext('2d');
-    ctx.drawImage(img, 0, 0);
-    const px = ctx.getImageData(0, 0, img.width, img.height).data;
+    const load = async (data) => {
+      const img = await createImageBitmap(new Blob([Uint8Array.from(atob(data), (c) => c.charCodeAt(0))], { type: 'image/png' }));
+      const cv = new OffscreenCanvas(img.width, img.height);
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      return ctx.getImageData(0, 0, img.width, img.height);
+    };
+    const [fg, bg] = [await load(a), await load(b)];
+    if (fg.width !== bg.width || fg.height !== bg.height) throw new Error('renderedContrast: element size changed between shots');
     const lin = (v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
-    const lum = (k) => 0.2126 * lin((k >> 16) & 255) + 0.7152 * lin((k >> 8) & 255) + 0.0722 * lin(k & 255);
-    const ratio = (a, b) => { const la = lum(a); const lb = lum(b); return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05); };
-    const counts = new Map();
-    for (let i = 0; i < px.length; i += 4) {
-      const k = (px[i] << 16) | (px[i + 1] << 8) | px[i + 2];
-      counts.set(k, (counts.get(k) || 0) + 1);
+    const lum = (d, i) => 0.2126 * lin(d[i]) + 0.7152 * lin(d[i + 1]) + 0.0722 * lin(d[i + 2]);
+    const diffs = [];
+    let max = 0;
+    for (let i = 0; i < fg.data.length; i += 4) {
+      const d = Math.max(Math.abs(fg.data[i] - bg.data[i]), Math.abs(fg.data[i + 1] - bg.data[i + 1]), Math.abs(fg.data[i + 2] - bg.data[i + 2]));
+      diffs.push(d);
+      max = Math.max(max, d);
     }
-    const bg = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
-    let best = 1;
-    for (const k of counts.keys()) best = Math.max(best, ratio(k, bg));
-    return best;
-  }, b64);
+    if (max < 24) throw new Error(`renderedContrast: no glyph pixels found (max pixel difference ${max}); element has no visible text`);
+    let min = Infinity;
+    diffs.forEach((d, n) => {
+      if (d < max * 0.98) return;
+      const la = lum(fg.data, n * 4); const lb = lum(bg.data, n * 4);
+      min = Math.min(min, (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05));
+    });
+    return min;
+  }, [withText, withoutText]);
 }

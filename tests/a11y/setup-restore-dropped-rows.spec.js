@@ -41,6 +41,52 @@ test.afterEach(async ({ page }) => {
   await restorePersistedTheme(page);
 });
 
+// Two-sided proof for renderedContrast (the other side is the real Restore
+// button color in the main test below). Pale grey text (about 2.3:1 on white)
+// inside a solid black border: the old helper compared the most common color
+// with EVERY pixel and returned the highest ratio, so the border alone gave it
+// 21:1 and the defect passed. The text-only measurement must report below 4.5.
+test('renderedContrast scores the text, not a stray high-contrast border (#3012)', async ({ page }) => {
+  await page.goto(`${server.baseURL}/`);
+  await page.evaluate(() => {
+    document.body.innerHTML = '<div id="probe" style="position:fixed;top:20px;left:20px;z-index:99;background:#fff;'
+      + 'color:#aaa;border:3px solid #000;padding:8px;font:700 22px sans-serif">Low contrast text</div>';
+  });
+  const probe = page.locator('#probe');
+  await expect(probe).toHaveCount(1);
+  const legacy = await legacyMaxContrast(page, probe);
+  const ratio = await renderedContrast(page, probe);
+  expect(legacy, 'legacy helper should be fooled by the border').toBeGreaterThanOrEqual(4.5);
+  expect(ratio, `text-only contrast ${ratio.toFixed(2)}:1`).toBeLessThan(4.5);
+  // No visible text: must throw, never return a passing number.
+  await page.evaluate(() => { document.getElementById('probe').textContent = ''; });
+  await expect(renderedContrast(page, probe)).rejects.toThrow(/no glyph pixels/);
+});
+
+// The pre-fix helper, kept only to prove it was blind to the case above.
+async function legacyMaxContrast(page, locator) {
+  const b64 = (await locator.screenshot({ animations: 'disabled' })).toString('base64');
+  return page.evaluate(async (data) => {
+    const img = await createImageBitmap(new Blob([Uint8Array.from(atob(data), (c) => c.charCodeAt(0))], { type: 'image/png' }));
+    const cv = new OffscreenCanvas(img.width, img.height);
+    const ctx = cv.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const px = ctx.getImageData(0, 0, img.width, img.height).data;
+    const lin = (v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+    const lum = (k) => 0.2126 * lin((k >> 16) & 255) + 0.7152 * lin((k >> 8) & 255) + 0.0722 * lin(k & 255);
+    const ratio = (a, b) => { const la = lum(a); const lb = lum(b); return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05); };
+    const counts = new Map();
+    for (let i = 0; i < px.length; i += 4) {
+      const k = (px[i] << 16) | (px[i + 1] << 8) | px[i + 2];
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    const bg = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    let best = 1;
+    for (const k of counts.keys()) best = Math.max(best, ratio(k, bg));
+    return best;
+  }, b64);
+}
+
 // P1: a failed restore used to leave the container empty (HTMX skips non-2xx).
 // Runs BEFORE the restore test below on purpose: a failed restore changes no
 // server state, a successful one flips onboarding.completed.
@@ -118,8 +164,12 @@ test('setup restore that drops rows shows the notice and a sign-in link instead 
     ).toHaveLength(0);
 
     const button = page.locator('#setup-restore-form button[type="submit"]');
+    // A leading combinator is valid in Playwright's CSS engine (it scopes to the
+    // locator's own element); assert it resolves, so no check can pass on zero matches.
+    const completeLine = result.locator('> div');
+    await expect(completeLine).not.toHaveCount(0);
     const measured = {
-      'Restore complete line': await renderedContrast(page, result.locator('> div').first()),
+      'Restore complete line': await renderedContrast(page, completeLine.first()),
       'notice list item': await renderedContrast(page, notice.locator('li').first()),
       'sign-in link': await renderedContrast(page, link),
     };
@@ -128,10 +178,24 @@ test('setup restore that drops rows shows the notice and a sign-in link instead 
     await button.hover();
     measured['Restore button (hover)'] = await renderedContrast(page, button);
     await page.mouse.move(0, 0);
+    console.log(`CONTRAST ${theme}: ${JSON.stringify(measured)}`);
     for (const [name, ratio] of Object.entries(measured)) {
       expect(ratio, `${theme} theme: ${name} rendered contrast ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
     }
   }
+
+  // F1: body is overflow-hidden, so on a short viewport the card must scroll
+  // inside <main> or the notice and link sit below the fold with no way for a
+  // user to reach them. A mouse wheel is the user path (scrollIntoView ignores
+  // overflow:hidden, so it would pass vacuously).
+  await page.setViewportSize({ width: 390, height: 600 });
+  await page.mouse.move(195, 300);
+  await page.mouse.wheel(0, 3000);
+  await expect.poll(
+    () => link.evaluate((e) => { const r = e.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }),
+    { message: 'continue link must be scrollable into view by a user at 390x600' },
+  ).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   // The link works: onboarding is complete and a user exists now, so it lands on the sign-in page.
   await link.click();

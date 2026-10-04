@@ -87,7 +87,7 @@ If you're standing up a new instance and want it to come up with the source inst
 
 The fresh instance applies the bundle in the same single-transaction atomic import described above, then marks onboarding as complete. The page redirects to the login screen; sign in with credentials from the source instance.
 
-If this restore leaves rows out, the page stays put and shows the same amber notice under the form, followed by a **Continue to sign in** link. Nothing is carried to the login screen, so read the notice before you continue. A restore that leaves nothing out still moves on to the login screen by itself. The same counts are also in the server log (as a warning) and in the API response.
+If this restore leaves rows out, the page stays put and shows the same amber notice under the form, followed by a **Continue to sign in** link (the link reads just **Continue** when the backup restored no user). Nothing is carried to the login screen, so read the notice before you continue. A restore that leaves nothing out still moves on to the login screen by itself. The same counts are also in the server log (as a warning) and in the API response.
 
 This path is gated on the receiving instance being truly empty (no admin user yet, onboarding not completed). Once an admin exists, the only way to import is through Settings > Maintenance described above.
 

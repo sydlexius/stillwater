@@ -169,7 +169,7 @@ func SetupPage(assets AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" alt=\"\" class=\"fixed inset-0 w-full h-full object-cover\"><!-- Dark overlay for contrast --><div class=\"fixed inset-0 bg-black/30\"></div><!-- Setup card --><main class=\"relative z-10 flex min-h-full items-center justify-center px-4 py-12\"><div class=\"w-full max-w-lg space-y-8 rounded-2xl bg-white/80 dark:bg-gray-900/80 backdrop-blur-md p-8 shadow-2xl ring-1 ring-white/20\"><div class=\"text-center\"><h1 class=\"mt-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" alt=\"\" class=\"fixed inset-0 w-full h-full object-cover\"><!-- Dark overlay for contrast --><div class=\"fixed inset-0 bg-black/30\"></div><!-- Setup card --><main class=\"relative z-10 flex h-full justify-center overflow-y-auto px-4 py-12\"><div class=\"my-auto w-full max-w-lg space-y-8 rounded-2xl bg-white/80 dark:bg-gray-900/80 backdrop-blur-md p-8 shadow-2xl ring-1 ring-white/20\"><div class=\"text-center\"><h1 class=\"mt-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
