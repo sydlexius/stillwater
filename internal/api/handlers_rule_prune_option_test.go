@@ -157,14 +157,18 @@ func TestUpdateRule_PruneOption_ToleranceCarriedAndPolicy(t *testing.T) {
 	// Boundary probes: the floor is inclusive at 0.85 and refuses 0.84.
 	for _, tc := range []struct {
 		body    string
+		stored  float64
 		want    float64
 		enabled bool
 	}{
-		{`{"config":{"severity":"warning","tolerance":0.85,"prune_platform_copies":true}}`, 0.85, true},
-		{`{"config":{"severity":"warning","tolerance":0.84,"prune_platform_copies":true}}`, 0, false},
+		{`{"config":{"severity":"warning","tolerance":0.85,"prune_platform_copies":true}}`, 0.85, 0.85, true},
+		{`{"config":{"severity":"warning","tolerance":0.84,"prune_platform_copies":true}}`, 0.84, 0, false},
 	} {
 		if w := pruneOptionPut(t, h, "administrator", tc.body); w.Code != http.StatusOK {
 			t.Fatalf("admin PUT %s: status %d", tc.body, w.Code)
+		}
+		if got := storedRuleConfig(t, h).Tolerance; got != tc.stored {
+			t.Errorf("stored tolerance for %s = %v, want %v", tc.body, got, tc.stored)
 		}
 		tol, enabled, err := h.r.ruleService.PlatformDupSweepPolicy(ctx)
 		if err != nil || enabled != tc.enabled || tol != tc.want {
