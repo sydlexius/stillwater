@@ -691,6 +691,21 @@ func (a *Application) buildServices() error {
 	// It does no platform I/O unless the rule's prune_platform_copies option is on.
 	a.platformDupSweep = publish.NewPlatformDupSweep(a.publisher, a.ruleService.PlatformDupSweepPolicy,
 		publish.PlatformDupSweepConfig{}, logger)
+	// #3138 S3b: the rule's checker reads that cache (never the platform). A
+	// finding that appears or goes away changes the rule result with no artist
+	// write, so it marks the artist dirty for the incremental Run Rules.
+	dupCache := a.platformDupSweep.Cache()
+	dupCache.SetFindingObserver(func(artistID string) {
+		// One second ahead: stamps hold whole seconds and dirty is a strict
+		// dirty_since > rules_evaluated_at. A fix drops the finding inside the run
+		// that then stamps its evaluation, so a same-second mark would be lost.
+		if err := a.artistService.MarkDirty(context.Background(), artistID, time.Now().UTC().Add(time.Second)); err != nil {
+			logger.Warn("marking artist dirty after a platform duplicate finding changed",
+				slog.String("artist_id", artistID), slog.String("error", err.Error()))
+		}
+	})
+	a.ruleEngine.SetPlatformDupCache(dupCache)
+	a.imageDupFixer.SetPlatformDupCache(dupCache)
 
 	// Hand ownership to run(): the caller's deferred Stop now owns the
 	// bus lifecycle. Clearing the flag prevents the deferred Stop above

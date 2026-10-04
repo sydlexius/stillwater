@@ -2,6 +2,7 @@ package publish
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -97,8 +98,26 @@ type PlatformDupCache struct {
 	byTarget map[string]string            // target key -> artist ID
 	// written collects the targets a writer locked while a sweep read is in
 	// flight (nil when none is), so a result that raced a write is discarded.
-	written map[string]struct{}
-	window  uint64 // token of the newest window; bumped by begin and Clear
+	written         map[string]struct{}
+	window          uint64                                // token of the newest window; bumped by begin and Clear
+	findingObserver atomic.Pointer[func(artistID string)] // see SetFindingObserver
+}
+
+// SetFindingObserver registers fn to be called with the ID of every artist
+// whose finding appears or goes away: a store to or from Found, and a Found
+// entry dropped by Invalidate, Clear or a backdrop write. That is when the
+// rule's result for the artist may have changed with nothing else to say so.
+// fn runs outside the cache lock, on the goroutine that made the change.
+func (c *PlatformDupCache) SetFindingObserver(fn func(artistID string)) {
+	c.findingObserver.Store(&fn)
+}
+
+func (c *PlatformDupCache) notify(artistIDs []string) {
+	if fn := c.findingObserver.Load(); fn != nil {
+		for _, id := range artistIDs {
+			(*fn)(id)
+		}
+	}
 }
 
 func newPlatformDupCache() *PlatformDupCache {
@@ -129,17 +148,25 @@ func (c *PlatformDupCache) Lookup(artistID string, tolerance float64) PlatformDu
 // Invalidate drops one artist's entry.
 func (c *PlatformDupCache) Invalidate(artistID string) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.drop(artistID)
+	changed := c.drop(artistID)
+	c.mu.Unlock()
+	c.notify(changed)
 }
 
 // Clear drops every entry (the rule option was turned off).
 func (c *PlatformDupCache) Clear() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	var changed []string
+	for id, e := range c.entries {
+		if e.entry.State == PlatformDupFound {
+			changed = append(changed, id)
+		}
+	}
 	c.entries, c.byTarget = map[string]platformDupCached{}, map[string]string{}
 	c.written = nil // a read still in flight predates the clear: refuse its store
 	c.window++
+	c.mu.Unlock()
+	c.notify(changed)
 }
 
 // Len is the number of artists with an entry.
@@ -149,7 +176,11 @@ func (c *PlatformDupCache) Len() int {
 	return len(c.entries)
 }
 
-func (c *PlatformDupCache) drop(artistID string) {
+// drop removes the entry; it returns the artist's ID if it held a finding.
+func (c *PlatformDupCache) drop(artistID string) (changed []string) {
+	if c.entries[artistID].entry.State == PlatformDupFound {
+		changed = []string{artistID}
+	}
 	for _, k := range c.entries[artistID].targets {
 		// Only this artist's own index keys: a target that has since been
 		// stored under another artist must keep pointing at that artist.
@@ -158,6 +189,7 @@ func (c *PlatformDupCache) drop(artistID string) {
 		}
 	}
 	delete(c.entries, artistID)
+	return changed
 }
 
 // invalidateTarget is the Publisher's backdrop-write observer: a Stillwater
@@ -165,13 +197,15 @@ func (c *PlatformDupCache) drop(artistID string) {
 func (c *PlatformDupCache) invalidateTarget(connectionID, platformArtistID string) {
 	key := backdropTargetKey(connectionID, platformArtistID)
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.written != nil {
 		c.written[key] = struct{}{}
 	}
+	var changed []string
 	if id, ok := c.byTarget[key]; ok {
-		c.drop(id)
+		changed = c.drop(id)
 	}
+	c.mu.Unlock()
+	c.notify(changed)
 }
 
 // begin starts tracking writes for the sweep's next platform read and returns
@@ -190,6 +224,8 @@ func (c *PlatformDupCache) begin() uint64 {
 // window, and refuses when none is open (no begin, or a Clear since). A token
 // from an earlier window is refused WITHOUT closing the current one.
 func (c *PlatformDupCache) store(token uint64, artistID string, e PlatformDupEntry, targets []string) bool {
+	var changed []string
+	defer func() { c.notify(changed) }() // deferred first, so it runs after the unlock
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if token != c.window || c.written == nil {
@@ -202,12 +238,16 @@ func (c *PlatformDupCache) store(token uint64, artistID string, e PlatformDupEnt
 			return false
 		}
 	}
+	prev := c.entries[artistID].entry
 	c.drop(artistID)
+	if (prev.State == PlatformDupFound) != (e.State == PlatformDupFound) {
+		changed = append(changed, artistID)
+	}
 	for _, k := range targets {
 		// A target has one owner. If the mapping moved here from another
 		// artist, that artist's entry describes a target it no longer has.
 		if owner, ok := c.byTarget[k]; ok && owner != artistID {
-			c.drop(owner)
+			changed = append(changed, c.drop(owner)...)
 		}
 		c.byTarget[k] = artistID
 	}

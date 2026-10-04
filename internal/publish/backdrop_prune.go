@@ -979,6 +979,8 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, scope 
 		}
 		opts.Tolerance = scope.tolerance
 	}
+	fails, skipped, sick := len(result.Failures), result.SkippedChanged, len(result.Unhealthy)
+	var wrote []artist.PlatformID // targets this run deleted from
 	for _, pid := range platformIDs {
 		conn, connErr := p.connectionService.GetByID(ctx, pid.ConnectionID)
 		if connErr != nil {
@@ -996,7 +998,20 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, scope 
 		if client == nil {
 			continue
 		}
+		before := result.BackdropsRemoved
 		p.pruneOneTarget(ctx, a, conn, pid, client, scope, opts, result)
+		if result.BackdropsRemoved > before {
+			wrote = append(wrote, pid)
+		}
+	}
+	// Announce the writes only if every connection finished. Announcing drops the
+	// artist's cached finding; a run that left copies behind must leave it.
+	fn := p.backdropWriteObserver.Load()
+	if fn == nil || len(result.Failures) != fails || result.SkippedChanged != skipped || len(result.Unhealthy) != sick {
+		return
+	}
+	for _, pid := range wrote {
+		(*fn)(pid.ConnectionID, pid.PlatformArtistID)
 	}
 }
 
@@ -1012,13 +1027,11 @@ func (p *Publisher) pruneOneArtist(ctx context.Context, a *artist.Artist, scope 
 // (the prune handler, PrunePlatformBackdropsForArtist) holds the lock, and
 // nothing below takes it.
 func (p *Publisher) pruneOneTarget(ctx context.Context, a *artist.Artist, conn *connection.Connection, pid artist.PlatformID, client backdropPruneClient, scope PlatformBackdropPruneScope, opts perceptualPruneOpts, result *PlatformBackdropPruneResult) {
-	// A dry run writes nothing, so it takes the lock without announcing a
-	// write (the sweep would otherwise invalidate its own cache entry).
-	lock := p.lockPhashTarget
-	if scope.DryRun {
-		lock = p.lockPhashTargetQuiet
-	}
-	unlock := lock(pid.ConnectionID, pid.PlatformArtistID)
+	// Locked WITHOUT announcing a write. A dry run writes nothing, and a live
+	// run is announced by pruneOneArtist once it has finished: announcing at
+	// lock time dropped the cached finding even when a delete was refused, so
+	// the rule read the artist as clean while the copies were still there.
+	unlock := p.lockPhashTargetQuiet(pid.ConnectionID, pid.PlatformArtistID)
 	defer unlock()
 	redundant, total, perceptualErr, detErr := detectBackdropRedundancy(ctx, client, pid.PlatformArtistID, opts)
 	if perceptualErr != nil {

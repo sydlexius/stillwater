@@ -38,6 +38,7 @@ var _ platformBackdropPruner = (*publish.Publisher)(nil)
 type platformPruneWiring struct {
 	pruner  platformBackdropPruner
 	onPrune func()
+	dups    *publish.PlatformDupCache // the sweep's cache (S3b); nil when none is wired
 }
 
 // platformPruneToleranceFloor is the lowest similarity the PLATFORM phase
@@ -52,7 +53,20 @@ const platformPruneToleranceFloor = 0.85
 // report snapshot and the sidebar counts, #3092). Until both are set the
 // platform phase refuses rather than delete without invalidating.
 func (f *ImageDuplicateFixer) SetPlatformPruner(p platformBackdropPruner, onPrune func()) {
-	f.platformPrune.Store(&platformPruneWiring{pruner: p, onPrune: onPrune})
+	w := platformPruneWiring{pruner: p, onPrune: onPrune}
+	if old := f.platformPrune.Load(); old != nil {
+		w.dups = old.dups
+	}
+	f.platformPrune.Store(&w)
+}
+
+// SetPlatformDupCache wires the sweep's cache; either setter may come first.
+func (f *ImageDuplicateFixer) SetPlatformDupCache(c *publish.PlatformDupCache) {
+	w := platformPruneWiring{dups: c}
+	if old := f.platformPrune.Load(); old != nil {
+		w.pruner, w.onPrune = old.pruner, old.onPrune
+	}
+	f.platformPrune.Store(&w)
 }
 
 // platformPruneTolerance returns the tolerance the platform phase runs at:
@@ -121,13 +135,27 @@ func (f *ImageDuplicateFixer) runPlatformPhase(ctx context.Context, a *artist.Ar
 	if res.BackdropsRemoved > 0 || len(res.Failures) > 0 {
 		w.onPrune()
 	}
+	// complete: every connection was read and every planned delete landed. A
+	// failure, a skipped copy or an unhealthy connection leaves duplicates behind.
+	complete := err == nil && len(res.Failures)+len(res.Unhealthy)+res.SkippedChanged == 0
+	localRemains := false
 	if res.BackdropsRemoved > 0 {
 		fr.Irreversible = true
-		// A clean local folder plus a platform delete is a completed fix. A
-		// blocked local phase is not: its duplicates are still on disk.
-		if local == localClean {
+		// A clean local folder plus a COMPLETE platform prune is a fixed
+		// violation. A blocked local phase is not (its duplicates are still on
+		// disk), nor is a cross-type pair this fixer never removes.
+		localRemains = local == localClean && f.localDuplicateRemains(ctx, a, configuredTolerance)
+		if complete && local == localClean && !localRemains {
 			fr.Fixed = true
 		}
+	}
+	// After a complete run nothing redundant is left, so the cached finding is
+	// stale. The publisher's write observer drops it when the run deleted; this
+	// covers the run that found nothing (no platform target left, which the
+	// cache never hears about, or already clean), or a finding nothing can fix
+	// stands until it ages out. An incomplete run must leave the finding open.
+	if w.dups != nil && complete {
+		w.dups.Invalidate(a.ID)
 	}
 	f.logPlatformDeletes(a, tol, res)
 	// Raw platform/connection/DB error text stays in the server log; the
@@ -142,6 +170,21 @@ func (f *ImageDuplicateFixer) runPlatformPhase(ctx context.Context, a *artist.Ar
 			slog.String("artist_id", a.ID), slog.String("error", err.Error()))
 	}
 	note(summarizePlatformPrune(res, err))
+	if localRemains {
+		fr.Message += "; not resolved: a local duplicate remains that this fix cannot remove"
+	}
+}
+
+// localDuplicateRemains reports whether the checker would still raise a LOCAL
+// duplicate, from stored hashes as the checker does: fixLocal's fresh pass
+// cannot see a cross-type pair. Any doubt reads as "remains" (row stays open).
+func (f *ImageDuplicateFixer) localDuplicateRemains(ctx context.Context, a *artist.Artist, configuredTolerance float64) bool {
+	tolerance := configuredTolerance // normalized as the checker does
+	if tolerance <= 0 || tolerance > 1.0 {
+		tolerance = defaultImageDupTolerance
+	}
+	res, err := findImageDuplicates(ctx, f.db, a, resolveFanartPrimaryName(ctx, f.platformService), tolerance, f.imageHashRecorder, false, f.logger)
+	return err != nil || len(res.perceptual) > 0
 }
 
 // logPlatformDeletes records each platform deletion with structured attrs so
@@ -222,3 +265,75 @@ func joinInts(xs []int) string {
 
 // platformPruneSlot is the atomic holder embedded in ImageDuplicateFixer.
 type platformPruneSlot = atomic.Pointer[platformPruneWiring]
+
+// platformDupSlot is the Engine's handle on the sweep's cache; empty = no findings.
+type platformDupSlot = atomic.Pointer[publish.PlatformDupCache]
+
+// SetPlatformDupCache wires the cache the duplicate-images checker reads.
+func (e *Engine) SetPlatformDupCache(c *publish.PlatformDupCache) { e.platformDups.Store(c) }
+
+// withPlatformDupFindings makes the duplicate-images checker also report the
+// platform near-duplicates the background sweep cached (#3138 S3b). With
+// prune_platform_copies off it returns the local checker's answer unchanged:
+// entries outlive the option until the next sweep pass clears them.
+func (e *Engine) withPlatformDupFindings(local Checker) Checker {
+	return func(ctx context.Context, a *artist.Artist, cfg RuleConfig) *Violation {
+		v := local(ctx, a, cfg)
+		if !cfg.PrunePlatformCopies {
+			return v
+		}
+		detail := e.platformDupDetail(ctx, a, cfg)
+		if detail == "" {
+			return v
+		}
+		if v == nil {
+			return &Violation{
+				RuleID:   RuleImageDuplicate,
+				RuleName: "No duplicate images",
+				Category: "image",
+				Severity: effectiveSeverity(cfg),
+				Message:  fmt.Sprintf("artist %s: near-duplicate backdrops on connected platforms: %s", a.Name, detail),
+				Fixable:  true,
+			}
+		}
+		// Fixable even over a local cross-type pair the fixer cannot remove:
+		// the fix prunes the platform, then reports not-fixed, so the row stays open.
+		v.Message += "; also near-duplicate backdrops on connected platforms: " + detail
+		v.Fixable = true
+		return v
+	}
+}
+
+// platformDupDetail renders the artist's cached platform finding, or "" when
+// there is none to raise. A cache read: no platform or network I/O.
+//
+// Only a Found entry computed at the tolerance the fixer would use now is a
+// finding. Never swept, invalidated, another tolerance, clean and Undetermined
+// (a policy skip, or a read the sweep could not complete) all read as "no
+// finding", never an error. No age bound: the sweep's entry TTL is the one
+// freshness policy. Artists the FIXER always refuses are filtered too; the
+// cache holds findings for them and is not invalidated by a later lock.
+func (e *Engine) platformDupDetail(ctx context.Context, a *artist.Artist, cfg RuleConfig) string {
+	cache := e.platformDups.Load()
+	if cache == nil || a.IsExcluded || a.Locked || a.Path == "" {
+		return ""
+	}
+	// As the fixer and the sweep policy: a refused tolerance refuses there too.
+	tol, ok := platformPruneTolerance(cfg.Tolerance)
+	if !ok {
+		return ""
+	}
+	entry := cache.Lookup(a.ID, tol)
+	if entry.State != publish.PlatformDupFound {
+		return ""
+	}
+	// Fail closed like the fixer's SharedFSCheck: unknown counts as shared.
+	if a.LibraryID == "" || e.libraryService == nil || e.IsSharedFilesystem(ctx, a) {
+		return ""
+	}
+	parts := make([]string, 0, len(entry.Findings))
+	for _, f := range entry.Findings {
+		parts = append(parts, fmt.Sprintf("%s has %d redundant of %d backdrops", f.Connection, f.Redundant, f.Backdrops))
+	}
+	return strings.Join(parts, "; ")
+}
