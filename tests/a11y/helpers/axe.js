@@ -126,3 +126,34 @@ export async function applyTheme(expect, page, theme) {
   const isDark = await page.evaluate(() => document.documentElement.classList.contains('dark'));
   expect(isDark, `theme "${theme}" did not take effect on <html>`).toBe(theme === 'dark');
 }
+
+// renderedContrast measures the contrast ratio of an element AS RENDERED, from a
+// screenshot of it. Needed where axe reports color-contrast as "incomplete"
+// (never pass/fail) because the background is a translucent surface over an
+// image, so a deliberate low-contrast defect scans clean (#3012). The
+// background is the most frequent pixel (modal); the foreground is the pixel
+// furthest in contrast from it (a glyph's solid core; antialiased edge pixels
+// always score lower, so the result never overstates the ratio).
+export async function renderedContrast(page, locator) {
+  const b64 = (await locator.screenshot({ animations: 'disabled' })).toString('base64');
+  return page.evaluate(async (data) => {
+    // No fetch(data:): the app's CSP connect-src blocks it.
+    const img = await createImageBitmap(new Blob([Uint8Array.from(atob(data), (c) => c.charCodeAt(0))], { type: 'image/png' }));
+    const cv = new OffscreenCanvas(img.width, img.height);
+    const ctx = cv.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const px = ctx.getImageData(0, 0, img.width, img.height).data;
+    const lin = (v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+    const lum = (k) => 0.2126 * lin((k >> 16) & 255) + 0.7152 * lin((k >> 8) & 255) + 0.0722 * lin(k & 255);
+    const ratio = (a, b) => { const la = lum(a); const lb = lum(b); return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05); };
+    const counts = new Map();
+    for (let i = 0; i < px.length; i += 4) {
+      const k = (px[i] << 16) | (px[i + 1] << 8) | px[i + 2];
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    const bg = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    let best = 1;
+    for (const k of counts.keys()) best = Math.max(best, ratio(k, bg));
+    return best;
+  }, b64);
+}

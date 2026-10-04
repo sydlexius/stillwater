@@ -5,7 +5,7 @@
 //
 // A partial restore must not read as a complete one. The server-side handler
 // tests prove the fragment's text; this spec proves an operator can SEE it:
-// the warning is rendered, exposed as a status region, names the rejected key
+// the warning is rendered, announced via the container live region, names the rejected key
 // and counts, and the page stays axe-clean in both themes with it present.
 //
 // FIXTURE: the harness database is empty, so the spec builds its own encrypted
@@ -62,9 +62,12 @@ test('an import that drops rows renders a visible, accessible warning (#3012)', 
   expect((await submitted).status()).toBe(200);
 
   const summary = page.locator('#import-result');
+  // The container is the (single) polite live region for the swapped-in result.
+  await expect(summary).toHaveAttribute('role', 'status');
+  await expect(summary).toHaveAttribute('aria-live', 'polite');
   await expect(summary).toContainText('Import complete:');
 
-  const warning = summary.locator('[role="status"]');
+  const warning = summary.locator('[data-import-drops]');
   await expect(warning).toBeVisible();
   await expect(warning).toContainText('Import completed with dropped rows');
   await expect(warning).toContainText(`Settings rejected as invalid: 1 (${REJECTED_KEY})`);
