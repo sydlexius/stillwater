@@ -359,12 +359,37 @@
         delete form.dataset.inflight;
       });
     }
-    // Every save with the switch on needs consent, whatever the stored value
-    // was at page load (it may have changed since). Each refusal below sends
-    // NOTHING and leaves the panel open. A refused tolerance cannot be saved
-    // on; turning the switch OFF never reaches this code and always saves.
+    // Only a save that turns server deletion ON (stored off, switch on) needs
+    // consent; a stored-on option is first confirmed against the server below.
+    // Each refusal after that sends NOTHING and leaves the panel open. A refused
+    // tolerance cannot be saved on; turning the switch OFF always saves.
     if (!pruneOn) {
       save();
+      return;
+    }
+    if (pruneSw.dataset.initial === 'true') {
+      // "Stored on" is a page-load snapshot; the option may have been turned
+      // off elsewhere since. Ask the server: if it says off, correct the
+      // baseline and submit again, which takes the consent path below. An
+      // unreadable answer saves nothing.
+      form.dataset.inflight = '1';
+      fetch(bp + '/api/v1/rules', {credentials: 'same-origin', cache: 'no-store'}).then(function(r) {
+        if (!r.ok) throw new Error('status ' + r.status);
+        return r.json();
+      }).then(function(data) {
+        var cur = (data.rules || []).filter(function(x) { return x.id === ruleID; })[0];
+        if (!cur || !cur.config) throw new Error('rule missing from the response');
+        return cur.config.prune_platform_copies === true;
+      }).then(function(storedOn) {
+        delete form.dataset.inflight;
+        if (storedOn) { save(); return; }
+        pruneSw.dataset.initial = 'false';
+        handleRuleConfigSubmit(event);
+      }, function(err) {
+        delete form.dataset.inflight;
+        console.error('rule-toggle: could not confirm the stored option; not saving:', err);
+        failToast();
+      });
       return;
     }
     if (pruneSw.hasAttribute('data-prune-blocked')) {

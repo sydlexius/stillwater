@@ -41,10 +41,15 @@ function formHtml({ stored, blocked = false, tolerance = '0.95' }) {
 
 // setup loads the module over the form. dialog 'record' captures the confirm
 // call so a test can accept or walk away; 'missing' leaves the API undefined.
-function setup({ stored, blocked, tolerance, dialog = 'record', response } = {}) {
+// server is what the GET before a stored-on save reports: 'on', 'off' or 'fail';
+// rulesList overrides the rules it returns.
+function setup({ stored, blocked, tolerance, dialog = 'record', response, server = 'on', rulesList } = {}) {
   const dom = createDom({ html: formHtml({ stored, blocked, tolerance }), csrfToken: 'tok' });
   const win = dom.window;
-  win.fetch = makeFetchMock(() => response || { ok: true, status: 200 });
+  const rules = rulesList || [{ id: 'image_duplicate', config: server === 'on' ? { prune_platform_copies: true } : {} }];
+  win.fetch = makeFetchMock((url, options) => (options.method === 'PUT'
+    ? (response || { ok: true, status: 200 })
+    : { ok: server !== 'fail', status: server === 'fail' ? 500 : 200, json: { rules } }));
   const toasts = [];
   win.showToast = (m) => toasts.push(m);
   const errors = [];
@@ -68,6 +73,19 @@ function setup({ stored, blocked, tolerance, dialog = 'record', response } = {})
   const puts = () => win.fetch.calls.filter((c) => c.options.method === 'PUT');
   const sentConfigs = () => puts().map((c) => JSON.parse(c.options.body).config);
   return { win, sw, panel, form, form2, submit, sentConfigs, puts, toasts, errors, dialogs };
+}
+
+// holdGet makes the stale-page GET wait until release(); PUTs answer at once.
+function holdGet(win, rules) {
+  const calls = [];
+  let release;
+  win.fetch = (url, options) => {
+    calls.push({ url, options });
+    if (options.method === 'PUT') return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}), text: () => Promise.resolve('') });
+    return new Promise((r) => { release = () => r({ ok: true, status: 200, json: () => Promise.resolve({ rules }) }); });
+  };
+  win.fetch.calls = calls;
+  return () => release();
 }
 
 const REFUSED_TOAST = 'Not saved. The server cleanup cannot run at this similarity threshold. Turn the switch off to save.';
@@ -136,18 +154,89 @@ describe('prune switch: off to on asks first', () => {
   });
 });
 
-describe('prune switch: stored on, switch on asks too', () => {
-  it('asks before sending; cancel sends nothing; accept sends true', async () => {
-    const { submit, sentConfigs, puts, dialogs } = setup({ stored: true });
+describe('prune switch: stored on, switch on re-checks the server first', () => {
+  const ON = [{ id: 'image_duplicate', config: { prune_platform_copies: true } }];
+
+  it('server still on: sends true without asking, after one GET', async () => {
+    const { win, submit, sentConfigs, dialogs } = setup({ stored: true });
     submit();
     await flush();
-    assert.equal(dialogs.length, 1, 'no stale check yet: a save with the switch on always asks');
-    assert.equal(puts().length, 0, 'nothing is sent while the dialog is open or after a cancel');
+    assert.equal(dialogs.length, 0, 'already on: no dialog');
+    assert.equal(win.fetch.calls.length, 2, 'one GET to check the stored value, then the PUT');
+    assert.match(win.fetch.calls[0].url, /\/api\/v1\/rules$/);
+    assert.equal(win.fetch.calls[0].options.cache, 'no-store');
+    assert.deepEqual(sentConfigs(), [{ tolerance: 0.95, severity: 'warning', prune_platform_copies: true }]);
+  });
+
+  it('turned off elsewhere: asks; cancel sends no PUT, accept sends it', async () => {
+    const { sw, submit, sentConfigs, puts, dialogs } = setup({ stored: true, server: 'off' });
+    submit();
+    await flush();
+    assert.equal(dialogs.length, 1, 'the server says off, so this save turns deletion on: ask');
+    assert.equal(puts().length, 0);
+    assert.equal(sw.dataset.initial, 'false', 'the stale baseline is corrected');
     dialogs[0].onConfirm();
     await flush();
     assert.deepEqual(sentConfigs(), [{ tolerance: 0.95, severity: 'warning', prune_platform_copies: true }]);
   });
 
+  it('stored value unreadable: sends nothing and says so, even with no toast API', async () => {
+    const { win, submit, puts, dialogs, errors } = setup({ stored: true, server: 'fail' });
+    delete win.showToast;
+    submit();
+    await flush();
+    assert.equal(puts().length, 0, 'fail closed');
+    assert.equal(dialogs.length, 0);
+    assert.match(errors.join('\n'), /could not confirm the stored option/);
+    assert.match(errors.join('\n'), /showToast unavailable/);
+  });
+
+  it('the guard is held during the GET: a click and a Save then change and send nothing', async () => {
+    const { win, sw, submit, puts } = setup({ stored: true });
+    const release = holdGet(win, ON);
+    submit();
+    win.togglePrunePlatformCopies(sw);
+    submit();
+    await flush();
+    assert.equal(isOn(sw), true, 'the switch is locked while the GET is out');
+    assert.equal(puts().length, 0, 'a Save during the GET must not send');
+    release();
+    await flush();
+    assert.equal(puts().length, 1);
+  });
+
+  it('the guard is released when the GET fails', async () => {
+    const { win, sw, submit, puts } = setup({ stored: true, server: 'fail' });
+    submit();
+    await flush();
+    win.togglePrunePlatformCopies(sw); // off: saves without a GET
+    submit();
+    await flush();
+    assert.equal(puts().length, 1, 'a failed GET must not leave the form dead');
+  });
+
+  it('a rule missing from the list is not treated as stored on', async () => {
+    const { submit, puts, dialogs, errors } = setup({ stored: true, rulesList: [{ id: 'someone_else', config: { prune_platform_copies: true } }] });
+    submit();
+    await flush();
+    assert.equal(puts().length, 0);
+    assert.equal(dialogs.length, 0);
+    assert.match(errors.join('\n'), /rule missing from the response/);
+  });
+
+  it('the rule is picked by id, not by position', async () => {
+    const { submit, puts, dialogs } = setup({ stored: true, rulesList: [
+      { id: 'first_rule', config: { prune_platform_copies: true } },
+      { id: 'image_duplicate', config: {} },
+    ] });
+    submit();
+    await flush();
+    assert.equal(dialogs.length, 1, 'the target rule is off on the server, so Save must ask');
+    assert.equal(puts().length, 0);
+  });
+});
+
+describe('prune switch: more saves that need no dialog', () => {
   it('a Save dropped while another is in flight says so, and another form still saves', async () => {
     const { win, sw, submit, toasts, errors, puts } = setup({ stored: true });
     win.togglePrunePlatformCopies(sw); // off: saves without a dialog
@@ -290,15 +379,22 @@ describe('prune switch: fails closed', () => {
     assert.equal(errors.length, 1);
   });
 
-  it('with the option STORED ON and the switch on: a missing dialog and a refused tolerance both send nothing', async () => {
-    const a = setup({ stored: true, dialog: 'missing' });
+  it('stored on, server answering on, no dialog API: saves, since this save turns nothing on', async () => {
+    const { submit, puts } = setup({ stored: true, dialog: 'missing' });
+    submit();
+    await flush();
+    assert.equal(puts().length, 1);
+  });
+
+  it('stored on, server answering off: a missing dialog or a refused threshold sends nothing', async () => {
+    const a = setup({ stored: true, server: 'off', dialog: 'missing' });
     a.submit();
-    const b = setup({ stored: true, blocked: true, tolerance: '0.8' });
+    const b = setup({ stored: true, server: 'off', blocked: true, tolerance: '0.8' });
     b.submit();
     await flush();
-    assert.equal(a.win.fetch.calls.length, 0, 'no dialog, no consent, even when stored on');
-    assert.equal(b.win.fetch.calls.length, 0, 'a refused threshold blocks the save whatever the stored value');
-    assert.equal(b.dialogs.length, 0);
+    assert.equal(a.puts().length, 0, 'no dialog, no consent');
+    assert.match(a.errors.join('\n'), /showConfirmDialog unavailable/);
+    assert.equal(b.puts().length, 0, 'a refused threshold blocks the save');
     assert.deepEqual(b.toasts, [REFUSED_TOAST]);
   });
 
