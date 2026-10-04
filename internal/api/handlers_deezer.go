@@ -249,7 +249,8 @@ func (r *Router) enrichDeezerCandidates(ctx context.Context, results []provider.
 		groups, err := fetcher.GetReleaseGroups(ctx, res.ProviderID)
 		if err != nil {
 			r.logger.Warn("deezer identify: fetching release groups",
-				"deezer_id", res.ProviderID, "error", err)
+				"deezer_id", res.ProviderID, "error", err,
+				provider.CauseAttr(ctx))
 			continue
 		}
 

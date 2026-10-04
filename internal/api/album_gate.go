@@ -120,7 +120,8 @@ func (c *releaseGroupCache) titles(ctx context.Context, mbid string) ([]string, 
 		c.entries[key] = releaseGroupEntry{known: false}
 		if c.logger != nil {
 			c.logger.Warn("identify: fetching a candidate's release groups failed, so its catalogue cannot corroborate anything",
-				"mbid", mbid, "error", err)
+				"mbid", mbid, "error", err,
+				provider.CauseAttr(ctx))
 		}
 		return nil, false
 	}

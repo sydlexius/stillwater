@@ -262,7 +262,8 @@ func (r *Router) enrichDiscogsCandidates(ctx context.Context, results []provider
 		remoteTitles, err := fetcher.GetMainReleaseTitles(ctx, res.ProviderID)
 		if err != nil {
 			r.logger.Warn("discogs identify: fetching main release titles",
-				"discogs_id", res.ProviderID, "error", err)
+				"discogs_id", res.ProviderID, "error", err,
+				provider.CauseAttr(ctx))
 			continue
 		}
 

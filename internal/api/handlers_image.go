@@ -1065,7 +1065,8 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 			r.logger.Warn("web image search failed",
 				slog.String("provider", string(p.Name())),
 				slog.String("artist", a.Name),
-				slog.String("error", err.Error()))
+				slog.String("error", err.Error()),
+				provider.CauseAttr(req.Context()))
 			unavailableNames = append(unavailableNames, p.Name())
 			if errors.Is(err, provider.ErrInjectedFailure) {
 				anyInjected = true

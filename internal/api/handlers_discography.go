@@ -267,10 +267,13 @@ func (r *Router) handleFetchDiscography(w http.ResponseWriter, req *http.Request
 	// rate limiter so this call honors the 1 req/sec policy.
 	groups, err := mbAdapter.GetReleaseGroups(req.Context(), a.MusicBrainzID)
 	if err != nil {
+		// This call goes straight to the adapter, past the shared provider fetch
+		// points that log the operation cause, so the cause is read here (#2784).
 		r.logger.Warn("fetching release groups from MusicBrainz",
 			"artist_id", artistID,
 			"mbid", a.MusicBrainzID,
-			"error", err)
+			"error", err,
+			provider.CauseAttr(req.Context()))
 		writeDiscographyJSONError(w, http.StatusBadGateway,
 			"MusicBrainz fetch failed")
 		return
