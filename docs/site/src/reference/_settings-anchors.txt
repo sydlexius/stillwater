@@ -195,6 +195,7 @@ settings-rules-rules-manual
 settings-rules-rules-min-height
 settings-rules-rules-min-length
 settings-rules-rules-min-width
+settings-rules-rules-prune-platform-copies
 settings-rules-rules-requires-local
 settings-rules-rules-resolution-preset
 settings-rules-rules-select-preset

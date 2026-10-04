@@ -18,6 +18,10 @@
 //     select[data-rule-id] and [data-run-btn].
 //   onclick="runRule(this)"            -- run button, data-rule-id.
 //   onsubmit="handleRuleConfigSubmit(event)" -- per-rule config form.
+//   onclick="togglePrunePlatformCopies(this)" -- role=switch with
+//     data-prune-platform-copies (image_duplicate form). Local state only;
+//     handleRuleConfigSubmit reads it on Save. data-initial = stored value,
+//     data-prune-blocked = refused tolerance, data-prune-confirm-* = dialog copy.
 //   onchange="patchRule(this.dataset.ruleId, {automation_mode: this.value})"
 //     -- automation-mode select (uses the window.patchRule wrapper).
 //   onchange="applyResPreset(this)" / onchange="applyAspectPreset(this)"
@@ -209,9 +213,47 @@
     setTimeout(function() { toast.style.opacity = '0'; setTimeout(function() { toast.remove(); }, 300); }, 5000);
   }
 
+  // applyPruneSwitch paints the "also delete on media servers" switch on or
+  // off, using the class strings the template supplies (data-sw-btn-*,
+  // data-sw-knob-*). A switch whose tolerance the server cleanup refuses
+  // (data-prune-blocked) is locked while off and stored off: dimmed and
+  // aria-disabled, because turning it on would be a consent that does nothing.
+  function applyPruneSwitch(sw, on) {
+    sw.setAttribute('aria-checked', String(on));
+    sw.setAttribute('class', on ? sw.dataset.swBtnOn : sw.dataset.swBtnOff);
+    var knob = sw.querySelector('span');
+    if (knob) knob.setAttribute('class', on ? sw.dataset.swKnobOn : sw.dataset.swKnobOff);
+    var locked = sw.hasAttribute('data-prune-blocked') && !on && sw.dataset.initial !== 'true';
+    sw.classList.toggle('opacity-50', locked);
+    sw.classList.toggle('cursor-not-allowed', locked);
+    if (locked) sw.classList.remove('cursor-pointer');
+    if (locked) {
+      sw.setAttribute('aria-disabled', 'true');
+    } else {
+      sw.removeAttribute('aria-disabled');
+    }
+  }
+
+  // togglePrunePlatformCopies flips the switch on screen only. Nothing is sent
+  // until Save, like every other field in the config form.
+  function togglePrunePlatformCopies(sw) {
+    var isOn = sw.getAttribute('aria-checked') === 'true';
+    // Refused tolerance: turning off always works. Turning on is allowed only
+    // to undo an unsaved turn-off of an option that is stored on.
+    if (!isOn && sw.hasAttribute('data-prune-blocked') && sw.dataset.initial !== 'true') return;
+    applyPruneSwitch(sw, !isOn);
+  }
+
   function handleRuleConfigSubmit(event) {
     event.preventDefault();
     var form = event.target;
+    // One save per form at a time, so a late response from an older save
+    // cannot repaint the switch from state captured before the wait.
+    if (form.dataset.inflight === '1') {
+      console.error('rule-toggle: a save is already in progress; this Save was dropped');
+      if (typeof showToast === 'function') showToast('A save is already in progress. Try again in a moment.');
+      return;
+    }
     var ruleID = form.dataset.ruleId;
     var cfg = {};
     var intFields = {'min_width':1, 'min_height':1, 'min_length':1, 'trim_margin':1};
@@ -282,15 +324,66 @@
     }
     var sev = form.elements['severity'];
     if (sev) cfg['severity'] = sev.value;
+    // image_duplicate only: the "also delete on media servers" switch. The key
+    // is sent only when on; the API replaces the whole config and the field is
+    // omitempty, so leaving it out stores the option as off.
+    var pruneSw = form.querySelector('[data-prune-platform-copies]');
+    var pruneOn = !!pruneSw && pruneSw.getAttribute('aria-checked') === 'true';
+    if (pruneOn) cfg['prune_platform_copies'] = true;
     var panel = document.getElementById('rule-cfg-' + ruleID);
-    // Only collapse the config panel once the save succeeds; on failure keep it
-    // open and surface a toast so the unsaved edits stay visible.
-    patchRuleStrict(ruleID, {config: cfg}).then(function() {
-      if (panel) panel.classList.add('hidden');
-    }).catch(function() {
+    function failToast() {
       if (typeof showToast === 'function') {
         showToast('Failed to update rule.');
+      } else {
+        console.error('rule-toggle: showToast unavailable; the rule config was not saved');
       }
+    }
+    // Only collapse the config panel once the save succeeds; on failure keep it
+    // open and surface a toast so the unsaved edits stay visible.
+    function save() {
+      form.dataset.inflight = '1';
+      patchRuleStrict(ruleID, {config: cfg}).then(function() {
+        if (pruneSw) {
+          // The stored value is now what the switch shows; keep data-initial
+          // (which drives the refused-threshold lock) in step with it.
+          pruneSw.dataset.initial = String(pruneOn);
+          applyPruneSwitch(pruneSw, pruneOn);
+        }
+        if (panel) panel.classList.add('hidden');
+      }).catch(function(err) {
+        console.error('rule-toggle: saving the rule config failed:', err);
+        failToast();
+      }).then(function() {
+        delete form.dataset.inflight;
+      });
+    }
+    // Every save with the switch on needs consent, whatever the stored value
+    // was at page load (it may have changed since). Each refusal below sends
+    // NOTHING and leaves the panel open. A refused tolerance cannot be saved
+    // on; turning the switch OFF never reaches this code and always saves.
+    if (!pruneOn) {
+      save();
+      return;
+    }
+    if (pruneSw.hasAttribute('data-prune-blocked')) {
+      // The server cleanup refuses this tolerance (the note beside the switch
+      // says so). Do not store a consent that does nothing.
+      var refused = 'Not saved. The server cleanup cannot run at this similarity threshold. Turn the switch off to save.';
+      console.error('rule-toggle: ' + refused);
+      if (typeof showToast === 'function') showToast(refused);
+      return;
+    }
+    if (typeof window.showConfirmDialog !== 'function') {
+      // Fail closed: without the dialog there is no consent, so do not save.
+      console.error('rule-toggle: showConfirmDialog unavailable; refusing to turn on media-server deletion without confirmation');
+      failToast();
+      return;
+    }
+    // A null key means no "Don't ask again": consent to deleting on a remote
+    // server is asked for every time.
+    window.showConfirmDialog(pruneSw.dataset.pruneConfirmBody, null, save, {
+      title: pruneSw.dataset.pruneConfirmTitle,
+      acceptText: pruneSw.dataset.pruneConfirmAccept
     });
   }
 
@@ -317,6 +410,7 @@
   window.toggleRuleEnabled = toggleRuleEnabled;
   window.runRule = runRule;
   window.handleRuleConfigSubmit = handleRuleConfigSubmit;
+  window.togglePrunePlatformCopies = togglePrunePlatformCopies;
   window.applyResPreset = applyResPreset;
   window.applyAspectPreset = applyAspectPreset;
 
