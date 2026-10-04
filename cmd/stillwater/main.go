@@ -622,6 +622,9 @@ func (a *Application) buildServices() error {
 	// --- HTTP router ---
 	a.registryRepairCache = &maintenance.RegistryRepairCache{}
 	a.router = api.NewRouter(api.RouterDeps{
+		// The maintenance scheduler refreshes dupimages.Shared(), so the router
+		// must own that same instance.
+		DupImageCache:      dupimages.Shared(),
 		RepairCache:        a.registryRepairCache,
 		AuthService:        a.authService,
 		AuthRegistry:       a.authRegistry,

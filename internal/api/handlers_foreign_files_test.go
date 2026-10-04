@@ -107,6 +107,7 @@ func newTestRouterWithForeign(t *testing.T) (*Router, *sql.DB) {
 		logger:      slog.Default(),
 		foreignRepo: foreign.NewRepository(db),
 	}
+	drainDupCacheOnCleanup(t, r)
 	return r, db
 }
 

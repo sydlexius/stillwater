@@ -17,7 +17,6 @@ import (
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
-	"github.com/sydlexius/stillwater/internal/dupimages"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
@@ -52,15 +51,15 @@ func (f *fanartCapablePipeline) RemediateFanartDuplicates(ctx context.Context) (
 type requestScanKey struct{}
 
 // seededScanPipeline returns a pipeline whose scan yields exactly report. The
-// parallel store-then-render tests use it because every NewRouter re-points
-// the process-wide dupimages.Shared() cache at ITS OWN libraryDupCount: a
-// refresh kicked by any other test would otherwise run this router's scan and
-// store a newer EMPTY report over the seeded one. Returning the seed makes such
-// a foreign refresh idempotent (#2849).
+// parallel store-then-render tests use it so that a background refresh that
+// does run this router's scan (each router owns its cache since #2936, so only
+// one kicked through this router) stores the seeded report back rather than a
+// newer EMPTY one over it (#2849).
 //
 // The stub also counts scans invoked with a context marked by
-// requestScanKey, which only the GET under test carries. A foreign shared-cache
-// refresh uses its own context, so it never counts; a regression that makes the
+// requestScanKey, which only the GET under test carries. A refresh kicked by
+// anything else (e.g. a handler's TriggerRefresh) uses its own context, so it
+// never counts; a regression that makes the
 // GET scan does.
 func seededScanPipeline(report rule.FanartDupReport) *fanartCapablePipeline {
 	p := &fanartCapablePipeline{stubPipeline: &stubPipeline{}}
@@ -104,7 +103,7 @@ func testRouterWithFanartPipeline(t *testing.T, pipeline rule.PipelineRunner) *R
 		t.Fatalf("seeding rules: %v", err)
 	}
 
-	return NewRouter(RouterDeps{
+	r := NewRouter(RouterDeps{
 		SessionSecret: testSessionSecret,
 		AuthService:   authSvc,
 		ArtistService: artistSvc,
@@ -114,6 +113,8 @@ func testRouterWithFanartPipeline(t *testing.T, pipeline rule.PipelineRunner) *R
 		Logger:        logger,
 		StaticFS:      os.DirFS("../../web/static"),
 	})
+	drainDupCacheOnCleanup(t, r)
+	return r
 }
 
 // TestBackdropDuplicatesPage_UnauthRendersLoginPage mirrors
@@ -164,8 +165,8 @@ func TestBackdropDuplicatesPage_NonAdminForbidden(t *testing.T) {
 // longer scans on render at all: the GET path renders purely from the
 // pre-populated cache (r.storeBackdropDupReport), the totals and per-artist
 // table coming straight from that cached snapshot. (The scan stub returns the
-// seed and counts scans started by THIS request, because a foreign test's
-// refresh of the process-wide cache can legitimately invoke it -- see
+// seed and counts scans started by THIS request, because a background
+// refresh of this router's cache can legitimately invoke it -- see
 // seededScanPipeline.)
 func TestBackdropDuplicatesPage_WarmCacheRendersWithoutScanning(t *testing.T) {
 	t.Parallel()
@@ -239,13 +240,7 @@ func TestBackdropDuplicatesPage_PartialScanShowsNotice(t *testing.T) {
 // exact TriggerRefresh -> dupImageCache -> libraryDupCount ->
 // ScanFanartDuplicates chain the sidebar already relies on (#2608), not a
 // seam -- so the cache eventually warms without any further page load.
-//
-// NOT t.Parallel(): asserts against dupimages.Shared(), process-wide state
-// (see handlers_duplicate_images_nav_test.go's file comment).
 func TestBackdropDuplicatesPage_ColdCacheTriggersBackgroundScanAndShowsPendingNotice(t *testing.T) {
-	dupimages.Shared().Reset()
-	t.Cleanup(func() { dupimages.Shared().Reset() })
-
 	scanned := make(chan struct{})
 	pipeline := &fanartCapablePipeline{
 		stubPipeline: &stubPipeline{},
@@ -547,28 +542,6 @@ func TestBackdropDuplicatesRemediate_NonAdminForbidden(t *testing.T) {
 // TestBackdropDuplicatesRemediate_Success asserts the happy path: an admin
 // POST against a pipeline that implements fanartDuplicateRepairer reaches
 // RemediateFanartDuplicates and the JSON body reports its result.
-//
-// NOT t.Parallel() (#2908): the remediate handler's post-remediation rescan
-// (handlers_backdrop_repair.go, handleBackdropDuplicatesRemediate) reaches
-// dupimages.Shared() -- the SAME process-wide singleton
-// TestBackdropDuplicatesPage_ColdCacheTriggersBackgroundScanAndShowsPendingNotice
-// above documents itself against. Unlike that test, this one does not call
-// Reset(); it depends on the shared cache's installed sources still pointing
-// at THIS test's router (r.libraryDupCount/r.platformDupCounts) at the moment
-// Refresh runs. dupImageCache's sync.Once only installs a router's sources
-// ONCE, at construction, and installing them again is a process-wide
-// replacement (dupimages.Cache.SetSources), not a per-router claim -- so any
-// OTHER parallel test that constructs a router (every dupImageCache()/
-// NewRouter() call does, router.go:480) re-points the singleton at ITS OWN
-// sources and races this one's rescan. A prior version of this test ran
-// t.Parallel() and, when a fanart-reorder test built such a router mid-scan,
-// this test's rescan read the WRONG router's (non-fanart-capable) sources,
-// which failed to establish a value at all -- so the post-remediation write
-// never landed and the assertion below observed the stale pre-remediation
-// count. Go's test runner fully drains every non-parallel top-level test
-// before resuming any parallel one, so declaring this test serial is a
-// deterministic fix, not a reordering of the same race: no other test's
-// router construction can execute concurrently with this one's Refresh call.
 func TestBackdropDuplicatesRemediate_Success(t *testing.T) {
 	pipeline := &fanartCapablePipeline{
 		stubPipeline: &stubPipeline{},
@@ -626,25 +599,6 @@ func TestBackdropDuplicatesRemediate_Success(t *testing.T) {
 // out or corrupt the last known-good cached report, and the remediation
 // response itself must still report success (the collapse itself succeeded;
 // only the opportunistic refresh afterward failed).
-//
-// NOT t.Parallel() (#2908): this handler's rescan reaches dupimages.Shared()
-// through r.dupImageCache().Refresh(ctx) -- the SAME process-wide singleton
-// TestBackdropDuplicatesRemediate_Success's file comment (above) documents
-// itself against. Every NewRouter() call (testRouterWithFanartPipeline ->
-// NewRouter, router.go:493) eagerly re-points that singleton's installed
-// scan sources at ITS OWN router via dupimages.Cache.SetSources -- a
-// process-wide replacement, not a per-router claim. A parallel sibling test
-// that constructs a router (e.g. TestBackdropDuplicatesPage_
-// WarmCacheRendersWithoutScanning, whose scanFn calls t.Fatal if ever
-// invoked) can therefore re-point the shared sources mid-Refresh here and
-// this test's rescan ends up invoking the WRONG router's scan function --
-// measured by a hostile reviewer as a first-run race+shuffle panic
-// (WarmCache's t.Fatal firing inside this test's Refresh call). Declaring
-// this test serial, exactly like Success above it, is what makes that
-// impossible rather than merely unlikely: Go's test runner fully drains
-// every non-parallel top-level test before resuming any parallel one, so no
-// other test's router construction can execute concurrently with this
-// test's Refresh call.
 func TestBackdropDuplicatesRemediate_RescanFailureLeavesPriorCache(t *testing.T) {
 	pipeline := &fanartCapablePipeline{
 		stubPipeline: &stubPipeline{},
@@ -741,9 +695,8 @@ func TestStoreBackdropDupReport_NewerScanWins(t *testing.T) {
 // same false-clean claim #2716 exists to eliminate, relocated from the report
 // page into the API. null says "not known" and cannot be misread as "clean".
 //
-// Serial for the same reason TestBackdropDuplicatesRemediate_Success is: the
-// rescan path runs through the process-wide dupimages.Cache singleton, and a
-// parallel test constructing its own router re-points that singleton mid-run.
+// The rescan path runs through this router's own dupimages.Cache (#2936), so
+// the test needs no serialization against other routers.
 func TestBackdropDuplicatesRemediate_UnknownPerceptualCountIsNull(t *testing.T) {
 	pipeline := &fanartCapablePipeline{
 		stubPipeline: &stubPipeline{},

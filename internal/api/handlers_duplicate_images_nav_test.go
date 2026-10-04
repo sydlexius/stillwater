@@ -41,21 +41,39 @@ import (
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
-// dupNavRouter builds the minimum Router surface the handler needs and resets
-// the process-wide count cache so tests do not bleed into one another.
+// dupNavRouter builds the minimum Router surface the handler needs. The router
+// owns its own duplicate-image cache (see Router.dupImageCache), so tests do not
+// bleed into one another and need no reset.
 //
 // foreignRepo is left nil, so foreignSummaryForBanner reports 0 unmatched
 // images. Tests that need a non-zero unmatched count use dupNavRouterWithForeign.
 //
-// These tests are NOT parallel: dupimages.Shared() is process-wide state.
+// Reach the cache through r.dupImageCache(), never a package-level instance.
 func dupNavRouter(t *testing.T) *Router {
 	t.Helper()
-	dupimages.Shared().Reset()
-	t.Cleanup(func() { dupimages.Shared().Reset() })
 
-	return &Router{
+	r := &Router{
 		logger: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 	}
+	drainDupCacheOnCleanup(t, r)
+	return r
+}
+
+// drainDupCacheOnCleanup resets the router's own duplicate-image cache when the
+// test ends. Reset cancels any in-flight background refresh and BLOCKS until it
+// has returned, so a scan kicked by the handler under test cannot run on into
+// the test's teardown (the race in #2977). It touches only this router's cache,
+// so it needs no coordination with any other test.
+//
+// Cleanups run LIFO: a test that parks a scan must register its release AFTER
+// this helper's router constructor, so the release runs first. That matters only
+// for a source that ignores its context (the `<-block` source in
+// TestDupImagesNav_ColdCacheAnswersEmptyAndDoesNotBlock): Reset would wait out
+// the whole drain timeout on it. A context-aware source such as
+// blockingArtistLister is canceled by the drain itself.
+func drainDupCacheOnCleanup(t *testing.T, r *Router) {
+	t.Helper()
+	t.Cleanup(func() { r.dupImageCache().Reset() })
 }
 
 // dupNavRouterWithForeign is dupNavRouter plus a real foreign-file repository,
@@ -119,7 +137,7 @@ func jellyfinCount(n int) dupimages.PlatformCount {
 //
 // Necessary because the handler calls r.dupImageCache(), which re-installs the
 // ROUTER's own sources (r.libraryDupCount / r.platformDupCounts) on first use,
-// guarded by r.dupImageOnce. A test that only calls dupimages.Shared().SetSources
+// guarded by r.dupImageOnce. A test that only calls r.dupCache.SetSources
 // has its stubs silently replaced on the first request, so the stub can never
 // be invoked -- which makes an assertion that the stub was NOT called pass
 // vacuously, and an assertion that it WAS called impossible.
@@ -127,13 +145,13 @@ func jellyfinCount(n int) dupimages.PlatformCount {
 // Consuming the Once with a no-op first leaves the stubs in place.
 func dupNavStubSources(t *testing.T, r *Router, library dupimages.LibraryCountFn, platform dupimages.PlatformCountFn) {
 	t.Helper()
-	r.dupImageOnce.Do(func() {})
-	dupimages.Shared().SetSources(library, platform)
+	r.dupImageOnce.Do(func() { r.dupCache = dupimages.New(r.logger) })
+	r.dupCache.SetSources(library, platform)
 }
 
 // seedCounts primes the cache exactly as a completed background refresh would.
-func seedCounts(library int, platforms ...dupimages.PlatformCount) {
-	dupimages.Shared().Set(dupimages.Counts{Library: library, Platforms: platforms})
+func seedCounts(r *Router, library int, platforms ...dupimages.PlatformCount) {
+	r.dupImageCache().Set(dupimages.Counts{Library: library, Platforms: platforms})
 }
 
 // THE HIDE BEHAVIOR at the handler seam (#2608, maintainer's spec). All three
@@ -142,7 +160,7 @@ func seedCounts(library int, platforms ...dupimages.PlatformCount) {
 // a regression that emits a bare header fails legibly here.
 func TestDupImagesNav_HidesEntireSectionWhenAllCountsZero(t *testing.T) {
 	r, _ := dupNavRouterWithForeign(t)
-	seedCounts(0) // no duplicates; no foreign rows seeded, so unmatched is 0 too
+	seedCounts(r, 0) // no duplicates; no foreign rows seeded, so unmatched is 0 too
 
 	w := httptest.NewRecorder()
 	r.handleDuplicateImagesNav(w, dupNavReq(t, "administrator"))
@@ -167,7 +185,7 @@ func TestDupImagesNav_HidesEntireSectionWhenAllCountsZero(t *testing.T) {
 func TestDupImagesNav_SectionReturnsWithOnlyTheOffendingRow(t *testing.T) {
 	t.Run("unmatched only", func(t *testing.T) {
 		r, db := dupNavRouterWithForeign(t)
-		seedCounts(0)
+		seedCounts(r, 0)
 		seedUnmatched(t, r, db, 3)
 
 		w := httptest.NewRecorder()
@@ -190,7 +208,7 @@ func TestDupImagesNav_SectionReturnsWithOnlyTheOffendingRow(t *testing.T) {
 
 	t.Run("library only", func(t *testing.T) {
 		r := dupNavRouter(t)
-		seedCounts(5)
+		seedCounts(r, 5)
 
 		w := httptest.NewRecorder()
 		r.handleDuplicateImagesNav(w, dupNavReq(t, "administrator"))
@@ -212,7 +230,7 @@ func TestDupImagesNav_SectionReturnsWithOnlyTheOffendingRow(t *testing.T) {
 
 	t.Run("one platform only", func(t *testing.T) {
 		r := dupNavRouter(t)
-		seedCounts(0, jellyfinCount(3))
+		seedCounts(r, 0, jellyfinCount(3))
 
 		w := httptest.NewRecorder()
 		r.handleDuplicateImagesNav(w, dupNavReq(t, "administrator"))
@@ -244,7 +262,7 @@ func TestDupImagesNav_SectionReturnsWithOnlyTheOffendingRow(t *testing.T) {
 // without it a handler that always returned "" would pass the second half.
 func TestDupImagesNav_AllowlistingEverythingRemovesRowThenSection(t *testing.T) {
 	r, db := dupNavRouterWithForeign(t)
-	seedCounts(0) // no duplicate offenders, so unmatched alone holds the section up
+	seedCounts(r, 0) // no duplicate offenders, so unmatched alone holds the section up
 	seedUnmatched(t, r, db, 3)
 
 	render := func() string {
@@ -292,7 +310,7 @@ func TestDupImagesNav_AllowlistingEverythingRemovesRowThenSection(t *testing.T) 
 
 func TestDupImagesNav_AllRowsWhenPopulated(t *testing.T) {
 	r, db := dupNavRouterWithForeign(t)
-	seedCounts(12, embyCount(4), jellyfinCount(2))
+	seedCounts(r, 12, embyCount(4), jellyfinCount(2))
 	seedUnmatched(t, r, db, 2)
 
 	w := httptest.NewRecorder()
@@ -329,7 +347,7 @@ func TestDupImagesNav_AllRowsWhenPopulated(t *testing.T) {
 // which platform is dirty.
 func TestDupImagesNav_RowsNamePlatformExplicitly(t *testing.T) {
 	r := dupNavRouter(t)
-	seedCounts(0, embyCount(7))
+	seedCounts(r, 0, embyCount(7))
 
 	w := httptest.NewRecorder()
 	r.handleDuplicateImagesNav(w, dupNavReq(t, "administrator"))
@@ -352,7 +370,7 @@ func TestDupImagesNav_RowsNamePlatformExplicitly(t *testing.T) {
 // #2608 -- "Platform Backdrop Duplicates" truncated -- so pin it.
 func TestDupImagesNav_VisibleLabelsStayTerse(t *testing.T) {
 	r, db := dupNavRouterWithForeign(t)
-	seedCounts(3, embyCount(2))
+	seedCounts(r, 3, embyCount(2))
 	seedUnmatched(t, r, db, 1)
 
 	w := httptest.NewRecorder()
@@ -382,14 +400,14 @@ func TestDupImagesNav_ServesCachedValueWithoutScanning(t *testing.T) {
 	r := dupNavRouter(t)
 
 	var libCalls, platCalls atomic.Int32
-	dupimages.Shared().SetSources(
+	r.dupImageCache().SetSources(
 		func(context.Context) (int, error) { libCalls.Add(1); return 99, nil },
 		func(context.Context) ([]dupimages.PlatformCount, error) {
 			platCalls.Add(1)
 			return []dupimages.PlatformCount{embyCount(99)}, nil
 		},
 	)
-	seedCounts(12, embyCount(4))
+	seedCounts(r, 12, embyCount(4))
 
 	for range 10 {
 		w := httptest.NewRecorder()
@@ -417,11 +435,11 @@ func TestDupImagesNav_CleanCacheDoesNotRetriggerScan(t *testing.T) {
 	r := dupNavRouter(t)
 
 	var libCalls atomic.Int32
-	dupimages.Shared().SetSources(
+	r.dupImageCache().SetSources(
 		func(context.Context) (int, error) { libCalls.Add(1); return 0, nil },
 		nil,
 	)
-	seedCounts(0)
+	seedCounts(r, 0)
 
 	for range 10 {
 		w := httptest.NewRecorder()
@@ -436,7 +454,7 @@ func TestDupImagesNav_AdminOnly(t *testing.T) {
 	for _, role := range []string{"user", "operator", ""} {
 		t.Run("role="+role, func(t *testing.T) {
 			r := dupNavRouter(t)
-			seedCounts(12, embyCount(4))
+			seedCounts(r, 12, embyCount(4))
 
 			w := httptest.NewRecorder()
 			r.handleDuplicateImagesNav(w, dupNavReq(t, role))
@@ -462,7 +480,7 @@ func TestDupImagesNav_ColdCacheAnswersEmptyAndDoesNotBlock(t *testing.T) {
 
 	block := make(chan struct{})
 	t.Cleanup(func() { close(block) })
-	dupimages.Shared().SetSources(
+	r.dupImageCache().SetSources(
 		func(context.Context) (int, error) { <-block; return 5, nil },
 		nil,
 	)
@@ -526,7 +544,7 @@ func TestDupImagesNav_ColdCacheTriggersExactlyOneBackgroundRefresh(t *testing.T)
 
 	// Precondition: the cache really is cold. Without this the assertions
 	// below could pass vacuously against an already-computed snapshot.
-	if dupimages.Shared().Get().Computed {
+	if r.dupImageCache().Get().Computed {
 		t.Fatal("precondition: the cache must start un-computed")
 	}
 
@@ -550,10 +568,10 @@ func TestDupImagesNav_ColdCacheTriggersExactlyOneBackgroundRefresh(t *testing.T)
 	}
 
 	// Drain the background refresh before returning so no straggler goroutine
-	// writes into the process-wide cache during a later test.
+	// writes into this router's cache after the test has moved on.
 	releaseOnce()
 	deadline := time.Now().Add(5 * time.Second)
-	for !dupimages.Shared().Get().Computed {
+	for !r.dupImageCache().Get().Computed {
 		if time.Now().After(deadline) {
 			t.Fatal("background refresh never completed after release")
 		}
@@ -585,7 +603,7 @@ func TestDupImagesNav_UnmatchedCountFailureHidesSectionAndWarns(t *testing.T) {
 	// A computed-clean duplicate cache: the duplicate rows are legitimately
 	// zero, leaving the unmatched count as the only thing that could keep the
 	// section alive.
-	seedCounts(0)
+	seedCounts(r, 0)
 
 	if err := db.Close(); err != nil {
 		t.Fatalf("closing db for error injection: %v", err)
@@ -755,11 +773,9 @@ func TestLibraryDupCount_CachesFullReportForBackdropDuplicatesPage(t *testing.T)
 // refresh nothing. A cache that has sources can be refreshed with no HTTP
 // request having ever happened, which is exactly what this asserts.
 func TestNewRouter_InstallsDupImageScanSourcesEagerly(t *testing.T) {
-	dupimages.Shared().Reset()
-	t.Cleanup(func() { dupimages.Shared().Reset() })
 
 	// Construct a Router the way production does. No request is made.
-	_ = NewRouter(RouterDeps{
+	r := NewRouter(RouterDeps{
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError})),
 		StaticFS: os.DirFS("../../web/static"),
 	})
@@ -767,7 +783,7 @@ func TestNewRouter_InstallsDupImageScanSourcesEagerly(t *testing.T) {
 	// Refresh must not bail out with "no scan sources installed". The scans
 	// themselves fail on this bare Router (no pipeline/publisher), which is a
 	// DIFFERENT error -- the point is that the cache had something to call.
-	err := dupimages.Shared().Refresh(context.Background())
+	err := r.dupImageCache().Refresh(context.Background())
 	if err != nil && strings.Contains(err.Error(), "no scan sources installed") {
 		t.Fatal("Router construction did not install the scan sources; the periodic background refresh would do nothing until someone loaded the sidebar")
 	}
@@ -931,7 +947,7 @@ func TestPlatformDisplayName(t *testing.T) {
 // adding a platform elsewhere in the codebase needs no change here.
 func TestDupImagesNav_UnknownPlatformTypeStillRenders(t *testing.T) {
 	r := dupNavRouter(t)
-	seedCounts(0, dupimages.PlatformCount{Type: "plex", Label: "Plex", Count: 6})
+	seedCounts(r, 0, dupimages.PlatformCount{Type: "plex", Label: "Plex", Count: 6})
 
 	w := httptest.NewRecorder()
 	r.handleDuplicateImagesNav(w, dupNavReq(t, "administrator"))
@@ -977,8 +993,8 @@ func TestBucketByPlatformType_UnknownTypeSurvivesWithTitleCasedLabel(t *testing.
 //
 // The wiring here reproduces exactly that shape: the scan source READS a
 // Router field and PARKS, still parked at the moment the test performs the
-// cleanup a test's return would perform (the dupimages.Shared().Reset() every
-// such test registers), and only then finishes and WRITES a flag the test
+// cleanup a test's return would perform (the Reset a test's cleanup used to
+// register), and only then finishes and WRITES a flag the test
 // checks.
 //
 // WHAT UNPARKS THE SCAN, AND WHY IT MATTERS. The source waits on ITS OWN
@@ -1037,7 +1053,7 @@ func TestDupImagesNav_ColdCacheRefreshIsJoinedBeforeTheTestReturns(t *testing.T)
 	// Precondition: the cache really is cold, so the handler will take the
 	// TriggerRefresh branch. Without this the test could pass vacuously
 	// against a warm cache that never spawns anything.
-	if dupimages.Shared().Get().Computed {
+	if r.dupImageCache().Get().Computed {
 		t.Fatal("precondition: the cache is already warm, so the cold-cache trigger path is not exercised")
 	}
 
@@ -1065,7 +1081,7 @@ func TestDupImagesNav_ColdCacheRefreshIsJoinedBeforeTheTestReturns(t *testing.T)
 
 	// Stand in for "the test returned": run the same Reset the cleanup runs.
 	// It must both cancel the parked scan and not come back until it is done.
-	dupimages.Shared().Reset()
+	r.dupImageCache().Reset()
 
 	if !scanFinished.Load() {
 		t.Fatal("the background refresh goroutine was still running after Reset returned; it can now race the next test's Router state (#2977)")
