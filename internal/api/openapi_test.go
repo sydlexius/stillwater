@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sydlexius/stillwater/internal/settingsio"
 	"golang.org/x/tools/go/packages"
 	"gopkg.in/yaml.v3"
 )
@@ -430,5 +431,41 @@ func handle() {
 	if _, ok := fields["field_from_another_package"]; !ok {
 		t.Fatalf("collectHandlerFields did not see field %q declared outside the api package; got fields: %v",
 			"field_from_another_package", fields)
+	}
+}
+
+// TestEnvelopeSummarySchemasDeclareImportResult (#3012): both envelope summary
+// schemas carry an ImportResult, so each must declare every one of its JSON
+// fields (the omitempty counters are optional, but still declared).
+func TestEnvelopeSummarySchemasDeclareImportResult(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatalf("reading openapi.yaml: %v", err)
+	}
+	var doc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					Properties map[string]any `yaml:"properties"`
+				} `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("parsing openapi.yaml: %v", err)
+	}
+	rt := reflect.TypeOf(settingsio.ImportResult{})
+	for _, name := range []string{"PortableSettingsEnvelopeImport", "PortableSettingsEnvelopeExport"} {
+		declared := doc.Components.Schemas[name].Properties["summary"].Properties
+		if len(declared) == 0 {
+			t.Fatalf("precondition: %s.summary declares no properties", name)
+		}
+		for i := 0; i < rt.NumField(); i++ {
+			tag, _, _ := strings.Cut(rt.Field(i).Tag.Get("json"), ",")
+			if _, ok := declared[tag]; !ok {
+				t.Errorf("%s.summary does not declare %q", name, tag)
+			}
+		}
 	}
 }

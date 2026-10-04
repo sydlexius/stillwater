@@ -310,6 +310,17 @@ type ImportResult struct {
 	// wins. Counted separately from SettingsRenamed because the operator loses
 	// a value here (the staler of the two) and that is worth seeing.
 	SettingsRenamedDropped int `json:"settings_renamed_dropped,omitempty"`
+	// RulesSkipped counts rule entries not applied: an empty id, an id this
+	// instance does not know (a newer export or a retired rule), or an
+	// unrecognized automation_mode (#3012).
+	RulesSkipped int `json:"rules_skipped,omitempty"`
+	// ScraperConfigsSkipped counts scraper configs skipped for an empty scope.
+	ScraperConfigsSkipped int `json:"scraper_configs_skipped,omitempty"`
+	// UserPreferencesSkipped counts preference ROWS (not entries) skipped
+	// because their user resolved by neither id nor username.
+	UserPreferencesSkipped int `json:"user_preferences_skipped,omitempty"`
+	// UsersSkipped counts user rows skipped for an empty username.
+	UsersSkipped int `json:"users_skipped,omitempty"`
 }
 
 // ImportOptions controls optional behaviors at import time. The zero value
@@ -836,8 +847,9 @@ func (s *Service) exportUserPreferences(ctx context.Context) ([]UserPrefsExport,
 //     use it.
 //  2. Otherwise fall back to username lookup so pre-1.4 envelopes (which
 //     carried only Username) still import cleanly.
-//  3. Neither match -> skip with a warning so an empty target users table
-//     does not silently drop every preference without trace.
+//  3. Neither match -> skip with a warning and count the rows in
+//     result.UserPreferencesSkipped so an empty target users table does not
+//     silently drop every preference without trace.
 func (s *Service) importUserPreferences(ctx context.Context, db dbExecutor, prefs []UserPrefsExport, result *ImportResult) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, up := range prefs {
@@ -858,6 +870,7 @@ func (s *Service) importUserPreferences(ctx context.Context, db dbExecutor, pref
 			if errors.Is(err, sql.ErrNoRows) {
 				slog.Warn("import: skipping preferences for unknown user",
 					"username", up.Username, "user_id", up.UserID)
+				result.UserPreferencesSkipped += len(up.Preferences)
 				continue
 			} else if err != nil {
 				// A real DB error (connection issue, corruption) must fail the

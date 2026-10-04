@@ -114,6 +114,10 @@ func (r *Router) handleSetupRestore(w http.ResponseWriter, req *http.Request) {
 		"settings_rejected", result.SettingsRejected,
 		"settings_rejected_keys", result.SettingsRejectedKeys,
 		"settings_renamed_dropped", result.SettingsRenamedDropped,
+		"rules_skipped", result.RulesSkipped,
+		"scraper_configs_skipped", result.ScraperConfigsSkipped,
+		"user_preferences_skipped", result.UserPreferencesSkipped,
+		"users_skipped", result.UsersSkipped,
 	}
 	dropNotice := importDropWarning(result)
 	if dropNotice != "" {
@@ -167,6 +171,10 @@ func (r *Router) handleSetupRestore(w http.ResponseWriter, req *http.Request) {
 		"settings_rejected":           result.SettingsRejected,
 		"settings_rejected_keys":      rejectedKeys,
 		"settings_renamed_dropped":    result.SettingsRenamedDropped,
+		"rules_skipped":               result.RulesSkipped,
+		"scraper_configs_skipped":     result.ScraperConfigsSkipped,
+		"user_preferences_skipped":    result.UserPreferencesSkipped,
+		"users_skipped":               result.UsersSkipped,
 	})
 }
 

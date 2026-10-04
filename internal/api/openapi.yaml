@@ -763,6 +763,11 @@ components:
             settings_rejected_keys: { type: array, items: { type: string } }
             settings_renamed: { type: integer }
             settings_renamed_dropped: { type: integer }
+            connection_features_ignored: { type: integer }
+            rules_skipped: { type: integer }
+            scraper_configs_skipped: { type: integer }
+            user_preferences_skipped: { type: integer }
+            users_skipped: { type: integer }
     PortableSettingsEnvelopeExport:
       type: object
       description: |
@@ -878,6 +883,34 @@ components:
                 DISCARDED because the envelope also carried the current name,
                 which wins. Counted separately from settings_renamed because
                 the operator loses a value here (the staler of the two).
+            connection_features_ignored:
+              type: integer
+              description: >
+                Import-result counter; the export writer does not emit it.
+                Per-feature connection toggles ignored on import because the
+                connection type does not support them.
+            rules_skipped:
+              type: integer
+              description: >
+                Import-result counter; the export writer does not emit it.
+                Rule entries not applied on import (empty id, id unknown to
+                the instance, or invalid automation mode).
+            scraper_configs_skipped:
+              type: integer
+              description: >
+                Import-result counter; the export writer does not emit it.
+                Scraper configs skipped on import because they had no scope.
+            user_preferences_skipped:
+              type: integer
+              description: >
+                Import-result counter; the export writer does not emit it.
+                Preference rows (not users) skipped on import because their
+                user was not found on the instance.
+            users_skipped:
+              type: integer
+              description: >
+                Import-result counter; the export writer does not emit it.
+                User rows skipped on import because they had no username.
     RegistryRepairBanner:
       type: object
       description: Cached registry-repair detector result (#2678).
@@ -2926,6 +2959,10 @@ paths:
                   settings_rejected: { type: integer, description: "Settings rows rejected as invalid and not applied; non-zero means the restore was partial." }
                   settings_rejected_keys: { type: array, items: { type: string }, description: "Names of the rejected settings keys, capped at 100. Values are never included." }
                   settings_renamed_dropped: { type: integer, description: Rows under a renamed settings key discarded because the file also carried the current name. }
+                  rules_skipped: { type: integer, description: "Rule entries not applied (empty id, id unknown to this instance, or invalid automation mode)." }
+                  scraper_configs_skipped: { type: integer, description: "Scraper configs skipped because they had no scope." }
+                  user_preferences_skipped: { type: integer, description: "Preference rows skipped because their user was not found on this instance." }
+                  users_skipped: { type: integer, description: "User rows skipped because they had no username." }
             text/html:
               schema:
                 type: string
@@ -13568,6 +13605,18 @@ paths:
                   settings_renamed_dropped:
                     type: integer
                     description: Number of rows carried under a renamed settings key that were discarded because the envelope also carried the current name; omitted when zero.
+                  rules_skipped:
+                    type: integer
+                    description: Number of rule entries not applied (empty id, id unknown to this instance, or invalid automation mode); omitted when zero.
+                  scraper_configs_skipped:
+                    type: integer
+                    description: Number of scraper configs skipped because they had no scope; omitted when zero.
+                  user_preferences_skipped:
+                    type: integer
+                    description: Number of preference rows skipped because their user was not found on this instance; omitted when zero.
+                  users_skipped:
+                    type: integer
+                    description: Number of user rows skipped because they had no username; omitted when zero.
             text/html:
               schema:
                 type: string

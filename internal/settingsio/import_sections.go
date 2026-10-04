@@ -467,8 +467,9 @@ func (s *Service) importProviderPriorities(ctx context.Context, db dbExecutor, p
 // config) to the matching local rules. Rules are matched by ID. Unknown IDs
 // (exported by a newer binary that this instance does not have) are silently
 // skipped so cross-version imports do not abort. Entries with an empty ID or
-// an unrecognized automation_mode are also skipped with a warning. This method
-// is a no-op when ruleService is nil.
+// an unrecognized automation_mode are also skipped. Every skip is logged and
+// counted in result.RulesSkipped so a partial restore is visible (#3012). This
+// method is a no-op when ruleService is nil.
 func (s *Service) importRules(ctx context.Context, db dbExecutor, rules []RuleExport, result *ImportResult) error {
 	if s.ruleService == nil {
 		return nil
@@ -476,13 +477,18 @@ func (s *Service) importRules(ctx context.Context, db dbExecutor, rules []RuleEx
 	for i := range rules {
 		re := &rules[i]
 		if re.ID == "" {
+			slog.Warn("import: skipping rule with empty id", "index", i)
+			result.RulesSkipped++
 			continue
 		}
 		existing, err := s.ruleService.ImportGetByIDTx(ctx, db, re.ID)
 		if err != nil {
-			// Unknown rule IDs (newer export, older binary) are expected -- skip.
-			// Other errors (DB connection, corruption) must surface.
+			// Unknown rule IDs (newer export, older binary, or a retired rule)
+			// are skipped but counted. Other errors (DB connection,
+			// corruption) must surface.
 			if errors.Is(err, rule.ErrNotFound) {
+				slog.Warn("import: skipping rule unknown to this instance", "rule_id", re.ID)
+				result.RulesSkipped++
 				continue
 			}
 			return fmt.Errorf("looking up rule %q: %w", re.ID, err)
@@ -499,6 +505,7 @@ func (s *Service) importRules(ctx context.Context, db dbExecutor, rules []RuleEx
 				"rule_id", re.ID,
 				"automation_mode", re.AutomationMode,
 			)
+			result.RulesSkipped++
 			continue
 		}
 		existing.Enabled = re.Enabled
@@ -515,7 +522,8 @@ func (s *Service) importRules(ctx context.Context, db dbExecutor, rules []RuleEx
 // importScraperPreferences upserts scraper configurations for every scope in
 // the exported payload. Each scope is written via the tx-aware import helper
 // so a mid-import failure rolls back every prior section's writes. Entries
-// with an empty scope are skipped. This method is a no-op when
+// with an empty scope are skipped and counted in result.ScraperConfigsSkipped.
+// This method is a no-op when
 // scraperService is nil.
 func (s *Service) importScraperPreferences(ctx context.Context, db dbExecutor, configs []ScraperConfigExport, result *ImportResult) error {
 	if s.scraperService == nil {
@@ -524,6 +532,8 @@ func (s *Service) importScraperPreferences(ctx context.Context, db dbExecutor, c
 	for i := range configs {
 		sce := &configs[i]
 		if sce.Scope == "" {
+			slog.Warn("import: skipping scraper config with empty scope", "index", i)
+			result.ScraperConfigsSkipped++
 			continue
 		}
 		// Clear the ID so SaveConfig resolves it from the DB, avoiding ID
