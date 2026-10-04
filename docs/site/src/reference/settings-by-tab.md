@@ -248,6 +248,8 @@ Set your preferred languages for artist names, biographies, aliases, and genre/s
 {: #settings-rules-rules-threshold-percent }
 - **Trim margin (px)**
 {: #settings-rules-rules-trim-margin }
+- **Also delete near-duplicate backdrops on media servers**
+{: #settings-rules-rules-prune-platform-copies }
 - **Severity**
 {: #settings-rules-rules-severity-label }
 

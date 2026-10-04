@@ -551,10 +551,44 @@ func ruleHasConfig(id string) bool {
 	switch id {
 	case "thumb_min_res", "thumb_square", "fanart_min_res", "fanart_aspect",
 		"logo_min_res", "banner_min_res", "bio_exists", "logo_padding",
-		"discography_populated", "provider_id_missing":
+		"discography_populated", "provider_id_missing", "image_duplicate":
 		return true
 	}
 	return false
+}
+
+// similarityPercent formats a 0-1 similarity as a percentage: 0.9 -> "90%".
+// It moves the decimal point in v's exact text and never rounds, so a refused
+// 0.849999 prints "84.9999%" and not "85%".
+func similarityPercent(v float64) string {
+	text := strconv.FormatFloat(v, 'f', -1, 64)
+	sign := ""
+	if strings.HasPrefix(text, "-") {
+		sign, text = "-", text[1:]
+	}
+	whole, frac, _ := strings.Cut(text, ".")
+	frac += "00"
+	out := strings.TrimLeft(whole+frac[:2], "0")
+	if out == "" {
+		out = "0"
+	}
+	if rest := strings.TrimRight(frac[2:], "0"); rest != "" {
+		out += "." + rest
+	}
+	if out != "0" {
+		out = sign + out
+	}
+	return out + "%"
+}
+
+// pruneSwitchClasses returns the prune switch's classes. A locked switch
+// (tolerance refused, stored off) is dimmed and shows the not-allowed cursor.
+func pruneSwitchClasses(on, locked bool) string {
+	c := ruleToggleBtnClasses(on)
+	if locked {
+		c = strings.Replace(c, "cursor-pointer", "cursor-not-allowed opacity-50", 1)
+	}
+	return c
 }
 
 // intOrDefault formats an int for use in an HTML input value, using def when v is zero.
@@ -2652,6 +2686,64 @@ templ ruleConfigForm(rl rule.Rule, providerKeys []provider.ProviderKeyStatus) {
 					</div>
 				}
 			</fieldset>
+		}
+		if rl.ID == "image_duplicate" {
+			// The "also delete on media servers" option (#3138 S4a).
+			// rule.PlatformPruneThreshold is the function the fixer and the sweep
+			// use; pruneAccepted is false when the server cleanup would refuse
+			// the stored tolerance.
+			{{ pruneThreshold, pruneAccepted := rule.PlatformPruneThreshold(rl.Config.Tolerance) }}
+			{{ pruneOn := rl.Config.PrunePlatformCopies }}
+			if rl.Config.Tolerance != 0 {
+				// Carries the stored tolerance through a save. The form rebuilds
+				// the whole config and the API replaces the stored one with it, so
+				// without this a save would reset a tolerance set through the API
+				// (say 0.95) to the default 0.90 and loosen what gets deleted on
+				// the server. #3141 renames the field; this input must follow it.
+				<input type="hidden" name="tolerance" value={ strconv.FormatFloat(rl.Config.Tolerance, 'g', -1, 64) }/>
+			}
+			<div class="col-span-full flex items-center justify-between">
+				<div class="min-w-0 pr-3">
+					<span id="prune-platform-copies-label" class="text-xs font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.rules.prune_platform_copies") }</span>
+					<p id="prune-platform-copies-help" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{ t(ctx, "settings.rules.prune_platform_copies.help") }</p>
+					if pruneAccepted {
+						<p id="prune-platform-copies-note" data-prune-threshold class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{ tf(ctx, "settings.rules.prune_platform_copies.threshold_format", similarityPercent(pruneThreshold)) }</p>
+					} else {
+						<p id="prune-platform-copies-note" data-prune-refused class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{ tf(ctx, "settings.rules.prune_platform_copies.refused_note", similarityPercent(pruneThreshold)) }</p>
+					}
+				</div>
+				// Clicking only flips the switch on screen; nothing is saved until
+				// Save (rule-toggle.js), and every Save with the switch on asks first.
+				// data-initial is the STORED value; it drives the refused-threshold lock.
+				// data-prune-blocked marks a refused tolerance (off allowed, on not).
+				// aria-disabled, not disabled, keeps the locked switch focusable.
+				<button
+					type="button"
+					class={ pruneSwitchClasses(pruneOn, !pruneAccepted && !pruneOn) }
+					role="switch"
+					aria-checked={ boolAttr(pruneOn) }
+					aria-labelledby="prune-platform-copies-label"
+					aria-describedby="prune-platform-copies-help prune-platform-copies-note"
+					data-prune-platform-copies
+					data-initial={ boolAttr(pruneOn) }
+					if !pruneAccepted {
+						data-prune-blocked
+						if !pruneOn {
+							aria-disabled="true"
+						}
+					}
+					data-sw-btn-on={ ruleToggleBtnClasses(true) }
+					data-sw-btn-off={ ruleToggleBtnClasses(false) }
+					data-sw-knob-on={ ruleToggleKnobClasses(true) }
+					data-sw-knob-off={ ruleToggleKnobClasses(false) }
+					data-prune-confirm-title={ t(ctx, "settings.rules.prune_platform_copies.confirm_title") }
+					data-prune-confirm-body={ t(ctx, "settings.rules.prune_platform_copies.confirm_body") }
+					data-prune-confirm-accept={ t(ctx, "settings.rules.prune_platform_copies.confirm_accept") }
+					onclick="togglePrunePlatformCopies(this)"
+				>
+					<span class={ ruleToggleKnobClasses(pruneOn) }></span>
+				</button>
+			</div>
 		}
 		<label class="block">
 			<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "settings.rules.severity_label") }</span>
