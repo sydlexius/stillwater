@@ -849,11 +849,23 @@ func verifyBackdropUnchanged(ctx context.Context, client backdropPruneClient, pl
 }
 
 // shiftAfterDelete rewrites the pending entries' slots after the platform
-// removed deletedIndex and renumbered every slot above it down by one. Measured
-// on Emby 4.9.5.0 only; that Jellyfin renumbers the same way is ASSUMED, not
-// measured. If a peer did not renumber, the shifted re-verify would read a slot
-// whose bytes no longer match the recorded hash, so the entry is SKIPPED rather
-// than the wrong slot deleted -- the failure mode is a short run, not data loss.
+// removed deletedIndex and renumbered every slot above it down by one.
+//
+// MEASURED (#3138 S0): deleting backdrop index i moves every higher slot down by
+// one with order preserved, on Emby 4.10.1.0, Emby 4.11.0.5 (beta) and
+// Jellyfin 10.11.10, for backdrops uploaded through the image API. The
+// measurement is
+// TestLivePerceptualPrune_Emby / TestLivePerceptualPrune_Jellyfin
+// (live_perceptual_prune_integration_test.go): the perceptual survivor sits
+// above both of its candidates, so the run only deletes all three when the
+// survivor re-verify finds it at the shifted slot after each delete.
+// NOT measured: backdrops a peer binds from library files, and a library with
+// saveLocalMetadata on ("save artwork into media folders"); every library
+// measured had it off and no metadata savers.
+//
+// If a peer did not renumber, the shifted re-verify would read a slot whose
+// bytes no longer match the recorded hash, so the entry is SKIPPED rather than
+// the wrong slot deleted -- the failure mode is a short run, not data loss.
 //
 // The SURVIVOR half is the one that matters. Descending order already keeps
 // every candidate in place until its turn, but a perceptual survivor can sit
