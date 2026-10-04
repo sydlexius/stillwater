@@ -29,6 +29,10 @@ async function enterEditMode(page) {
   await expect(page.locator(ROOT)).not.toHaveClass(/is-editing/);
   await page.locator('body').press('e');
   await expect(page.locator(ROOT), 'precondition: page must be in edit mode').toHaveClass(/is-editing/);
+  // is-editing is set synchronously, but the page ignores setEditAll(false)
+  // (editBusy) until the batch edit-all request has swapped the field editors
+  // in. An Escape sent before that is silently dropped, so wait for the editors.
+  await expect(page.locator(`${ROOT} form[hx-patch]`).first(), 'precondition: field editors opened').toBeVisible();
 }
 
 // Absence assertions need a window: without the fix the page handler's

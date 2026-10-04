@@ -1544,11 +1544,11 @@ templ artistDetailPageScript() {
 					var gd = document.getElementById(openGlobalDialogIds[gi]);
 					if (gd && !gd.classList.contains('hidden')) return;
 				}
-				// An open context menu (hero Actions) closes on Escape from its own
-				// later-registered listener (context_menu.templ). Same open-state
-				// selector that script uses: a dropdown panel is open when it lacks
-				// .hidden (the hero panel carries no .ctx-desktop-panel class); a
-				// bottom sheet is open with .ctx-sheet-open and is never .hidden.
+				// An open menu closes on Escape from its own later-registered listener
+				// (context_menu.templ). Same open-state selector that script uses. First
+				// half: the hero Actions dropdown panel, open when it lacks .hidden (it
+				// has no sheet form on this page). Second half: the mobile "More" nav
+				// sheet (#bs-more-nav), open with .ctx-sheet-open and never .hidden.
 				if (document.querySelector('[data-context-menu] [role="menu"]:not(.hidden):not(.ctx-bottom-sheet), .ctx-bottom-sheet.ctx-sheet-open')) return;
 
 				// Esc: layered dismiss in priority order.
