@@ -18,6 +18,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/collision"
 	"github.com/sydlexius/stillwater/internal/conflict"
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/dupimages"
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/foreign"
@@ -84,8 +85,14 @@ type RouterDeps struct {
 	CollisionNotifier *collision.Notifier
 	DB                *sql.DB
 	Logger            *slog.Logger
-	BasePath          string
-	BasePathFromEnv   bool
+	// DupImageCache is the duplicate-image count cache this router owns.
+	// Production wiring passes dupimages.Shared() because the maintenance
+	// scheduler must refresh the same instance. Left nil, the router builds a
+	// private one, so a router constructed without it cannot share cache state
+	// with any other router in the process.
+	DupImageCache   *dupimages.Cache
+	BasePath        string
+	BasePathFromEnv bool
 	// UX is the SW_UX UI-channel mode: "stable", "next", or "dual". Drives the
 	// UX middleware (X-Stillwater-UX header + ux= log field) and the /next/*
 	// lane. Empty is treated as "stable".
@@ -161,8 +168,10 @@ type Router struct {
 	collisionNotifier  *collision.Notifier
 	publisher          *publish.Publisher
 	logger             *slog.Logger
-	// dupImageOnce installs this router's scan sources on the shared
-	// duplicate-image count cache exactly once. See dupImageCache().
+	// dupCache is this router's duplicate-image count cache; nil until
+	// dupImageCache() resolves it. dupImageOnce guards that resolution and the
+	// one-time installation of the scan sources. See dupImageCache().
+	dupCache        *dupimages.Cache
 	dupImageOnce    sync.Once
 	basePath        string
 	basePathFromEnv bool
@@ -465,6 +474,7 @@ func NewRouter(deps RouterDeps) *Router {
 		collisionNotifier:        deps.CollisionNotifier,
 		db:                       deps.DB,
 		logger:                   deps.Logger,
+		dupCache:                 deps.DupImageCache,
 		basePath:                 deps.BasePath,
 		basePathFromEnv:          deps.BasePathFromEnv,
 		ux:                       deps.UX,

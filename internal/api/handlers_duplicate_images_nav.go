@@ -61,17 +61,25 @@ import (
 // dupImageCache returns the router's duplicate-image count cache, installing
 // this router's scan sources on first use.
 //
+// The cache is OWNED by the router: it is the instance injected through
+// RouterDeps.DupImageCache (production passes dupimages.Shared()), or a private
+// one created here when none was injected. Nothing in this package reaches
+// dupimages.Shared(), so two routers (two tests) can never observe each
+// other's counts, scan state or sources, with no reset call to remember.
+//
 // The sources are installed here rather than in cmd/stillwater/main.go because
 // the router already holds the handles the scans need (r.pipeline, r.publisher,
 // r.connectionService) and the cache's other consumer (the maintenance
 // scheduler) needs only the cache itself.
 func (r *Router) dupImageCache() *dupimages.Cache {
-	cache := dupimages.Shared()
 	r.dupImageOnce.Do(func() {
-		cache.SetLogger(r.logger)
-		cache.SetSources(r.libraryDupCount, r.platformDupCounts)
+		if r.dupCache == nil {
+			r.dupCache = dupimages.New(r.logger)
+		}
+		r.dupCache.SetLogger(r.logger)
+		r.dupCache.SetSources(r.libraryDupCount, r.platformDupCounts)
 	})
-	return cache
+	return r.dupCache
 }
 
 // libraryDupCount runs the EXPENSIVE local scan. Called only from the

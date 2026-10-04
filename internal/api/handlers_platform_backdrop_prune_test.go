@@ -90,7 +90,7 @@ func testRouterWithPlatformLister(t *testing.T, lister platformArtistLister) *Ro
 		Logger:            logger,
 	})
 
-	return NewRouter(RouterDeps{
+	r := NewRouter(RouterDeps{
 		SessionSecret:     testSessionSecret,
 		AuthService:       authSvc,
 		ArtistService:     artistSvc,
@@ -101,6 +101,8 @@ func testRouterWithPlatformLister(t *testing.T, lister platformArtistLister) *Ro
 		StaticFS:          os.DirFS("../../web/static"),
 		Publisher:         pub,
 	})
+	drainDupCacheOnCleanup(t, r)
+	return r
 }
 
 // TestPlatformBackdropDuplicatesPage_RequiresAdmin pins the admin gate: a
@@ -169,12 +171,7 @@ func TestPlatformBackdropDuplicatesPage_PublisherNilFailsLoud(t *testing.T) {
 //
 // The page's remaining obligation: with nothing established it renders the
 // pending notice, never a table of zeros claiming the platforms are clean.
-//
-// NOT t.Parallel(): the cold-cache branch reaches dupimages.Shared().
 func TestPlatformBackdropDuplicatesPage_SweepFailureRendersPendingNot500(t *testing.T) {
-	dupimages.Shared().Reset()
-	t.Cleanup(func() { dupimages.Shared().Reset() })
-
 	r := testRouterWithPlatformLister(t, failingArtistLister{})
 
 	req := withI18nCtx(t, httptest.NewRequestWithContext(adminContext(), http.MethodGet, "/reports/platform-backdrop-duplicates", nil))
@@ -524,18 +521,13 @@ func (b *blockingArtistLister) List(ctx context.Context, _ artist.ListParams) ([
 // never returns, the handler misses the deadline. The 3s bound sits far below
 // the 62s production measurement and far above an honest cache read, so it
 // cannot pass by accident on a fast machine or fail on a slow one.
-//
-// NOT t.Parallel(): reaches dupimages.Shared(), process-wide state.
 func TestPlatformBackdropDuplicatesPage_NeverBlocksOnTheSweep(t *testing.T) {
-	dupimages.Shared().Reset()
-	// LIFO: release first, then Reset -- Reset drains, and a drain that has to
-	// wait on a parked lister would take the whole drain timeout.
-	t.Cleanup(func() { dupimages.Shared().Reset() })
-
 	lister := newBlockingArtistLister()
-	t.Cleanup(func() { close(lister.release) })
-
 	r := testRouterWithPlatformLister(t, lister)
+	// Registered AFTER the router so it runs BEFORE the router's cache drain
+	// (LIFO). Order is not load-bearing for correctness here: the drain cancels
+	// the sweep's context and blockingArtistLister selects on ctx.Done().
+	t.Cleanup(func() { close(lister.release) })
 
 	req := withI18nCtx(t, httptest.NewRequestWithContext(adminContext(), http.MethodGet, "/reports/platform-backdrop-duplicates", nil))
 	w := httptest.NewRecorder()
@@ -583,16 +575,10 @@ func TestPlatformBackdropDuplicatesPage_NeverBlocksOnTheSweep(t *testing.T) {
 // The guarantee is dupimages.Cache's; this test exists because the handler must
 // ROUTE through it. A revision that swept directly would pass every other test
 // here and fail this one.
-//
-// NOT t.Parallel(): asserts against dupimages.Shared(), process-wide state.
 func TestPlatformBackdropDuplicatesPage_ConcurrentColdLoadsSweepOnce(t *testing.T) {
-	dupimages.Shared().Reset()
-	t.Cleanup(func() { dupimages.Shared().Reset() })
-
 	lister := newBlockingArtistLister()
-	t.Cleanup(func() { close(lister.release) })
-
 	r := testRouterWithPlatformLister(t, lister)
+	t.Cleanup(func() { close(lister.release) })
 
 	// Build the i18n-enabled context ON THE TEST GOROUTINE. withI18nCtx calls
 	// t.Fatalf on a bundle-load failure, and Fatalf/FailNow are only valid from
@@ -656,15 +642,10 @@ func TestPlatformBackdropDuplicatesPage_ConcurrentColdLoadsSweepOnce(t *testing.
 // Two assertions, the second keeping the first honest: an aged-out snapshot
 // must kick a sweep AND still render its existing rows with their as-of stamp.
 // Falling back to the pending notice would discard a real measurement.
-//
-// NOT t.Parallel(): reaches dupimages.Shared(), process-wide state.
 func TestPlatformBackdropDuplicatesPage_StaleSnapshotTriggersRefreshAndStillRenders(t *testing.T) {
-	dupimages.Shared().Reset()
-	t.Cleanup(func() { dupimages.Shared().Reset() })
-
 	lister := newBlockingArtistLister()
-	t.Cleanup(func() { close(lister.release) })
 	r := testRouterWithPlatformLister(t, lister)
+	t.Cleanup(func() { close(lister.release) })
 
 	// An established report, stamped older than the max age.
 	r.storePlatformDupReport(publish.PlatformBackdropDupReport{
@@ -705,15 +686,10 @@ func TestPlatformBackdropDuplicatesPage_StaleSnapshotTriggersRefreshAndStillRend
 // The control that keeps the gate above from becoming "sweep on every load". A
 // FRESH snapshot must NOT trigger: Cache.refresh runs both halves, so each
 // needless trigger is the 62s platform sweep plus the 257s library re-hash.
-//
-// NOT t.Parallel(): reaches dupimages.Shared(), process-wide state.
 func TestPlatformBackdropDuplicatesPage_FreshSnapshotDoesNotTriggerASweep(t *testing.T) {
-	dupimages.Shared().Reset()
-	t.Cleanup(func() { dupimages.Shared().Reset() })
-
 	lister := newBlockingArtistLister()
-	t.Cleanup(func() { close(lister.release) })
 	r := testRouterWithPlatformLister(t, lister)
+	t.Cleanup(func() { close(lister.release) })
 
 	r.storePlatformDupReport(publish.PlatformBackdropDupReport{RedundantBackdrops: 3}, time.Now())
 
@@ -840,8 +816,6 @@ func TestStorePlatformDupReport_OutageGuardIsNarrow(t *testing.T) {
 //
 // Asserted against a real Cache with real sources: the guard returning an error
 // proves nothing if the refresh path stops honoring it.
-//
-// NOT t.Parallel() in spirit but safe here -- its own cache, never Shared().
 func TestPlatformDupCounts_PartialSweepDoesNotClearEstablishedCounts(t *testing.T) {
 	t.Parallel()
 	r := testRouterWithPlatformPublisher(t)
@@ -928,12 +902,7 @@ func TestPlatformDupReport_PartialSweepIsStoredAndFlagged(t *testing.T) {
 //
 // Wired so the only way to report nonzero work is to walk the library for real:
 // the cache claims offenders while the publisher's lister returns none.
-//
-// NOT t.Parallel(): the post-prune re-sweep runs through dupimages.Shared(),
-// which is process-wide state.
 func TestPlatformBackdropDuplicatesPrune_ScansFreshNeverTheCache(t *testing.T) {
-	dupimages.Shared().Reset()
-	t.Cleanup(func() { dupimages.Shared().Reset() })
 	r := testRouterWithPlatformPublisher(t)
 
 	r.storePlatformDupReport(publish.PlatformBackdropDupReport{
@@ -983,11 +952,7 @@ func TestPlatformBackdropDuplicatesPrune_ScansFreshNeverTheCache(t *testing.T) {
 // here and the test failed -- correctly reporting that a timing-dependent
 // assertion had been pinned as an invariant. What is genuinely invariant is that
 // the deleted backdrops are gone from the page, so that is what is asserted.
-//
-// NOT t.Parallel(): reaches dupimages.Shared() through the prune's refresh kick.
 func TestPlatformBackdropDuplicatesPage_AfterPruneNeverShowsPrePruneRows(t *testing.T) {
-	dupimages.Shared().Reset()
-	t.Cleanup(func() { dupimages.Shared().Reset() })
 	r := testRouterWithPlatformPublisher(t)
 
 	const prePruneArtist = "artist-pruned-away"
@@ -1118,11 +1083,7 @@ func TestStorePlatformDupReport_SweepStartedAfterAPruneIsStored(t *testing.T) {
 // refresh kick at all -- the test then hangs for the package timeout instead of
 // failing. The real publisher over an empty library returns immediately, so the
 // kick is observed through the cache's own state rather than a blocked sweep.
-//
-// NOT t.Parallel(): drives dupimages.Shared(), process-wide state.
 func TestPlatformBackdropDuplicatesPrune_AlsoRefreshesTheSidebarCounts(t *testing.T) {
-	dupimages.Shared().Reset()
-	t.Cleanup(func() { dupimages.Shared().Reset() })
 	r := testRouterWithPlatformPublisher(t)
 
 	// Pre-load a stale platform count, as a pre-prune sweep would have left.
@@ -1279,13 +1240,7 @@ func (p *duplicateBackdropPlatform) handler(platformArtistID, platformUserID str
 // This is the one failure shape that distinguishes the two behaviors, which is
 // why the lister must return a FULL page before failing rather than failing
 // outright the way TestPlatformBackdropDuplicatesPrune_Error's does.
-//
-// NOT t.Parallel(): the invalidation kicks dupimages.Shared(), process-wide
-// state.
 func TestPlatformBackdropDuplicatesPrune_PartialFailureStillInvalidatesTheCache(t *testing.T) {
-	dupimages.Shared().Reset()
-	t.Cleanup(func() { dupimages.Shared().Reset() })
-
 	const (
 		platformArtistID = "emby-dup-artist"
 		platformUserID   = "test-user-1"
@@ -1411,9 +1366,6 @@ func TestPlatformBackdropDuplicatesPrune_PartialFailureStillInvalidatesTheCache(
 // to see, from the 500 itself, that the run deleted 2 backdrops before it
 // failed. Pre-fix this asserts against a bare "prune failed" string and fails.
 func TestPlatformBackdropDuplicatesPrune_ErrorBodyCarriesPartialAccounting(t *testing.T) {
-	dupimages.Shared().Reset()
-	t.Cleanup(func() { dupimages.Shared().Reset() })
-
 	const (
 		platformArtistID = "emby-dup-artist-3119"
 		platformUserID   = "test-user-3119"
@@ -1525,14 +1477,10 @@ func allArtistsPruneBody() io.Reader {
 // the report snapshot (else the page lists deleted backdrops, #3092) and the
 // sidebar's dupimages counts (asserted through the real TriggerRefresh chain
 // reaching the platform lister).
-//
-// NOT t.Parallel(): reaches dupimages.Shared(), process-wide state.
 func TestInvalidatePlatformBackdropCaches(t *testing.T) {
-	dupimages.Shared().Reset()
-	t.Cleanup(func() { dupimages.Shared().Reset() })
 	lister := newBlockingArtistLister()
-	t.Cleanup(func() { close(lister.release) })
 	r := testRouterWithPlatformLister(t, lister)
+	t.Cleanup(func() { close(lister.release) })
 	r.storePlatformDupReport(publish.PlatformBackdropDupReport{ArtistsAffected: 1, RedundantBackdrops: 2}, time.Now())
 	if _, _, ok := r.platformDupReportSnapshot(); !ok {
 		t.Fatal("precondition: the cached report must be populated")
