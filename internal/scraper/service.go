@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/sydlexius/stillwater/internal/dbutil"
+	"github.com/sydlexius/stillwater/internal/logging"
 )
 
 // Service provides CRUD operations for scraper configuration.
@@ -24,7 +25,7 @@ type Service struct {
 func NewService(db *sql.DB, logger *slog.Logger) *Service {
 	return &Service{
 		db:     db,
-		logger: logger.With(slog.String("component", "scraper-service")),
+		logger: logging.WithComponent(logger, "scraper-service"),
 	}
 }
 

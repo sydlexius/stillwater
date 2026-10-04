@@ -14,6 +14,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
+	"github.com/sydlexius/stillwater/internal/logging"
 )
 
 // ArtistPlatformIDProvider is the subset of artist.Service needed to resolve
@@ -37,7 +38,7 @@ func New(connService *connection.Service, artistService ArtistPlatformIDProvider
 	return &Bridge{
 		connService:   connService,
 		artistService: artistService,
-		logger:        logger.With(slog.String("component", "image-bridge")),
+		logger:        logging.WithComponent(logger, "image-bridge"),
 	}
 }
 

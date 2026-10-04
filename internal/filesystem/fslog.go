@@ -1,6 +1,10 @@
 package filesystem
 
-import "log/slog"
+import (
+	"log/slog"
+
+	"github.com/sydlexius/stillwater/internal/logging"
+)
 
 // fsLog returns the component-scoped logger used for this package's
 // always-on destructive-step records (issue #2636).
@@ -22,5 +26,5 @@ import "log/slog"
 // step failed. The attribute vocabulary is shared with the tracer where it
 // overlaps (op, path) so both are greppable together.
 func fsLog() *slog.Logger {
-	return slog.Default().With(slog.String("component", "filesystem"))
+	return logging.WithComponent(slog.Default(), "filesystem")
 }

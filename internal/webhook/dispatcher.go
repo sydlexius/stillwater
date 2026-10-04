@@ -13,6 +13,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/httpsafe"
+	"github.com/sydlexius/stillwater/internal/logging"
 	"github.com/sydlexius/stillwater/internal/version"
 )
 
@@ -38,7 +39,7 @@ func NewDispatcher(service *Service, logger *slog.Logger) *Dispatcher {
 	return &Dispatcher{
 		service:    service,
 		httpClient: httpsafe.SafeClient(requestTimeout),
-		logger:     logger.With(slog.String("component", "webhook-dispatcher")),
+		logger:     logging.WithComponent(logger, "webhook-dispatcher"),
 		sem:        make(chan struct{}, maxConcurrentDeliveries),
 		sleep:      time.Sleep,
 	}
@@ -49,7 +50,7 @@ func NewDispatcherWithHTTPClient(service *Service, httpClient *http.Client, logg
 	return &Dispatcher{
 		service:    service,
 		httpClient: httpClient,
-		logger:     logger.With(slog.String("component", "webhook-dispatcher")),
+		logger:     logging.WithComponent(logger, "webhook-dispatcher"),
 		sem:        make(chan struct{}, maxConcurrentDeliveries),
 		sleep:      time.Sleep,
 	}

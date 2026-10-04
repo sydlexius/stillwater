@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/sydlexius/stillwater/internal/logging"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -92,7 +93,7 @@ func NewPassContext(size int, logger *slog.Logger) *PassContext {
 		size:    size,
 		lru:     list.New(),
 		entries: make(map[evalCacheKey]*list.Element, size),
-		logger:  logger.With(slog.String("component", "rule.passctx")),
+		logger:  logging.WithComponent(logger, "rule.passctx"),
 	}
 }
 

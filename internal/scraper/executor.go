@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/logging"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/provider/tagdict"
 )
@@ -40,7 +41,7 @@ func NewExecutor(service *Service, registry *provider.Registry, settings *provid
 		registry:         registry,
 		providerSettings: settings,
 		aimd:             aimd,
-		logger:           logger.With(slog.String("component", "scraper-executor")),
+		logger:           logging.WithComponent(logger, "scraper-executor"),
 	}
 }
 

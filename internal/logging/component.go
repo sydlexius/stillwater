@@ -55,7 +55,8 @@ func (h *componentHandler) WithGroup(name string) slog.Handler {
 // WithComponent on the result replaces the name rather than stacking it. It
 // does not defend against a raw .With("component", ...) on either side of it,
 // or a component attribute passed on an individual log call: those still
-// produce a second key.
+// produce a second key. TestNoRawComponentTagging forbids all of those in
+// production code, so the helper is the only place the key is set.
 //
 // Re-tagging an already-tagged logger is a wiring bug: the sub-component should
 // receive the untagged base logger. It is not fatal, so the new name replaces

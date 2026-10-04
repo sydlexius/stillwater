@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/filesystem"
+	"github.com/sydlexius/stillwater/internal/logging"
 )
 
 // backupPattern matches backup filenames: stillwater-YYYYMMDD-HHMMSS.db, plus
@@ -95,7 +96,7 @@ func NewService(db *sql.DB, backupDir string, retention int, logger *slog.Logger
 		backupDir: backupDir,
 		retention: retention,
 		clock:     realClock{},
-		logger:    logger.With(slog.String("component", "backup")),
+		logger:    logging.WithComponent(logger, "backup"),
 	}
 }
 

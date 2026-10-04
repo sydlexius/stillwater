@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/logging"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -140,7 +141,7 @@ func NewEvaluationContext(a *artist.Artist, orch EvalProvider, logger *slog.Logg
 	return &EvaluationContext{
 		artistID: id,
 		orch:     orch,
-		logger:   logger.With(slog.String("component", "rule.evalctx")),
+		logger:   logging.WithComponent(logger, "rule.evalctx"),
 		cache:    make(map[evalCacheKey]*evalCacheEntry),
 	}
 }

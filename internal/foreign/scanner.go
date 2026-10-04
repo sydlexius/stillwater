@@ -16,6 +16,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/logging"
 )
 
 // foreignNamePrefixes are the lowercased basename prefixes (without
@@ -60,7 +61,7 @@ func NewScanner(repo *Repository, artists ArtistLister, logger *slog.Logger) *Sc
 	return &Scanner{
 		repo:    repo,
 		artists: artists,
-		logger:  logger.With(slog.String("component", "foreign-scanner")),
+		logger:  logging.WithComponent(logger, "foreign-scanner"),
 	}
 }
 

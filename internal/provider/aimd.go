@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/logging"
 	"golang.org/x/time/rate"
 )
 
@@ -75,7 +76,7 @@ func NewAIMDController(rlm *RateLimiterMap, clock Clock) *AIMDController {
 		rlm:    rlm,
 		clock:  clock,
 		states: make(map[ProviderName]*aimdState),
-		logger: slog.Default().With(slog.String("component", "aimd")),
+		logger: logging.WithComponent(slog.Default(), "aimd"),
 	}
 }
 

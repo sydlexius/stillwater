@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/sydlexius/stillwater/internal/logging"
 )
 
 // LockSyncLockSourcePlatform is the lock_source attribution written when
@@ -78,7 +80,7 @@ func NewLockSync(db *sql.DB, conns LockSyncConnectionLister, artists LockSyncArt
 		conns:   conns,
 		artists: artists,
 		factory: factory,
-		logger:  logger.With(slog.String("component", "lock-sync")),
+		logger:  logging.WithComponent(logger, "lock-sync"),
 		syncWin: lockSyncRecentPushWindow,
 	}
 }

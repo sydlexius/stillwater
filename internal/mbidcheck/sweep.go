@@ -11,6 +11,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
+	"github.com/sydlexius/stillwater/internal/logging"
 )
 
 // The rate-limited background sweep that drives the resolver (#2810).
@@ -240,7 +241,7 @@ func NewSweep(population Population, artists ArtistGetter, ledger Ledger, resolv
 		ledger:     ledger,
 		resolver:   resolver,
 		cfg:        cfg,
-		logger:     logger.With(slog.String("component", "mbid-revalidate")),
+		logger:     logging.WithComponent(logger, "mbid-revalidate"),
 	}
 }
 

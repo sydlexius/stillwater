@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/logging"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -61,7 +62,7 @@ func NewScheduler(pipeline PipelineRunner, ruleService *Service, artistService *
 		pipeline:      pipeline,
 		ruleService:   ruleService,
 		artistService: artistService,
-		logger:        logger.With(slog.String("component", "rule-scheduler")),
+		logger:        logging.WithComponent(logger, "rule-scheduler"),
 		resetCh:       make(chan struct{}, 1),
 	}
 }

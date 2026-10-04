@@ -24,6 +24,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/httpsafe"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/logging"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -1877,7 +1878,7 @@ func NewDirectoryRenameFixer(fsCheck *SharedFSCheck, renamer DirectoryRenamer, l
 	return &DirectoryRenameFixer{
 		fsCheck: fsCheck,
 		renamer: renamer,
-		logger:  logger.With(slog.String("component", "directory-rename-fixer")),
+		logger:  logging.WithComponent(logger, "directory-rename-fixer"),
 	}
 }
 
@@ -2126,7 +2127,7 @@ func NewBackdropSequencingFixer(platformService *platform.Service, fsCheck *Shar
 		platformService: platformService,
 		fsCheck:         fsCheck,
 		hashRecorder:    hashRecorder,
-		logger:          logger.With(slog.String("component", "backdrop-sequencing-fixer")),
+		logger:          logging.WithComponent(logger, "backdrop-sequencing-fixer"),
 	}
 }
 
@@ -2281,7 +2282,7 @@ func NewImageDuplicateFixer(db *sql.DB, platformService *platform.Service, fsChe
 		platformService:   platformService,
 		fsCheck:           fsCheck,
 		imageHashRecorder: hashRecorder,
-		logger:            logger.With(slog.String("component", "image-duplicate-fixer")),
+		logger:            logging.WithComponent(logger, "image-duplicate-fixer"),
 		now:               time.Now,
 	}
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/library"
+	"github.com/sydlexius/stillwater/internal/logging"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
@@ -212,7 +213,7 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 		db:              db,
 		platformService: platformService,
 		libraryService:  libraryService,
-		logger:          logger.With(slog.String("component", "rule-engine")),
+		logger:          logging.WithComponent(logger, "rule-engine"),
 		checkers: map[string]Checker{
 			RuleNFOExists:             checkNFOExists,
 			RuleNFOHasMBID:            checkNFOHasMBID,

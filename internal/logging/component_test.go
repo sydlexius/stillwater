@@ -1,6 +1,12 @@
 package logging
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -46,6 +52,119 @@ func TestWithComponent_RetagReplacesAndFailsLoudly(t *testing.T) {
 	if !strings.Contains(buf.String(), `"component":"outer"`) {
 		t.Fatalf("re-tag mutated the original logger: %s", buf.String())
 	}
+}
+
+// attrStart maps a slog call name to the index of its first key/value argument
+// (the arguments before it are a context, level or message).
+var attrStart = map[string]int{
+	"With":  0,
+	"Debug": 1, "Info": 1, "Warn": 1, "Error": 1,
+	"DebugContext": 2, "InfoContext": 2, "WarnContext": 2, "ErrorContext": 2,
+	"Log": 3, "LogAttrs": 3,
+}
+
+// TestNoRawComponentTagging is the class guard for #2787: the component key may
+// only be set through WithComponent, because a raw logger.With("component", ...)
+// stacks a second key onto an already-tagged logger and the compiler cannot
+// see it. It parses every non-test Go file under the repo's internal/ and cmd/
+// trees and fails on a literal "component" (interpreted or raw string) in a KEY
+// position of a With/Debug/Info/Warn/Error/Log/LogAttrs call (or a Context
+// variant), whether as a bare key, a slog.String-style constructor, or a
+// slog.Attr{Key: ...} literal. Value positions are not inspected, so
+// With("name", "component") passes.
+//
+// This is a syntactic check and has two blind spots by design: a constant or
+// computed key, and a spread attrs... slice, cannot be seen without type
+// information. WithComponent itself uses the componentKey constant, which is
+// why it does not trip the scan.
+func TestNoRawComponentTagging(t *testing.T) {
+	root := filepath.Join("..", "..")
+	fset := token.NewFileSet()
+	var offenders []string
+	for _, dir := range []string{"internal", "cmd"} {
+		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return err
+			}
+			src, rerr := os.ReadFile(path)
+			if rerr != nil {
+				return rerr
+			}
+			f, perr := parser.ParseFile(fset, path, src, 0)
+			if perr != nil {
+				return perr
+			}
+			ast.Inspect(f, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				start, ok := attrStart[sel.Sel.Name]
+				if !ok {
+					return true
+				}
+				for i := start; i < len(call.Args); {
+					a := call.Args[i]
+					if key, isAttr := attrKey(a); isAttr {
+						if key != nil && isComponentLiteral(key) {
+							offenders = append(offenders, fset.Position(a.Pos()).String())
+						}
+						i++
+						continue
+					}
+					if isComponentLiteral(a) {
+						offenders = append(offenders, fset.Position(a.Pos()).String())
+					}
+					i += 2 // bare key and its value
+				}
+				return true
+			})
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walking %s: %v", dir, err)
+		}
+	}
+	if len(offenders) > 0 {
+		t.Fatalf("raw \"component\" key found; use logging.WithComponent:\n%s", strings.Join(offenders, "\n"))
+	}
+}
+
+// attrKey reports whether e is a slog.Attr expression (a slog.String-style
+// constructor call or a slog.Attr composite literal) and, if so, its key
+// expression (nil when it cannot be located).
+func attrKey(e ast.Expr) (ast.Expr, bool) {
+	switch v := e.(type) {
+	case *ast.CallExpr:
+		if sel, ok := v.Fun.(*ast.SelectorExpr); ok {
+			if x, ok := sel.X.(*ast.Ident); ok && x.Name == "slog" && len(v.Args) > 0 {
+				return v.Args[0], true
+			}
+		}
+	case *ast.CompositeLit:
+		if sel, ok := v.Type.(*ast.SelectorExpr); ok && sel.Sel.Name == "Attr" {
+			for _, el := range v.Elts {
+				if kv, ok := el.(*ast.KeyValueExpr); ok {
+					if id, ok := kv.Key.(*ast.Ident); ok && id.Name == "Key" {
+						return kv.Value, true
+					}
+				}
+			}
+			return nil, true
+		}
+	}
+	return nil, false
+}
+
+// isComponentLiteral matches the literal "component" key as an interpreted or
+// raw string.
+func isComponentLiteral(e ast.Expr) bool {
+	v, ok := e.(*ast.BasicLit)
+	return ok && v.Kind == token.STRING && (v.Value == `"component"` || v.Value == "`component`")
 }
 
 // The detector must itself see the defect it guards against: a raw double
