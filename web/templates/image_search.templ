@@ -225,6 +225,8 @@ templ ArtworkManageEditor(data ImageSearchData) {
 		// #2511: thin wrappers over the layout's swCaptureOpener /
 		// swRestoreOpener (field_provider_modal.templ) that fail loudly if
 		// the helpers are missing instead of silently skipping focus restore.
+		// Used by the crop dialog only; the fetch-from-URL block below keeps
+		// its own pair because it is a separate script scope.
 		function captureDialogOpener() {
 			if (typeof window.swCaptureOpener !== 'function') {
 				console.error('swCaptureOpener unavailable; dialog focus will not be restored on close');
@@ -1237,6 +1239,25 @@ templ imageSearchContextualized(data ImageSearchData) {
 				// explicitly once it is displayed. The opener is remembered so
 				// closing returns focus to it (the display change is
 				// synchronous, so no timer is needed).
+				// This block is its own script scope (the crop block's
+				// captureDialogOpener / restoreDialogOpener are not reachable
+				// when this block is evaluated alone, as the unit test does),
+				// so it carries its own fail-loud wrappers over the layout's
+				// window.swCaptureOpener / window.swRestoreOpener.
+				function captureDialogOpener() {
+					if (typeof window.swCaptureOpener !== 'function') {
+						console.error('swCaptureOpener unavailable; fetch-from-URL dialog focus will not be restored on close');
+						return null;
+					}
+					return window.swCaptureOpener();
+				}
+				function restoreDialogOpener(op) {
+					if (typeof window.swRestoreOpener !== 'function') {
+						console.error('swRestoreOpener unavailable; fetch-from-URL dialog focus not restored on close');
+						return;
+					}
+					window.swRestoreOpener(op);
+				}
 				var _fetchUrlOpener = null;
 				function focusFetchUrlInput(input) {
 					if (!input) {

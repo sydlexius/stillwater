@@ -284,7 +284,7 @@ func ArtworkManageEditor(data ImageSearchData) templ.Component {
 				}
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<script>\n\t\t// sortImageGrid reorders the children of the nearest .image-sort-grid\n\t\t// based on the selected sort criterion. Each child card must have\n\t\t// data-img-likes and data-img-area attributes. triggerEl scopes\n\t\t// the sort to the grid that is a sibling of the sort bar's container.\n\t\tfunction sortImageGrid(criterion, triggerEl) {\n\t\t\tvar grid = null;\n\t\t\tif (triggerEl) {\n\t\t\t\tvar container = triggerEl.closest('.image-sort-bar');\n\t\t\t\tif (container && container.nextElementSibling &&\n\t\t\t\t\tcontainer.nextElementSibling.classList.contains('image-sort-grid')) {\n\t\t\t\t\tgrid = container.nextElementSibling;\n\t\t\t\t}\n\t\t\t}\n\t\t\tif (!grid) {\n\t\t\t\tif (triggerEl) {\n\t\t\t\t\tconsole.warn('sortImageGrid: scoped traversal failed, falling back to first grid');\n\t\t\t\t}\n\t\t\t\tgrid = document.querySelector('.image-sort-grid');\n\t\t\t}\n\t\t\tif (!grid) return;\n\t\t\tvar items = Array.prototype.slice.call(grid.children);\n\t\t\titems.sort(function(a, b) {\n\t\t\t\tvar aLikes = parseInt(a.dataset.imgLikes || '0', 10);\n\t\t\t\tvar bLikes = parseInt(b.dataset.imgLikes || '0', 10);\n\t\t\t\tvar aArea = parseInt(a.dataset.imgArea || '0', 10);\n\t\t\t\tvar bArea = parseInt(b.dataset.imgArea || '0', 10);\n\t\t\t\tif (criterion === 'resolution') {\n\t\t\t\t\tif (aArea !== bArea) return bArea - aArea;\n\t\t\t\t\treturn bLikes - aLikes;\n\t\t\t\t}\n\t\t\t\t// Default: likes\n\t\t\t\tif (aLikes !== bLikes) return bLikes - aLikes;\n\t\t\t\treturn bArea - aArea;\n\t\t\t});\n\t\t\tfor (var i = 0; i < items.length; i++) {\n\t\t\t\tgrid.appendChild(items[i]);\n\t\t\t}\n\t\t}\n\n\t\tvar _cropper = null;\n\t\tvar _currentRatio = NaN;\n\t\tvar _pendingRatio = NaN;\n\t\t// #2331 CR-4: monotonic token identifying the current crop session.\n\t\t// stageAndLoadCrop's async fetch callback captures the token active\n\t\t// at its OWN call time and must bail if a newer session has started\n\t\t// (or the modal closed) before it resolves -- otherwise a slow stage\n\t\t// request that resolves after the user opened a different crop (or\n\t\t// closed the modal) would clobber the #crop-image/#upload-status\n\t\t// elements with stale data. Incremented on every openCropModal call\n\t\t// AND on close, so both \"opened something else\" and \"gave up\n\t\t// entirely\" invalidate any in-flight staging fetch.\n\t\tvar _cropSessionToken = 0;\n\t\t// #2281 QOL #48 (widened for #2323): true once an image is actually\n\t\t// loaded and ready in the cropper -- set in the Cropper `ready`\n\t\t// callback below, on EVERY entry route (direct, provider fetch, URL\n\t\t// fetch, web search), not only after the user drags/resizes the crop\n\t\t// box. Reaching a ready cropper already represents real forward\n\t\t// progress (a chosen image staged for saving), so closing without a\n\t\t// prompt at that point would silently discard it. Still false during\n\t\t// the brief staging/loading window before an image is ready -- there\n\t\t// is nothing to lose yet at that point. guardedCloseCropModal reads\n\t\t// this to decide whether closing needs a discard confirmation;\n\t\t// closeCropModal itself always resets it.\n\t\tvar _cropDirty = false;\n\t\tfunction markCropDirty() { _cropDirty = true; }\n\n\t\t// isRemoteImageSrc reports whether src is a cross-origin http(s) URL\n\t\t// (a provider result, e.g. Discogs) rather than a same-origin saved\n\t\t// file or an already-staged data: URI. Cropper.js/canvas taints on\n\t\t// the former without a staging round-trip (#2281 QOL #47).\n\t\tfunction isRemoteImageSrc(src) {\n\t\t\treturn /^https?:\\/\\//i.test(src) && src.indexOf(window.location.origin) !== 0;\n\t\t}\n\n\t\t// stageAndLoadCrop downloads a remote provider URL through the\n\t\t// same-origin /images/stage endpoint and loads the returned data: URI\n\t\t// into the crop image, instead of loading imgSrc directly (which\n\t\t// would taint the canvas for a provider that does not send CORS\n\t\t// headers). Falls back to a generic load-failure message if staging\n\t\t// itself fails.\n\t\t//\n\t\t// sessionToken (#2331 CR-4) is the _cropSessionToken value captured by\n\t\t// the caller (openCropModal) at the moment THIS staging request\n\t\t// started. Every callback below re-checks it against the CURRENT\n\t\t// _cropSessionToken before touching any shared DOM (#crop-image,\n\t\t// #upload-status, the modal itself) -- if a newer session opened, or\n\t\t// the modal was closed, in the meantime, this callback is stale and\n\t\t// must bail without side effects (including NOT calling\n\t\t// closeCropModal, which would incorrectly close whatever session IS\n\t\t// now active).\n\t\tfunction stageAndLoadCrop(imgSrc, imageType, sessionToken) {\n\t\t\tvar modal = document.getElementById('crop-modal');\n\t\t\tvar cropImage = document.getElementById('crop-image');\n\t\t\tvar artistID = modal.dataset.artistId;\n\t\t\tvar bp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\tvar token = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\tvar statusEl = document.getElementById('upload-status');\n\t\t\tif (statusEl) {\n\t\t\t\tvar loading = document.createElement('span');\n\t\t\t\tloading.className = 'text-sm text-gray-500';\n\t\t\t\tloading.textContent = modal.dataset.msgStaging || 'Loading image for cropping...';\n\t\t\t\tstatusEl.replaceChildren(loading);\n\t\t\t}\n\t\t\tfetch(bp + '/api/v1/artists/' + artistID + '/images/stage', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': token},\n\t\t\t\tbody: JSON.stringify({url: imgSrc, type: imageType}),\n\t\t\t\tcredentials: 'same-origin'\n\t\t\t}).then(function(r) {\n\t\t\t\treturn r.json().catch(function() { return {}; }).then(function(data) {\n\t\t\t\t\treturn {ok: r.ok, data: data};\n\t\t\t\t});\n\t\t\t}).then(function(result) {\n\t\t\t\tif (sessionToken !== _cropSessionToken) return; // stale: a newer session took over\n\t\t\t\tif (!result.ok || !result.data || !result.data.image_data) {\n\t\t\t\t\tcloseCropModal();\n\t\t\t\t\tshowCropStageFailure(modal);\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tif (statusEl) statusEl.replaceChildren();\n\t\t\t\tcropImage.src = result.data.image_data;\n\t\t\t}).catch(function() {\n\t\t\t\tif (sessionToken !== _cropSessionToken) return; // stale: a newer session took over\n\t\t\t\tcloseCropModal();\n\t\t\t\tshowCropStageFailure(modal);\n\t\t\t});\n\t\t}\n\n\t\t// showCropStageFailure surfaces a generic error when the staging\n\t\t// fetch itself fails (network error, private/invalid URL, non-image\n\t\t// bytes) -- the only case that still needs a fallback message, since\n\t\t// the taint-then-\"save first\" workaround is no longer the normal path.\n\t\tfunction showCropStageFailure(modal) {\n\t\t\tvar statusEl = document.getElementById('upload-status');\n\t\t\tif (!statusEl) return;\n\t\t\tvar s = document.createElement('span');\n\t\t\ts.className = 'text-sm text-amber-600';\n\t\t\ts.textContent = (modal && modal.dataset.msgCropLoadFailed) || 'Could not load this image for cropping. Please try again.';\n\t\t\tstatusEl.replaceChildren(s);\n\t\t}\n\n\t\t// #2511: thin wrappers over the layout's swCaptureOpener /\n\t\t// swRestoreOpener (field_provider_modal.templ) that fail loudly if\n\t\t// the helpers are missing instead of silently skipping focus restore.\n\t\tfunction captureDialogOpener() {\n\t\t\tif (typeof window.swCaptureOpener !== 'function') {\n\t\t\t\tconsole.error('swCaptureOpener unavailable; dialog focus will not be restored on close');\n\t\t\t\treturn null;\n\t\t\t}\n\t\t\treturn window.swCaptureOpener();\n\t\t}\n\t\tfunction restoreDialogOpener(op) {\n\t\t\tif (typeof window.swRestoreOpener !== 'function') {\n\t\t\t\tconsole.error('swRestoreOpener unavailable; dialog focus not restored on close');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\twindow.swRestoreOpener(op);\n\t\t}\n\t\t// _cropOpener is the element that had focus when the crop dialog\n\t\t// opened (#2511); closeCropModal returns focus to it.\n\t\tvar _cropOpener = null;\n\t\t// openCropModal opens the crop dialog for imgSrc. slot (optional) is\n\t\t// the explicit fanart slot (#2281 QOL #48) this crop should persist\n\t\t// to; stashed on the modal so saveCroppedImage can thread it into the\n\t\t// /images/crop POST without re-deriving it.\n\t\tfunction openCropModal(imgSrc, imageType, initialRatio, append, slot) {\n\t\t\t// #2331 CR-4: a fresh session token invalidates any staging fetch\n\t\t\t// still in flight from a previous openCropModal call (double-open,\n\t\t\t// fast re-click) -- see the sessionToken doc on stageAndLoadCrop.\n\t\t\tvar sessionToken = ++_cropSessionToken;\n\t\t\tvar modal = document.getElementById('crop-modal');\n\t\t\tvar cropImage = document.getElementById('crop-image');\n\t\t\tvar cropType = document.getElementById('crop-type');\n\t\t\tvar lockCb = document.getElementById('crop-lock-ratio');\n\t\t\tif (imageType) cropType.value = imageType;\n\t\t\t// Persist the append/replace intent (and #2281 slot) on the modal\n\t\t\t// so saveCroppedImage can read them without threading them\n\t\t\t// through Cropper.js state.\n\t\t\tmodal.dataset.append = append ? '1' : '0';\n\t\t\tmodal.dataset.slot = (slot === undefined || slot === null) ? '' : String(slot);\n\t\t\t// Toggle BOTH `hidden` and `flex` so only one display class is\n\t\t\t// active at a time. The template default is `hidden` only --\n\t\t\t// co-applying `hidden` + `flex` would be a Tailwind cascade trap\n\t\t\t// (whichever rule is declared later in styles.css wins).\n\t\t\tmodal.classList.remove('hidden');\n\t\t\tmodal.classList.add('flex');\n\t\t\t// Reset any error left over from a previous failed save and\n\t\t\t// re-enable the Save button.\n\t\t\tvar errEl = document.getElementById('crop-error');\n\t\t\tif (errEl) {\n\t\t\t\terrEl.textContent = '';\n\t\t\t\terrEl.classList.add('hidden');\n\t\t\t}\n\t\t\tvar saveBtn = document.getElementById('crop-save-btn');\n\t\t\tif (saveBtn) saveBtn.disabled = false;\n\t\t\t// #2511: move focus into the dialog (it was left on the\n\t\t\t// trigger behind the overlay). Remember the opener only for a\n\t\t\t// fresh open, not a re-open while already showing.\n\t\t\tif (!_cropOpener) _cropOpener = captureDialogOpener();\n\t\t\tcropType.focus();\n\t\t\t// Clear the global cropper ref BEFORE the new cropImage.onload\n\t\t\t// fires, otherwise saveCroppedImage's `if (!window._cropper)`\n\t\t\t// readiness guard sees a truthy reference to the previous (now\n\t\t\t// destroyed) Cropper instance and bypasses the inline error.\n\t\t\twindow._cropper = null;\n\t\t\t_currentRatio = NaN;\n\t\t\t_cropDirty = false;\n\t\t\t_pendingRatio = (initialRatio && initialRatio > 0) ? initialRatio : NaN;\n\t\t\tif (lockCb) lockCb.checked = false;\n\t\t\t// Attach handlers before setting src: cached images fire onload\n\t\t\t// synchronously, so the handler must exist before src is assigned.\n\t\t\tcropImage.onload = function() {\n\t\t\t\tif (_cropper) _cropper.destroy();\n\t\t\t\t_cropper = new Cropper(cropImage, {\n\t\t\t\t\tviewMode: 1,\n\t\t\t\t\tautoCropArea: 0.8,\n\t\t\t\t\tready: function() {\n\t\t\t\t\t\tif (!isNaN(_pendingRatio)) {\n\t\t\t\t\t\t\tsetCropRatio(_pendingRatio);\n\t\t\t\t\t\t\t_pendingRatio = NaN;\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// #2281/#2323 discard-guard fix: mark the session dirty\n\t\t\t\t\t\t// as soon as an image is actually loaded and ready to\n\t\t\t\t\t\t// crop, not only after the user drags/resizes the crop\n\t\t\t\t\t\t// box. Every entry route (direct, provider fetch, URL\n\t\t\t\t\t\t// fetch, web search) reaches this same ready() callback\n\t\t\t\t\t\t// via the shared openCropModal, so reaching this point\n\t\t\t\t\t\t// at all means real forward progress (a chosen image is\n\t\t\t\t\t\t// staged and ready to save) that would be silently lost\n\t\t\t\t\t\t// on an unguarded outside-click -- UAT caught this on\n\t\t\t\t\t\t// the web-search route specifically, where a user picks\n\t\t\t\t\t\t// a result and clicks Crop but never touches the crop\n\t\t\t\t\t\t// box before clicking away. Still attach the 'crop'\n\t\t\t\t\t\t// listener too: harmless once already dirty, and keeps\n\t\t\t\t\t\t// the session marked dirty if a future change narrows\n\t\t\t\t\t\t// this back down.\n\t\t\t\t\t\tmarkCropDirty();\n\t\t\t\t\t\tcropImage.addEventListener('crop', markCropDirty);\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\twindow._cropper = _cropper;\n\t\t\t};\n\t\t\tcropImage.onerror = function() {\n\t\t\t\tcloseCropModal();\n\t\t\t\tshowCropStageFailure(modal);\n\t\t\t};\n\t\t\t// #2281 QOL #47: a remote provider URL is staged same-origin\n\t\t\t// first (avoids the canvas taint); an already-staged data: URI or\n\t\t\t// a same-origin saved file loads directly.\n\t\t\tif (isRemoteImageSrc(imgSrc)) {\n\t\t\t\tstageAndLoadCrop(imgSrc, imageType, sessionToken);\n\t\t\t} else {\n\t\t\t\tcropImage.src = imgSrc;\n\t\t\t}\n\t\t}\n\t\tfunction closeCropModal() {\n\t\t\t// #2331 CR-4: also invalidate any in-flight staging fetch on an\n\t\t\t// explicit close (not just a newer open) -- otherwise a slow\n\t\t\t// stage request could still resolve after the user gave up on\n\t\t\t// the crop entirely and repaint/reopen the (now-closed) modal.\n\t\t\t_cropSessionToken++;\n\t\t\tvar modal = document.getElementById('crop-modal');\n\t\t\t// Toggle BOTH classes back to the hidden state -- mirror of\n\t\t\t// openCropModal so only the `hidden` rule is active when the\n\t\t\t// modal is dismissed. See the cascade-trap comment there.\n\t\t\tmodal.classList.add('hidden');\n\t\t\tmodal.classList.remove('flex');\n\t\t\t// Drop the cached image's load/error handlers so the closures\n\t\t\t// they hold over the destroyed Cropper instance are released\n\t\t\t// and a late-firing onload from a slow source cannot resurrect\n\t\t\t// _cropper after close.\n\t\t\tvar cropImage = document.getElementById('crop-image');\n\t\t\tif (cropImage) {\n\t\t\t\tcropImage.onload = null;\n\t\t\t\tcropImage.onerror = null;\n\t\t\t\tcropImage.removeEventListener('crop', markCropDirty);\n\t\t\t}\n\t\t\tif (_cropper) {\n\t\t\t\t_cropper.destroy();\n\t\t\t\t_cropper = null;\n\t\t\t}\n\t\t\t// Mirror the open path so the readiness guard in\n\t\t\t// saveCroppedImage sees a clean state next time.\n\t\t\twindow._cropper = null;\n\t\t\t_cropDirty = false;\n\t\t\t// #2511: return focus to whatever opened the crop dialog.\n\t\t\tvar opener = _cropOpener;\n\t\t\t_cropOpener = null;\n\t\t\trestoreDialogOpener(opener);\n\t\t}\n\t\t// guardedCloseCropModal is the discard-guard entry point (#2281 QOL\n\t\t// #48, widened for #2323): the header X, footer Cancel, and backdrop\n\t\t// click all route through this instead of calling closeCropModal()\n\t\t// directly, so in-progress crop work is never silently discarded --\n\t\t// on every entry route (direct, provider fetch, URL fetch, web\n\t\t// search), since they all share this same modal/guard. A modal that\n\t\t// is still staging/loading an image (Cropper not yet ready, nothing\n\t\t// to lose) still closes immediately with no prompt.\n\t\tfunction guardedCloseCropModal() {\n\t\t\tif (!_cropDirty) {\n\t\t\t\tcloseCropModal();\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tif (typeof window.showConfirmDialog !== 'function') {\n\t\t\t\t// Capability check fails loudly rather than silently\n\t\t\t\t// discarding: log so a missing/broken confirm-modal system\n\t\t\t\t// is visible, but still let the user close the dialog.\n\t\t\t\tconsole.error('showConfirmDialog unavailable; closing the crop modal without a discard confirmation');\n\t\t\t\tcloseCropModal();\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar modal = document.getElementById('crop-modal');\n\t\t\tvar message = (modal && modal.dataset.confirmDiscard) || 'Discard your in-progress crop?';\n\t\t\twindow.showConfirmDialog(message, 'crop-discard', function() {\n\t\t\t\tcloseCropModal();\n\t\t\t});\n\t\t}\n\t\t// #2511: Escape inside the crop dialog takes the same discard-guarded\n\t\t// path as Cancel. Scoped to key events inside the dialog so the\n\t\t// confirm dialog it may raise keeps its own Escape.\n\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\tif (e.key !== 'Escape' || !e.target || !e.target.closest || !e.target.closest('#crop-modal')) return;\n\t\t\tvar modal = document.getElementById('crop-modal');\n\t\t\tif (modal.classList.contains('hidden')) return;\n\t\t\tguardedCloseCropModal();\n\t\t});\n\t\tfunction setCropRatio(ratio) {\n\t\t\t_currentRatio = ratio;\n\t\t\tvar lockCb = document.getElementById('crop-lock-ratio');\n\t\t\tif (isNaN(ratio)) {\n\t\t\t\tif (lockCb) lockCb.checked = false;\n\t\t\t\tif (_cropper) _cropper.setAspectRatio(NaN);\n\t\t\t} else {\n\t\t\t\tif (lockCb) lockCb.checked = true;\n\t\t\t\tif (_cropper) _cropper.setAspectRatio(ratio);\n\t\t\t}\n\t\t}\n\t\tfunction toggleRatioLock(checked) {\n\t\t\tif (_cropper) {\n\t\t\t\t_cropper.setAspectRatio(checked && !isNaN(_currentRatio) ? _currentRatio : NaN);\n\t\t\t}\n\t\t}\n\t\t// -- needs_crop response handling (#2415) ----------------------------\n\t\t//\n\t\t// /images/fetch and /images/upload answer an aspect-ratio mismatch with\n\t\t// a 200 whose body is {needs_crop:true, image_data:...} and NOTHING\n\t\t// SAVED. Every surface that POSTs to those endpoints must therefore\n\t\t// branch on needs_crop -- a surface that reads the 2xx as \"saved\"\n\t\t// silently drops the user's image, which is the whole of #2415.\n\t\t//\n\t\t// These helpers live in THIS script block deliberately. It is the one\n\t\t// ArtworkManageEditor renders on BOTH layouts; the drag-drop IIFE\n\t\t// further down renders only on the contextualized layout. The surfaces\n\t\t// that need this handling most (components.ImageCard's Save button and\n\t\t// both components.ImageUpload forms) render on the GENERIC layout,\n\t\t// where that IIFE -- and, before #2415, openAutoCrop along with it --\n\t\t// does not exist at all. Hanging the handler off the IIFE would have\n\t\t// left those surfaces exactly as broken as they already were.\n\t\t//\n\t\t// User-facing copy is read from #crop-modal's data-msg-* attributes\n\t\t// (rendered by components.ImageCropModal, likewise present on both\n\t\t// layouts) so the strings stay translatable.\n\t\tfunction swNeedsCropMsg(key, fallback) {\n\t\t\tvar modal = document.getElementById('crop-modal');\n\t\t\tvar msg = modal && modal.dataset ? modal.dataset[key] : '';\n\t\t\treturn msg || fallback;\n\t\t}\n\n\t\t// swNeedsCropAlert reports a needs_crop failure the user MUST see:\n\t\t// their image was not saved AND the crop prompt could not be opened.\n\t\t// Loud by design -- a silent return here is the exact defect #2415\n\t\t// exists to kill.\n\t\tfunction swNeedsCropAlert(logMsg, userMsg) {\n\t\t\tconsole.error(logMsg);\n\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\twindow.showToast(userMsg);\n\t\t\t} else {\n\t\t\t\tconsole.error('showToast unavailable; the needs_crop failure above reached the console only, not the user: ' + userMsg);\n\t\t\t}\n\t\t}\n\n\t\t// openAutoCrop opens the crop modal with the image data URI and locks\n\t\t// the aspect ratio to the slot requirement. Called whenever an upload or\n\t\t// fetch comes back needs_crop=true.\n\t\tfunction openAutoCrop(data) {\n\t\t\tif (typeof openCropModal !== 'function') {\n\t\t\t\tswNeedsCropAlert(\n\t\t\t\t\t'openCropModal unavailable; cannot open the crop modal for a needs_crop response -- the image was NOT saved',\n\t\t\t\t\tswNeedsCropMsg('msgCropUnavailable', 'This image needs cropping, but the crop editor could not be opened, so it was not saved.'));\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar cropType = document.getElementById('crop-type');\n\t\t\tif (cropType) cropType.value = data.type;\n\t\t\t// Pass the required ratio so the Cropper ready callback applies it\n\t\t\t// reliably instead of a timing-dependent setTimeout. data.append\n\t\t\t// mirrors the server's own append decision (same type == \"fanart\" &&\n\t\t\t// FanartExists condition) so the auto-opened crop modal appends when\n\t\t\t// the triggering upload/fetch would have. data.slot (#2281 QOL #48)\n\t\t\t// is echoed back only when the triggering fetch carried an explicit\n\t\t\t// fanart slot, so the follow-up crop save persists to that same slot.\n\t\t\topenCropModal(data.image_data, data.type, data.required_ratio, !!data.append, data.slot);\n\t\t\t// The amber status line exists only on the contextualized layout. On\n\t\t\t// the generic one, the crop modal opening IS the signal.\n\t\t\tvar statusEl = document.getElementById('upload-status');\n\t\t\tif (statusEl) {\n\t\t\t\tvar s = document.createElement('span');\n\t\t\t\ts.className = 'text-sm text-amber-600';\n\t\t\t\ts.textContent = swNeedsCropMsg('msgNeedsCrop', 'Image needs cropping to match the required aspect ratio.');\n\t\t\t\tstatusEl.replaceChildren(s);\n\t\t\t}\n\t\t}\n\t\twindow.openAutoCrop = openAutoCrop;\n\n\t\t// swNeedsCropParse classifies an image-save response body:\n\t\t//   the parsed body -- a needs_crop response; nothing was saved\n\t\t//   null            -- a normal save; nothing to do here\n\t\t//   undefined       -- unparsable, so we cannot tell; never swallow it\n\t\t// The undefined/null split is what keeps \"saved fine\" distinguishable\n\t\t// from \"no idea what happened\".\n\t\tfunction swNeedsCropParse(xhr) {\n\t\t\t// An empty body is its OWN case, checked BEFORE parsing: a normal\n\t\t\t// HTMX save gets a 204 No Content with NO body (finalizeImageSave on\n\t\t\t// the server), and JSON.parse(\"\") throws just like a genuinely\n\t\t\t// corrupt body would. Without this check every ordinary successful\n\t\t\t// save fell into the undefined/unparsable branch below and alerted\n\t\t\t// the user their image might not have saved -- the exact\n\t\t\t// silent-failure this handler exists to prevent, pointed at the\n\t\t\t// wrong case. Empty means \"nothing to say\", not \"couldn't read it\".\n\t\t\tif (!xhr.responseText) {\n\t\t\t\treturn null;\n\t\t\t}\n\t\t\tvar body;\n\t\t\ttry {\n\t\t\t\tbody = JSON.parse(xhr.responseText);\n\t\t\t} catch (e) {\n\t\t\t\treturn undefined;\n\t\t\t}\n\t\t\treturn (body && body.needs_crop) ? body : null;\n\t\t}\n\n\t\t// swHandleFetchNeedsCrop is the hx-on::after-request handler shared by\n\t\t// every surface that POSTs /images/fetch or /images/upload. It opens the\n\t\t// crop modal on a needs_crop response and fails loudly rather than\n\t\t// dropping it.\n\t\tfunction swHandleFetchNeedsCrop(event) {\n\t\t\tif (!event || !event.detail || !event.detail.successful) return;\n\t\t\tvar data = swNeedsCropParse(event.detail.xhr);\n\t\t\tif (data === undefined) {\n\t\t\t\tswNeedsCropAlert(\n\t\t\t\t\t'could not parse the image save response; a needs_crop response may have been dropped and the image not saved',\n\t\t\t\t\tswNeedsCropMsg('msgSaveUnreadable', 'The server response could not be read. Reload the page and check whether the image was saved.'));\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tif (data === null) return;\n\t\t\topenAutoCrop(data);\n\t\t}\n\t\twindow.swHandleFetchNeedsCrop = swHandleFetchNeedsCrop;\n\n\t\t// swSuppressNeedsCropSwap stops htmx swapping a needs_crop body into the\n\t\t// page. Both components.ImageUpload forms target #upload-result with\n\t\t// hx-swap=\"innerHTML\", so without this the user gets the raw JSON -- a\n\t\t// screenful of base64 image data -- dumped into the page while the crop\n\t\t// modal opens over it. Only the needs_crop body is suppressed; a normal\n\t\t// save still swaps exactly as before.\n\t\tfunction swSuppressNeedsCropSwap(event) {\n\t\t\tif (!event || !event.detail || !event.detail.xhr) return;\n\t\t\tif (swNeedsCropParse(event.detail.xhr)) {\n\t\t\t\tevent.detail.shouldSwap = false;\n\t\t\t}\n\t\t}\n\t\twindow.swSuppressNeedsCropSwap = swSuppressNeedsCropSwap;\n\n\t\t// Auto-crop: if the page was navigated with crop=1, open the crop\n\t\t// modal immediately. The trigger element carries the image src and\n\t\t// type via data attributes so no inline Go interpolation is needed.\n\t\t(function() {\n\t\t\tvar trigger = document.getElementById('auto-crop-trigger');\n\t\t\tif (!trigger) return;\n\t\t\tvar src = trigger.dataset.src;\n\t\t\tvar imgType = trigger.dataset.type;\n\t\t\tif (src && typeof openCropModal === 'function') {\n\t\t\t\t// This trigger only ever re-crops the currently-displayed primary\n\t\t\t\t// image (indexed fanart is excluded above), so it always replaces.\n\t\t\t\topenCropModal(src, imgType, undefined, false);\n\t\t\t}\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<script>\n\t\t// sortImageGrid reorders the children of the nearest .image-sort-grid\n\t\t// based on the selected sort criterion. Each child card must have\n\t\t// data-img-likes and data-img-area attributes. triggerEl scopes\n\t\t// the sort to the grid that is a sibling of the sort bar's container.\n\t\tfunction sortImageGrid(criterion, triggerEl) {\n\t\t\tvar grid = null;\n\t\t\tif (triggerEl) {\n\t\t\t\tvar container = triggerEl.closest('.image-sort-bar');\n\t\t\t\tif (container && container.nextElementSibling &&\n\t\t\t\t\tcontainer.nextElementSibling.classList.contains('image-sort-grid')) {\n\t\t\t\t\tgrid = container.nextElementSibling;\n\t\t\t\t}\n\t\t\t}\n\t\t\tif (!grid) {\n\t\t\t\tif (triggerEl) {\n\t\t\t\t\tconsole.warn('sortImageGrid: scoped traversal failed, falling back to first grid');\n\t\t\t\t}\n\t\t\t\tgrid = document.querySelector('.image-sort-grid');\n\t\t\t}\n\t\t\tif (!grid) return;\n\t\t\tvar items = Array.prototype.slice.call(grid.children);\n\t\t\titems.sort(function(a, b) {\n\t\t\t\tvar aLikes = parseInt(a.dataset.imgLikes || '0', 10);\n\t\t\t\tvar bLikes = parseInt(b.dataset.imgLikes || '0', 10);\n\t\t\t\tvar aArea = parseInt(a.dataset.imgArea || '0', 10);\n\t\t\t\tvar bArea = parseInt(b.dataset.imgArea || '0', 10);\n\t\t\t\tif (criterion === 'resolution') {\n\t\t\t\t\tif (aArea !== bArea) return bArea - aArea;\n\t\t\t\t\treturn bLikes - aLikes;\n\t\t\t\t}\n\t\t\t\t// Default: likes\n\t\t\t\tif (aLikes !== bLikes) return bLikes - aLikes;\n\t\t\t\treturn bArea - aArea;\n\t\t\t});\n\t\t\tfor (var i = 0; i < items.length; i++) {\n\t\t\t\tgrid.appendChild(items[i]);\n\t\t\t}\n\t\t}\n\n\t\tvar _cropper = null;\n\t\tvar _currentRatio = NaN;\n\t\tvar _pendingRatio = NaN;\n\t\t// #2331 CR-4: monotonic token identifying the current crop session.\n\t\t// stageAndLoadCrop's async fetch callback captures the token active\n\t\t// at its OWN call time and must bail if a newer session has started\n\t\t// (or the modal closed) before it resolves -- otherwise a slow stage\n\t\t// request that resolves after the user opened a different crop (or\n\t\t// closed the modal) would clobber the #crop-image/#upload-status\n\t\t// elements with stale data. Incremented on every openCropModal call\n\t\t// AND on close, so both \"opened something else\" and \"gave up\n\t\t// entirely\" invalidate any in-flight staging fetch.\n\t\tvar _cropSessionToken = 0;\n\t\t// #2281 QOL #48 (widened for #2323): true once an image is actually\n\t\t// loaded and ready in the cropper -- set in the Cropper `ready`\n\t\t// callback below, on EVERY entry route (direct, provider fetch, URL\n\t\t// fetch, web search), not only after the user drags/resizes the crop\n\t\t// box. Reaching a ready cropper already represents real forward\n\t\t// progress (a chosen image staged for saving), so closing without a\n\t\t// prompt at that point would silently discard it. Still false during\n\t\t// the brief staging/loading window before an image is ready -- there\n\t\t// is nothing to lose yet at that point. guardedCloseCropModal reads\n\t\t// this to decide whether closing needs a discard confirmation;\n\t\t// closeCropModal itself always resets it.\n\t\tvar _cropDirty = false;\n\t\tfunction markCropDirty() { _cropDirty = true; }\n\n\t\t// isRemoteImageSrc reports whether src is a cross-origin http(s) URL\n\t\t// (a provider result, e.g. Discogs) rather than a same-origin saved\n\t\t// file or an already-staged data: URI. Cropper.js/canvas taints on\n\t\t// the former without a staging round-trip (#2281 QOL #47).\n\t\tfunction isRemoteImageSrc(src) {\n\t\t\treturn /^https?:\\/\\//i.test(src) && src.indexOf(window.location.origin) !== 0;\n\t\t}\n\n\t\t// stageAndLoadCrop downloads a remote provider URL through the\n\t\t// same-origin /images/stage endpoint and loads the returned data: URI\n\t\t// into the crop image, instead of loading imgSrc directly (which\n\t\t// would taint the canvas for a provider that does not send CORS\n\t\t// headers). Falls back to a generic load-failure message if staging\n\t\t// itself fails.\n\t\t//\n\t\t// sessionToken (#2331 CR-4) is the _cropSessionToken value captured by\n\t\t// the caller (openCropModal) at the moment THIS staging request\n\t\t// started. Every callback below re-checks it against the CURRENT\n\t\t// _cropSessionToken before touching any shared DOM (#crop-image,\n\t\t// #upload-status, the modal itself) -- if a newer session opened, or\n\t\t// the modal was closed, in the meantime, this callback is stale and\n\t\t// must bail without side effects (including NOT calling\n\t\t// closeCropModal, which would incorrectly close whatever session IS\n\t\t// now active).\n\t\tfunction stageAndLoadCrop(imgSrc, imageType, sessionToken) {\n\t\t\tvar modal = document.getElementById('crop-modal');\n\t\t\tvar cropImage = document.getElementById('crop-image');\n\t\t\tvar artistID = modal.dataset.artistId;\n\t\t\tvar bp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\tvar token = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\tvar statusEl = document.getElementById('upload-status');\n\t\t\tif (statusEl) {\n\t\t\t\tvar loading = document.createElement('span');\n\t\t\t\tloading.className = 'text-sm text-gray-500';\n\t\t\t\tloading.textContent = modal.dataset.msgStaging || 'Loading image for cropping...';\n\t\t\t\tstatusEl.replaceChildren(loading);\n\t\t\t}\n\t\t\tfetch(bp + '/api/v1/artists/' + artistID + '/images/stage', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': token},\n\t\t\t\tbody: JSON.stringify({url: imgSrc, type: imageType}),\n\t\t\t\tcredentials: 'same-origin'\n\t\t\t}).then(function(r) {\n\t\t\t\treturn r.json().catch(function() { return {}; }).then(function(data) {\n\t\t\t\t\treturn {ok: r.ok, data: data};\n\t\t\t\t});\n\t\t\t}).then(function(result) {\n\t\t\t\tif (sessionToken !== _cropSessionToken) return; // stale: a newer session took over\n\t\t\t\tif (!result.ok || !result.data || !result.data.image_data) {\n\t\t\t\t\tcloseCropModal();\n\t\t\t\t\tshowCropStageFailure(modal);\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tif (statusEl) statusEl.replaceChildren();\n\t\t\t\tcropImage.src = result.data.image_data;\n\t\t\t}).catch(function() {\n\t\t\t\tif (sessionToken !== _cropSessionToken) return; // stale: a newer session took over\n\t\t\t\tcloseCropModal();\n\t\t\t\tshowCropStageFailure(modal);\n\t\t\t});\n\t\t}\n\n\t\t// showCropStageFailure surfaces a generic error when the staging\n\t\t// fetch itself fails (network error, private/invalid URL, non-image\n\t\t// bytes) -- the only case that still needs a fallback message, since\n\t\t// the taint-then-\"save first\" workaround is no longer the normal path.\n\t\tfunction showCropStageFailure(modal) {\n\t\t\tvar statusEl = document.getElementById('upload-status');\n\t\t\tif (!statusEl) return;\n\t\t\tvar s = document.createElement('span');\n\t\t\ts.className = 'text-sm text-amber-600';\n\t\t\ts.textContent = (modal && modal.dataset.msgCropLoadFailed) || 'Could not load this image for cropping. Please try again.';\n\t\t\tstatusEl.replaceChildren(s);\n\t\t}\n\n\t\t// #2511: thin wrappers over the layout's swCaptureOpener /\n\t\t// swRestoreOpener (field_provider_modal.templ) that fail loudly if\n\t\t// the helpers are missing instead of silently skipping focus restore.\n\t\t// Used by the crop dialog only; the fetch-from-URL block below keeps\n\t\t// its own pair because it is a separate script scope.\n\t\tfunction captureDialogOpener() {\n\t\t\tif (typeof window.swCaptureOpener !== 'function') {\n\t\t\t\tconsole.error('swCaptureOpener unavailable; dialog focus will not be restored on close');\n\t\t\t\treturn null;\n\t\t\t}\n\t\t\treturn window.swCaptureOpener();\n\t\t}\n\t\tfunction restoreDialogOpener(op) {\n\t\t\tif (typeof window.swRestoreOpener !== 'function') {\n\t\t\t\tconsole.error('swRestoreOpener unavailable; dialog focus not restored on close');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\twindow.swRestoreOpener(op);\n\t\t}\n\t\t// _cropOpener is the element that had focus when the crop dialog\n\t\t// opened (#2511); closeCropModal returns focus to it.\n\t\tvar _cropOpener = null;\n\t\t// openCropModal opens the crop dialog for imgSrc. slot (optional) is\n\t\t// the explicit fanart slot (#2281 QOL #48) this crop should persist\n\t\t// to; stashed on the modal so saveCroppedImage can thread it into the\n\t\t// /images/crop POST without re-deriving it.\n\t\tfunction openCropModal(imgSrc, imageType, initialRatio, append, slot) {\n\t\t\t// #2331 CR-4: a fresh session token invalidates any staging fetch\n\t\t\t// still in flight from a previous openCropModal call (double-open,\n\t\t\t// fast re-click) -- see the sessionToken doc on stageAndLoadCrop.\n\t\t\tvar sessionToken = ++_cropSessionToken;\n\t\t\tvar modal = document.getElementById('crop-modal');\n\t\t\tvar cropImage = document.getElementById('crop-image');\n\t\t\tvar cropType = document.getElementById('crop-type');\n\t\t\tvar lockCb = document.getElementById('crop-lock-ratio');\n\t\t\tif (imageType) cropType.value = imageType;\n\t\t\t// Persist the append/replace intent (and #2281 slot) on the modal\n\t\t\t// so saveCroppedImage can read them without threading them\n\t\t\t// through Cropper.js state.\n\t\t\tmodal.dataset.append = append ? '1' : '0';\n\t\t\tmodal.dataset.slot = (slot === undefined || slot === null) ? '' : String(slot);\n\t\t\t// Toggle BOTH `hidden` and `flex` so only one display class is\n\t\t\t// active at a time. The template default is `hidden` only --\n\t\t\t// co-applying `hidden` + `flex` would be a Tailwind cascade trap\n\t\t\t// (whichever rule is declared later in styles.css wins).\n\t\t\tmodal.classList.remove('hidden');\n\t\t\tmodal.classList.add('flex');\n\t\t\t// Reset any error left over from a previous failed save and\n\t\t\t// re-enable the Save button.\n\t\t\tvar errEl = document.getElementById('crop-error');\n\t\t\tif (errEl) {\n\t\t\t\terrEl.textContent = '';\n\t\t\t\terrEl.classList.add('hidden');\n\t\t\t}\n\t\t\tvar saveBtn = document.getElementById('crop-save-btn');\n\t\t\tif (saveBtn) saveBtn.disabled = false;\n\t\t\t// #2511: move focus into the dialog (it was left on the\n\t\t\t// trigger behind the overlay). Remember the opener only for a\n\t\t\t// fresh open, not a re-open while already showing.\n\t\t\tif (!_cropOpener) _cropOpener = captureDialogOpener();\n\t\t\tcropType.focus();\n\t\t\t// Clear the global cropper ref BEFORE the new cropImage.onload\n\t\t\t// fires, otherwise saveCroppedImage's `if (!window._cropper)`\n\t\t\t// readiness guard sees a truthy reference to the previous (now\n\t\t\t// destroyed) Cropper instance and bypasses the inline error.\n\t\t\twindow._cropper = null;\n\t\t\t_currentRatio = NaN;\n\t\t\t_cropDirty = false;\n\t\t\t_pendingRatio = (initialRatio && initialRatio > 0) ? initialRatio : NaN;\n\t\t\tif (lockCb) lockCb.checked = false;\n\t\t\t// Attach handlers before setting src: cached images fire onload\n\t\t\t// synchronously, so the handler must exist before src is assigned.\n\t\t\tcropImage.onload = function() {\n\t\t\t\tif (_cropper) _cropper.destroy();\n\t\t\t\t_cropper = new Cropper(cropImage, {\n\t\t\t\t\tviewMode: 1,\n\t\t\t\t\tautoCropArea: 0.8,\n\t\t\t\t\tready: function() {\n\t\t\t\t\t\tif (!isNaN(_pendingRatio)) {\n\t\t\t\t\t\t\tsetCropRatio(_pendingRatio);\n\t\t\t\t\t\t\t_pendingRatio = NaN;\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// #2281/#2323 discard-guard fix: mark the session dirty\n\t\t\t\t\t\t// as soon as an image is actually loaded and ready to\n\t\t\t\t\t\t// crop, not only after the user drags/resizes the crop\n\t\t\t\t\t\t// box. Every entry route (direct, provider fetch, URL\n\t\t\t\t\t\t// fetch, web search) reaches this same ready() callback\n\t\t\t\t\t\t// via the shared openCropModal, so reaching this point\n\t\t\t\t\t\t// at all means real forward progress (a chosen image is\n\t\t\t\t\t\t// staged and ready to save) that would be silently lost\n\t\t\t\t\t\t// on an unguarded outside-click -- UAT caught this on\n\t\t\t\t\t\t// the web-search route specifically, where a user picks\n\t\t\t\t\t\t// a result and clicks Crop but never touches the crop\n\t\t\t\t\t\t// box before clicking away. Still attach the 'crop'\n\t\t\t\t\t\t// listener too: harmless once already dirty, and keeps\n\t\t\t\t\t\t// the session marked dirty if a future change narrows\n\t\t\t\t\t\t// this back down.\n\t\t\t\t\t\tmarkCropDirty();\n\t\t\t\t\t\tcropImage.addEventListener('crop', markCropDirty);\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\twindow._cropper = _cropper;\n\t\t\t};\n\t\t\tcropImage.onerror = function() {\n\t\t\t\tcloseCropModal();\n\t\t\t\tshowCropStageFailure(modal);\n\t\t\t};\n\t\t\t// #2281 QOL #47: a remote provider URL is staged same-origin\n\t\t\t// first (avoids the canvas taint); an already-staged data: URI or\n\t\t\t// a same-origin saved file loads directly.\n\t\t\tif (isRemoteImageSrc(imgSrc)) {\n\t\t\t\tstageAndLoadCrop(imgSrc, imageType, sessionToken);\n\t\t\t} else {\n\t\t\t\tcropImage.src = imgSrc;\n\t\t\t}\n\t\t}\n\t\tfunction closeCropModal() {\n\t\t\t// #2331 CR-4: also invalidate any in-flight staging fetch on an\n\t\t\t// explicit close (not just a newer open) -- otherwise a slow\n\t\t\t// stage request could still resolve after the user gave up on\n\t\t\t// the crop entirely and repaint/reopen the (now-closed) modal.\n\t\t\t_cropSessionToken++;\n\t\t\tvar modal = document.getElementById('crop-modal');\n\t\t\t// Toggle BOTH classes back to the hidden state -- mirror of\n\t\t\t// openCropModal so only the `hidden` rule is active when the\n\t\t\t// modal is dismissed. See the cascade-trap comment there.\n\t\t\tmodal.classList.add('hidden');\n\t\t\tmodal.classList.remove('flex');\n\t\t\t// Drop the cached image's load/error handlers so the closures\n\t\t\t// they hold over the destroyed Cropper instance are released\n\t\t\t// and a late-firing onload from a slow source cannot resurrect\n\t\t\t// _cropper after close.\n\t\t\tvar cropImage = document.getElementById('crop-image');\n\t\t\tif (cropImage) {\n\t\t\t\tcropImage.onload = null;\n\t\t\t\tcropImage.onerror = null;\n\t\t\t\tcropImage.removeEventListener('crop', markCropDirty);\n\t\t\t}\n\t\t\tif (_cropper) {\n\t\t\t\t_cropper.destroy();\n\t\t\t\t_cropper = null;\n\t\t\t}\n\t\t\t// Mirror the open path so the readiness guard in\n\t\t\t// saveCroppedImage sees a clean state next time.\n\t\t\twindow._cropper = null;\n\t\t\t_cropDirty = false;\n\t\t\t// #2511: return focus to whatever opened the crop dialog.\n\t\t\tvar opener = _cropOpener;\n\t\t\t_cropOpener = null;\n\t\t\trestoreDialogOpener(opener);\n\t\t}\n\t\t// guardedCloseCropModal is the discard-guard entry point (#2281 QOL\n\t\t// #48, widened for #2323): the header X, footer Cancel, and backdrop\n\t\t// click all route through this instead of calling closeCropModal()\n\t\t// directly, so in-progress crop work is never silently discarded --\n\t\t// on every entry route (direct, provider fetch, URL fetch, web\n\t\t// search), since they all share this same modal/guard. A modal that\n\t\t// is still staging/loading an image (Cropper not yet ready, nothing\n\t\t// to lose) still closes immediately with no prompt.\n\t\tfunction guardedCloseCropModal() {\n\t\t\tif (!_cropDirty) {\n\t\t\t\tcloseCropModal();\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tif (typeof window.showConfirmDialog !== 'function') {\n\t\t\t\t// Capability check fails loudly rather than silently\n\t\t\t\t// discarding: log so a missing/broken confirm-modal system\n\t\t\t\t// is visible, but still let the user close the dialog.\n\t\t\t\tconsole.error('showConfirmDialog unavailable; closing the crop modal without a discard confirmation');\n\t\t\t\tcloseCropModal();\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar modal = document.getElementById('crop-modal');\n\t\t\tvar message = (modal && modal.dataset.confirmDiscard) || 'Discard your in-progress crop?';\n\t\t\twindow.showConfirmDialog(message, 'crop-discard', function() {\n\t\t\t\tcloseCropModal();\n\t\t\t});\n\t\t}\n\t\t// #2511: Escape inside the crop dialog takes the same discard-guarded\n\t\t// path as Cancel. Scoped to key events inside the dialog so the\n\t\t// confirm dialog it may raise keeps its own Escape.\n\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\tif (e.key !== 'Escape' || !e.target || !e.target.closest || !e.target.closest('#crop-modal')) return;\n\t\t\tvar modal = document.getElementById('crop-modal');\n\t\t\tif (modal.classList.contains('hidden')) return;\n\t\t\tguardedCloseCropModal();\n\t\t});\n\t\tfunction setCropRatio(ratio) {\n\t\t\t_currentRatio = ratio;\n\t\t\tvar lockCb = document.getElementById('crop-lock-ratio');\n\t\t\tif (isNaN(ratio)) {\n\t\t\t\tif (lockCb) lockCb.checked = false;\n\t\t\t\tif (_cropper) _cropper.setAspectRatio(NaN);\n\t\t\t} else {\n\t\t\t\tif (lockCb) lockCb.checked = true;\n\t\t\t\tif (_cropper) _cropper.setAspectRatio(ratio);\n\t\t\t}\n\t\t}\n\t\tfunction toggleRatioLock(checked) {\n\t\t\tif (_cropper) {\n\t\t\t\t_cropper.setAspectRatio(checked && !isNaN(_currentRatio) ? _currentRatio : NaN);\n\t\t\t}\n\t\t}\n\t\t// -- needs_crop response handling (#2415) ----------------------------\n\t\t//\n\t\t// /images/fetch and /images/upload answer an aspect-ratio mismatch with\n\t\t// a 200 whose body is {needs_crop:true, image_data:...} and NOTHING\n\t\t// SAVED. Every surface that POSTs to those endpoints must therefore\n\t\t// branch on needs_crop -- a surface that reads the 2xx as \"saved\"\n\t\t// silently drops the user's image, which is the whole of #2415.\n\t\t//\n\t\t// These helpers live in THIS script block deliberately. It is the one\n\t\t// ArtworkManageEditor renders on BOTH layouts; the drag-drop IIFE\n\t\t// further down renders only on the contextualized layout. The surfaces\n\t\t// that need this handling most (components.ImageCard's Save button and\n\t\t// both components.ImageUpload forms) render on the GENERIC layout,\n\t\t// where that IIFE -- and, before #2415, openAutoCrop along with it --\n\t\t// does not exist at all. Hanging the handler off the IIFE would have\n\t\t// left those surfaces exactly as broken as they already were.\n\t\t//\n\t\t// User-facing copy is read from #crop-modal's data-msg-* attributes\n\t\t// (rendered by components.ImageCropModal, likewise present on both\n\t\t// layouts) so the strings stay translatable.\n\t\tfunction swNeedsCropMsg(key, fallback) {\n\t\t\tvar modal = document.getElementById('crop-modal');\n\t\t\tvar msg = modal && modal.dataset ? modal.dataset[key] : '';\n\t\t\treturn msg || fallback;\n\t\t}\n\n\t\t// swNeedsCropAlert reports a needs_crop failure the user MUST see:\n\t\t// their image was not saved AND the crop prompt could not be opened.\n\t\t// Loud by design -- a silent return here is the exact defect #2415\n\t\t// exists to kill.\n\t\tfunction swNeedsCropAlert(logMsg, userMsg) {\n\t\t\tconsole.error(logMsg);\n\t\t\tif (typeof window.showToast === 'function') {\n\t\t\t\twindow.showToast(userMsg);\n\t\t\t} else {\n\t\t\t\tconsole.error('showToast unavailable; the needs_crop failure above reached the console only, not the user: ' + userMsg);\n\t\t\t}\n\t\t}\n\n\t\t// openAutoCrop opens the crop modal with the image data URI and locks\n\t\t// the aspect ratio to the slot requirement. Called whenever an upload or\n\t\t// fetch comes back needs_crop=true.\n\t\tfunction openAutoCrop(data) {\n\t\t\tif (typeof openCropModal !== 'function') {\n\t\t\t\tswNeedsCropAlert(\n\t\t\t\t\t'openCropModal unavailable; cannot open the crop modal for a needs_crop response -- the image was NOT saved',\n\t\t\t\t\tswNeedsCropMsg('msgCropUnavailable', 'This image needs cropping, but the crop editor could not be opened, so it was not saved.'));\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar cropType = document.getElementById('crop-type');\n\t\t\tif (cropType) cropType.value = data.type;\n\t\t\t// Pass the required ratio so the Cropper ready callback applies it\n\t\t\t// reliably instead of a timing-dependent setTimeout. data.append\n\t\t\t// mirrors the server's own append decision (same type == \"fanart\" &&\n\t\t\t// FanartExists condition) so the auto-opened crop modal appends when\n\t\t\t// the triggering upload/fetch would have. data.slot (#2281 QOL #48)\n\t\t\t// is echoed back only when the triggering fetch carried an explicit\n\t\t\t// fanart slot, so the follow-up crop save persists to that same slot.\n\t\t\topenCropModal(data.image_data, data.type, data.required_ratio, !!data.append, data.slot);\n\t\t\t// The amber status line exists only on the contextualized layout. On\n\t\t\t// the generic one, the crop modal opening IS the signal.\n\t\t\tvar statusEl = document.getElementById('upload-status');\n\t\t\tif (statusEl) {\n\t\t\t\tvar s = document.createElement('span');\n\t\t\t\ts.className = 'text-sm text-amber-600';\n\t\t\t\ts.textContent = swNeedsCropMsg('msgNeedsCrop', 'Image needs cropping to match the required aspect ratio.');\n\t\t\t\tstatusEl.replaceChildren(s);\n\t\t\t}\n\t\t}\n\t\twindow.openAutoCrop = openAutoCrop;\n\n\t\t// swNeedsCropParse classifies an image-save response body:\n\t\t//   the parsed body -- a needs_crop response; nothing was saved\n\t\t//   null            -- a normal save; nothing to do here\n\t\t//   undefined       -- unparsable, so we cannot tell; never swallow it\n\t\t// The undefined/null split is what keeps \"saved fine\" distinguishable\n\t\t// from \"no idea what happened\".\n\t\tfunction swNeedsCropParse(xhr) {\n\t\t\t// An empty body is its OWN case, checked BEFORE parsing: a normal\n\t\t\t// HTMX save gets a 204 No Content with NO body (finalizeImageSave on\n\t\t\t// the server), and JSON.parse(\"\") throws just like a genuinely\n\t\t\t// corrupt body would. Without this check every ordinary successful\n\t\t\t// save fell into the undefined/unparsable branch below and alerted\n\t\t\t// the user their image might not have saved -- the exact\n\t\t\t// silent-failure this handler exists to prevent, pointed at the\n\t\t\t// wrong case. Empty means \"nothing to say\", not \"couldn't read it\".\n\t\t\tif (!xhr.responseText) {\n\t\t\t\treturn null;\n\t\t\t}\n\t\t\tvar body;\n\t\t\ttry {\n\t\t\t\tbody = JSON.parse(xhr.responseText);\n\t\t\t} catch (e) {\n\t\t\t\treturn undefined;\n\t\t\t}\n\t\t\treturn (body && body.needs_crop) ? body : null;\n\t\t}\n\n\t\t// swHandleFetchNeedsCrop is the hx-on::after-request handler shared by\n\t\t// every surface that POSTs /images/fetch or /images/upload. It opens the\n\t\t// crop modal on a needs_crop response and fails loudly rather than\n\t\t// dropping it.\n\t\tfunction swHandleFetchNeedsCrop(event) {\n\t\t\tif (!event || !event.detail || !event.detail.successful) return;\n\t\t\tvar data = swNeedsCropParse(event.detail.xhr);\n\t\t\tif (data === undefined) {\n\t\t\t\tswNeedsCropAlert(\n\t\t\t\t\t'could not parse the image save response; a needs_crop response may have been dropped and the image not saved',\n\t\t\t\t\tswNeedsCropMsg('msgSaveUnreadable', 'The server response could not be read. Reload the page and check whether the image was saved.'));\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tif (data === null) return;\n\t\t\topenAutoCrop(data);\n\t\t}\n\t\twindow.swHandleFetchNeedsCrop = swHandleFetchNeedsCrop;\n\n\t\t// swSuppressNeedsCropSwap stops htmx swapping a needs_crop body into the\n\t\t// page. Both components.ImageUpload forms target #upload-result with\n\t\t// hx-swap=\"innerHTML\", so without this the user gets the raw JSON -- a\n\t\t// screenful of base64 image data -- dumped into the page while the crop\n\t\t// modal opens over it. Only the needs_crop body is suppressed; a normal\n\t\t// save still swaps exactly as before.\n\t\tfunction swSuppressNeedsCropSwap(event) {\n\t\t\tif (!event || !event.detail || !event.detail.xhr) return;\n\t\t\tif (swNeedsCropParse(event.detail.xhr)) {\n\t\t\t\tevent.detail.shouldSwap = false;\n\t\t\t}\n\t\t}\n\t\twindow.swSuppressNeedsCropSwap = swSuppressNeedsCropSwap;\n\n\t\t// Auto-crop: if the page was navigated with crop=1, open the crop\n\t\t// modal immediately. The trigger element carries the image src and\n\t\t// type via data attributes so no inline Go interpolation is needed.\n\t\t(function() {\n\t\t\tvar trigger = document.getElementById('auto-crop-trigger');\n\t\t\tif (!trigger) return;\n\t\t\tvar src = trigger.dataset.src;\n\t\t\tvar imgType = trigger.dataset.type;\n\t\t\tif (src && typeof openCropModal === 'function') {\n\t\t\t\t// This trigger only ever re-crops the currently-displayed primary\n\t\t\t\t// image (indexed fanart is excluded above), so it always replaces.\n\t\t\t\topenCropModal(src, imgType, undefined, false);\n\t\t\t}\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -371,7 +371,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.Artist.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 627, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 629, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 		if templ_7745c5c3_Err != nil {
@@ -384,7 +384,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.SelectedType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 628, Col: 37}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 630, Col: 37}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 		if templ_7745c5c3_Err != nil {
@@ -397,7 +397,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var17 string
 		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.msg_uploading"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 629, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 631, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 		if templ_7745c5c3_Err != nil {
@@ -410,7 +410,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var18 string
 		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.msg_upload_failed"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 630, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 632, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
 		if templ_7745c5c3_Err != nil {
@@ -423,7 +423,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var19 string
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.msg_fetching"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 631, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 633, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
 		if templ_7745c5c3_Err != nil {
@@ -436,7 +436,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var20 string
 		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.msg_fetch_failed"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 632, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 634, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 		if templ_7745c5c3_Err != nil {
@@ -449,7 +449,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var21 string
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.msg_fetch_unable"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 633, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 635, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
 		if templ_7745c5c3_Err != nil {
@@ -467,7 +467,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var22 string
 			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%s #%d", tf(ctx, "image.current_type", img.ImageTermFor(data.SelectedType, data.ProfileName)), fanartIdx+1))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 638, Col: 161}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 640, Col: 161}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 			if templ_7745c5c3_Err != nil {
@@ -485,7 +485,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.current_type", img.ImageTermFor(data.SelectedType, data.ProfileName)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 640, Col: 125}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 642, Col: 125}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {
@@ -503,7 +503,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var24 string
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue("img-actions-" + data.Artist.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 643, Col: 90}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 645, Col: 90}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
 		if templ_7745c5c3_Err != nil {
@@ -524,7 +524,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var25 string
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue("ctx-panel-img-actions-" + data.Artist.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 649, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 651, Col: 64}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 		if templ_7745c5c3_Err != nil {
@@ -546,7 +546,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var27 string
 		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.actions"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 652, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 654, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 		if templ_7745c5c3_Err != nil {
@@ -563,7 +563,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var28 string
 		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.ResolveAttributeValue("ctx-panel-img-actions-" + data.Artist.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 656, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 658, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var28)
 		if templ_7745c5c3_Err != nil {
@@ -602,7 +602,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var30 string
 			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.fetch_from_url"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 683, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 685, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 			if templ_7745c5c3_Err != nil {
@@ -628,7 +628,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var31 templ.SafeURL
 				templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(googleURL))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 721, Col: 41}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 723, Col: 41}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 				if templ_7745c5c3_Err != nil {
@@ -654,7 +654,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var33 string
 				templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.search_google_images"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 729, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 731, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 				if templ_7745c5c3_Err != nil {
@@ -693,7 +693,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.crop"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 740, Col: 32}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 742, Col: 32}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
@@ -706,7 +706,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var36 string
 			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d", data.Artist.ID, fanartIdx))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 746, Col: 98}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 748, Col: 98}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var36)
 			if templ_7745c5c3_Err != nil {
@@ -719,7 +719,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var37 string
 			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "image.confirm_delete_type", imageTypeLabel(data.SelectedType, data.ProfileName)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 747, Col: 111}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 749, Col: 111}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var37)
 			if templ_7745c5c3_Err != nil {
@@ -736,7 +736,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var38 string
 			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.delete"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 753, Col: 34}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 755, Col: 34}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 			if templ_7745c5c3_Err != nil {
@@ -755,7 +755,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var39 string
 				templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, data.SelectedType))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 761, Col: 109}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 763, Col: 109}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var39)
 				if templ_7745c5c3_Err != nil {
@@ -772,7 +772,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var40 string
 				templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.fetch"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 768, Col: 33}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 770, Col: 33}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 				if templ_7745c5c3_Err != nil {
@@ -795,7 +795,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var41 string
 				templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, data.SelectedType))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 776, Col: 112}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 778, Col: 112}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var41)
 				if templ_7745c5c3_Err != nil {
@@ -812,7 +812,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var42 string
 				templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.web_search"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 783, Col: 38}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 785, Col: 38}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 				if templ_7745c5c3_Err != nil {
@@ -844,7 +844,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var43 string
 			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.browse"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 796, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 798, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 			if templ_7745c5c3_Err != nil {
@@ -861,7 +861,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var44 string
 			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.fetch_from_url"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 805, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 807, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 			if templ_7745c5c3_Err != nil {
@@ -879,7 +879,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var45 templ.SafeURL
 				templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(googleURL))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 825, Col: 41}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 827, Col: 41}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 				if templ_7745c5c3_Err != nil {
@@ -896,7 +896,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var46 string
 				templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.search_google_images"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 833, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 835, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 				if templ_7745c5c3_Err != nil {
@@ -940,7 +940,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var48 string
 				templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.crop"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 845, Col: 33}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 847, Col: 33}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 				if templ_7745c5c3_Err != nil {
@@ -958,7 +958,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 					var templ_7745c5c3_Var49 string
 					templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", data.Artist.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 855, Col: 87}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 857, Col: 87}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var49)
 					if templ_7745c5c3_Err != nil {
@@ -971,7 +971,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 					var templ_7745c5c3_Var50 string
 					templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.confirm_trim_logo"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 856, Col: 57}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 858, Col: 57}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var50)
 					if templ_7745c5c3_Err != nil {
@@ -984,7 +984,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 					var templ_7745c5c3_Var51 string
 					templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.trim_failed_short"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 859, Col: 62}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 861, Col: 62}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var51)
 					if templ_7745c5c3_Err != nil {
@@ -997,7 +997,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 					var templ_7745c5c3_Var52 string
 					templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.disabled_during_conflict"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 861, Col: 59}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 863, Col: 59}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var52)
 					if templ_7745c5c3_Err != nil {
@@ -1014,7 +1014,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 					var templ_7745c5c3_Var53 string
 					templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist.artwork.auto_trim"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 864, Col: 47}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 866, Col: 47}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 					if templ_7745c5c3_Err != nil {
@@ -1032,7 +1032,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var54 string
 				templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/%s", data.Artist.ID, data.SelectedType))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 871, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 873, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var54)
 				if templ_7745c5c3_Err != nil {
@@ -1045,7 +1045,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var55 string
 				templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.ResolveAttributeValue(tf(ctx, "image.confirm_delete_type", imageTypeLabel(data.SelectedType, data.ProfileName)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 872, Col: 112}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 874, Col: 112}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var55)
 				if templ_7745c5c3_Err != nil {
@@ -1062,7 +1062,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var56 string
 				templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.delete"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 878, Col: 35}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 880, Col: 35}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 				if templ_7745c5c3_Err != nil {
@@ -1112,7 +1112,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var59 string
 			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.ResolveAttributeValue(fanartHeroURL(data, fanartIdx))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 911, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 913, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var59)
 			if templ_7745c5c3_Err != nil {
@@ -1125,7 +1125,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var60 string
 			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.ResolveAttributeValue(img.ImageTermFor(data.SelectedType, data.ProfileName))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 912, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 914, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var60)
 			if templ_7745c5c3_Err != nil {
@@ -1138,7 +1138,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var61 string
 			templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.view_full_size"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 914, Col: 44}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 916, Col: 44}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var61)
 			if templ_7745c5c3_Err != nil {
@@ -1151,7 +1151,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var62 string
 			templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.view_full_size"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 915, Col: 49}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 917, Col: 49}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var62)
 			if templ_7745c5c3_Err != nil {
@@ -1164,7 +1164,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var63 string
 			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.ResolveAttributeValue(fanartHeroURL(data, fanartIdx))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 918, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 920, Col: 43}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var63)
 			if templ_7745c5c3_Err != nil {
@@ -1177,7 +1177,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var64 string
 			templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.ResolveAttributeValue(img.ImageTermFor(data.SelectedType, data.ProfileName))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 919, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 921, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var64)
 			if templ_7745c5c3_Err != nil {
@@ -1203,7 +1203,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var65 string
 			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.no_image_yet", img.ImageTermFor(data.SelectedType, data.ProfileName)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 926, Col: 116}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 928, Col: 116}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 			if templ_7745c5c3_Err != nil {
@@ -1221,7 +1221,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var66 string
 		templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.drop_image_here"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 930, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 932, Col: 83}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 		if templ_7745c5c3_Err != nil {
@@ -1234,7 +1234,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var67 string
 		templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.drag_drop_hint"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 933, Col: 104}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 935, Col: 104}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 		if templ_7745c5c3_Err != nil {
@@ -1252,7 +1252,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var68 string
 			templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/%s/info", data.Artist.ID, data.SelectedType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 937, Col: 97}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 939, Col: 97}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var68)
 			if templ_7745c5c3_Err != nil {
@@ -1275,7 +1275,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var69 string
 			templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.Artist.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 952, Col: 99}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 954, Col: 99}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var69)
 			if templ_7745c5c3_Err != nil {
@@ -1288,7 +1288,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var70 string
 			templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.fanart_gallery"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 954, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 956, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var70))
 			if templ_7745c5c3_Err != nil {
@@ -1301,7 +1301,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var71 string
 			templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/fanart/list?management=true", data.Artist.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 957, Col: 98}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 959, Col: 98}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var71)
 			if templ_7745c5c3_Err != nil {
@@ -1314,7 +1314,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var72 string
 			templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.loading_gallery"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 961, Col: 74}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 963, Col: 74}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 			if templ_7745c5c3_Err != nil {
@@ -1333,7 +1333,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var73 string
 			templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, data.SelectedType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 970, Col: 103}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 972, Col: 103}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var73)
 			if templ_7745c5c3_Err != nil {
@@ -1357,7 +1357,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var74 string
 			templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.compare"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 982, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 984, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 			if templ_7745c5c3_Err != nil {
@@ -1370,7 +1370,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var75 string
 			templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.close"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 988, Col: 30}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 990, Col: 30}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 			if templ_7745c5c3_Err != nil {
@@ -1383,7 +1383,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var76 string
 			templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.current"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 993, Col: 101}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 995, Col: 101}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 			if templ_7745c5c3_Err != nil {
@@ -1421,7 +1421,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var79 string
 			templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", data.BasePath, data.Artist.ID, data.SelectedType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1002, Col: 114}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1004, Col: 114}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var79)
 			if templ_7745c5c3_Err != nil {
@@ -1434,7 +1434,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var80 string
 			templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.current_image"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1003, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1005, Col: 43}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var80)
 			if templ_7745c5c3_Err != nil {
@@ -1447,7 +1447,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var81 string
 			templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/%s/info", data.Artist.ID, data.SelectedType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1009, Col: 99}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1011, Col: 99}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var81)
 			if templ_7745c5c3_Err != nil {
@@ -1460,7 +1460,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var82 string
 			templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.selected"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1015, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1017, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
 			if templ_7745c5c3_Err != nil {
@@ -1473,7 +1473,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var83 string
 			templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.click_compare_hint"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1017, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1019, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
 			if templ_7745c5c3_Err != nil {
@@ -1486,7 +1486,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var84 string
 			templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/fetch", data.Artist.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1032, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1034, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var84)
 			if templ_7745c5c3_Err != nil {
@@ -1499,7 +1499,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var85 string
 			templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.confirm_save"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1034, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1036, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var85)
 			if templ_7745c5c3_Err != nil {
@@ -1512,7 +1512,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var86 string
 			templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.disabled_during_conflict"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1037, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1039, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var86)
 			if templ_7745c5c3_Err != nil {
@@ -1525,7 +1525,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var87 string
 			templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.use_this_one"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1040, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1042, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var87))
 			if templ_7745c5c3_Err != nil {
@@ -1543,7 +1543,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var88 string
 		templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.fetch_from_url"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1056, Col: 102}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1058, Col: 102}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
 		if templ_7745c5c3_Err != nil {
@@ -1556,7 +1556,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var89 string
 		templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.cancel"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1069, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1071, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var89))
 		if templ_7745c5c3_Err != nil {
@@ -1569,13 +1569,13 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var90 string
 		templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.fetch"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1076, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1078, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var90))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, "</button></div></div></div><script>\n\t\t\t(function() {\n\t\t\t\t// Scope to the editor's contextualized container, which carries BOTH\n\t\t\t\t// data-artist-id AND data-image-type. The bare [data-artist-id] selector\n\t\t\t\t// matched the next/ page wrapper first (data-artist-id but no\n\t\t\t\t// data-image-type) when this editor is re-hosted in the Manage-artwork\n\t\t\t\t// modal, so the IIFE early-returned and drag-drop / fetch-URL / compare /\n\t\t\t\t// the #image-results un-hide were all dead in the modal (M55 #1336, 4B).\n\t\t\t\tvar container = document.querySelector('[data-artist-id][data-image-type]');\n\t\t\t\tif (!container) return;\n\t\t\t\tvar artistID = container.dataset.artistId;\n\t\t\t\tvar imageType = container.dataset.imageType;\n\t\t\t\tif (!artistID || !imageType) return;\n\n\t\t\t\tvar dropZone = document.getElementById('image-drop-zone');\n\t\t\t\tvar dropHint = document.getElementById('drop-hint');\n\t\t\t\tvar fileInput = document.getElementById('image-file-input');\n\t\t\t\tvar statusEl = document.getElementById('upload-status');\n\n\t\t\t\tfunction csrfToken() {\n\t\t\t\t\treturn document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\t}\n\n\t\t\t\tfunction setStatus(msg, cls) {\n\t\t\t\t\tvar s = document.createElement('span');\n\t\t\t\t\ts.className = 'text-sm ' + cls;\n\t\t\t\t\ts.textContent = msg;\n\t\t\t\t\tstatusEl.replaceChildren(s);\n\t\t\t\t}\n\n\t\t\t\t// #2415: openAutoCrop used to be defined HERE, inside this\n\t\t\t\t// contextualized-only IIFE, and merely exposed on window. That\n\t\t\t\t// left it undefined on the generic layout -- which is precisely\n\t\t\t\t// where components.ImageCard and components.ImageUpload render --\n\t\t\t\t// so those surfaces could not have reacted to needs_crop even if\n\t\t\t\t// they had been wired for it. It now lives in the crop script\n\t\t\t\t// block above, which BOTH layouts render, and the plain-JS\n\t\t\t\t// upload/fetch-URL flows below simply call that global.\n\n\t\t\t\tfunction uploadFile(file) {\n\t\t\t\t\tvar bp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\t\t\tvar fd = new FormData();\n\t\t\t\t\tfd.append('file', file);\n\t\t\t\t\tfd.append('type', imageType);\n\t\t\t\t\tsetStatus(container.dataset.msgUploading, 'text-gray-500');\n\t\t\t\t\tfetch(bp + '/api/v1/artists/' + artistID + '/images/upload', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\theaders: {'X-CSRF-Token': csrfToken()},\n\t\t\t\t\t\tbody: fd,\n\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\treturn r.json().then(function(data) {\n\t\t\t\t\t\t\tif (!r.ok) { setStatus(container.dataset.msgUploadFailed, 'text-red-500'); return; }\n\t\t\t\t\t\t\tif (data.needs_crop) { openAutoCrop(data); return; }\n\t\t\t\t\t\t\twindow.location.reload();\n\t\t\t\t\t\t});\n\t\t\t\t\t}).catch(function() { setStatus(container.dataset.msgUploadFailed, 'text-red-500'); });\n\t\t\t\t}\n\n\t\t\t\tdropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropHint.classList.remove('hidden'); });\n\t\t\t\tdropZone.addEventListener('dragenter', function(e) { e.preventDefault(); dropHint.classList.remove('hidden'); });\n\t\t\t\tdropZone.addEventListener('dragleave', function(e) { if (!dropZone.contains(e.relatedTarget)) dropHint.classList.add('hidden'); });\n\t\t\t\tdropZone.addEventListener('drop', function(e) {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tdropHint.classList.add('hidden');\n\t\t\t\t\tif (e.dataTransfer.files.length > 0) uploadFile(e.dataTransfer.files[0]);\n\t\t\t\t});\n\n\t\t\t\tfileInput.addEventListener('change', function() {\n\t\t\t\t\tif (fileInput.files.length > 0) uploadFile(fileInput.files[0]);\n\t\t\t\t});\n\n\t\t\t\t// #2281 QOL #48: per-slot fetch/replace on the backdrop management\n\t\t\t\t// gallery (backdrop_management.templ's FanartManagementGallery)\n\t\t\t\t// reuses this SAME modal + submit handler rather than a second\n\t\t\t\t// one. swOpenFetchUrlForSlot sets _fetchUrlSlot before showing the\n\t\t\t\t// modal; the submit handler below threads it into the request and\n\t\t\t\t// resets it afterward so a later \"current type\" fetch does not\n\t\t\t\t// inherit a stale slot.\n\t\t\t\t//\n\t\t\t\t// _fetchUrlSlot must ALSO be cleared on every OTHER path that can\n\t\t\t\t// leave the modal without submitting -- Cancel, and the\n\t\t\t\t// Actions-menu \"Fetch from URL\" entry that opens this same modal\n\t\t\t\t// for the current type -- otherwise a per-slot Fetch that gets\n\t\t\t\t// cancelled leaves a stale slot armed, and the next \"current\n\t\t\t\t// type\" fetch silently overwrites that backdrop slot instead of\n\t\t\t\t// appending (data loss). swOpenFetchUrlModal/swCloseFetchUrlModal\n\t\t\t\t// are the two page-level entry points that own clearing it; the\n\t\t\t\t// Actions-menu button and the modal's Cancel button are wired to\n\t\t\t\t// call them (falling back to a direct DOM toggle + console.error\n\t\t\t\t// if this IIFE never ran, e.g. no matching container).\n\t\t\t\tvar _fetchUrlSlot = null;\n\t\t\t\t// #3223 review round 3, C3: swOpenFetchUrlForSlot and\n\t\t\t\t// swOpenCropForSlot are both called directly from the indexed\n\t\t\t\t// backdrop branch's Actions menu (image_search.templ, fanartIdx\n\t\t\t\t// >= 0) AND from the ungated fanart gallery tiles\n\t\t\t\t// (backdrop_management.templ's per-tile crop/fetch-replace\n\t\t\t\t// buttons, which render outside any [data-context-menu] at all).\n\t\t\t\t// Before this fix, neither function closed the menu itself -- the\n\t\t\t\t// comments beside the Google Images entry claimed its own\n\t\t\t\t// menu-close \"matches the Fetch from URL button above\", but that\n\t\t\t\t// button (line ~642, calling swOpenFetchUrlForSlot) never closed\n\t\t\t\t// anything, so the comment was false and the class of defect F5\n\t\t\t\t// fixed on the Google entry was still live on its siblings.\n\t\t\t\t// swCloseAnyOpenContextMenu is the shared fix: it closes whatever\n\t\t\t\t// [data-context-menu] panel happens to be open (mirroring\n\t\t\t\t// openCropForType's own inline loop a few hundred lines below,\n\t\t\t\t// which the generic-branch Crop button already uses), and is a\n\t\t\t\t// harmless no-op when called from the gallery tiles, where there\n\t\t\t\t// is no open menu to find.\n\t\t\t\t//\n\t\t\t\t// #3223 review round 4, H3: the selector below used to be\n\t\t\t\t// '[data-context-menu] [role=menu]:not(.hidden)' with no\n\t\t\t\t// exclusion for .ctx-bottom-sheet -- the mobile bottom sheet\n\t\t\t\t// components.ContextMenu renders (web/components/context_menu.templ\n\t\t\t\t// ~77-83) ALSO has role=\"menu\" inside a [data-context-menu]\n\t\t\t\t// wrapper, and it is never hidden via the .hidden class (it opens\n\t\t\t\t// via .ctx-sheet-open / closes via aria-hidden + inert instead --\n\t\t\t\t// see closeAllContextMenus in context_menu.templ ~304). Without the\n\t\t\t\t// exclusion, this function matched a live bottom sheet belonging to\n\t\t\t\t// an ENTIRELY UNRELATED ContextMenu elsewhere on the page (e.g. an\n\t\t\t\t// artist-detail field's actions sheet, artist_field.templ ~510,\n\t\t\t\t// rendered alongside this editor inside the Manage-artwork modal --\n\t\t\t\t// handlers_artist_detail.go ~110) and added .hidden to it, which\n\t\t\t\t// that sheet's own open/close logic never checks or clears. The\n\t\t\t\t// sheet was then permanently display:none (its CSS keys off\n\t\t\t\t// .ctx-bottom-sheet.ctx-sheet-open, not merely absence of .hidden)\n\t\t\t\t// until a full page reload.\n\t\t\t\t//\n\t\t\t\t// This function's OWN Actions menu (rendered above/below in this\n\t\t\t\t// same file) is a hand-rolled dropdown, not components.ContextMenu\n\t\t\t\t// -- it never renders as a bottom sheet at any viewport width, so\n\t\t\t\t// this function has no bottom sheet of its OWN to manage either.\n\t\t\t\t// The correct fix is therefore narrower than \"close bottom sheets\n\t\t\t\t// too\": simply never touch .ctx-bottom-sheet elements at all, the\n\t\t\t\t// same way the shared ToggleContextMenu/closeAllContextMenus code\n\t\t\t\t// (context_menu.templ) excludes them from its OWN generic\n\t\t\t\t// \"everything else\" selector before handling sheets through their\n\t\t\t\t// own separate mechanism. That shared closeAllContextMenus helper\n\t\t\t\t// is private to an anonymous IIFE in ContextMenuGlobalJS and not\n\t\t\t\t// reachable from this separate script block (confirmed: it is\n\t\t\t\t// declared via `function closeAllContextMenus(exceptId) {` inside\n\t\t\t\t// `(function() { ... })()`, never assigned to window) -- but since\n\t\t\t\t// this function has no sheet of its own to close, delegating was\n\t\t\t\t// never actually necessary; excluding is sufficient.\n\t\t\t\tfunction swCloseAnyOpenContextMenu() {\n\t\t\t\t\tvar menus = document.querySelectorAll('[data-context-menu] [role=menu]:not(.hidden):not(.ctx-bottom-sheet)');\n\t\t\t\t\tfor (var i = 0; i < menus.length; i++) {\n\t\t\t\t\t\tmenus[i].classList.add('hidden');\n\t\t\t\t\t\tvar trigger = menus[i].closest('[data-context-menu]').querySelector('[aria-haspopup]');\n\t\t\t\t\t\tif (trigger) trigger.setAttribute('aria-expanded', 'false');\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\t// #2511: the modal is parsed while `hidden` and revealed by a\n\t\t\t\t// class toggle, so `autofocus` never fires; focus the input\n\t\t\t\t// explicitly once it is displayed. The opener is remembered so\n\t\t\t\t// closing returns focus to it (the display change is\n\t\t\t\t// synchronous, so no timer is needed).\n\t\t\t\tvar _fetchUrlOpener = null;\n\t\t\t\tfunction focusFetchUrlInput(input) {\n\t\t\t\t\tif (!input) {\n\t\t\t\t\t\tconsole.error('fetch-url-input missing; cannot move focus into the fetch-from-URL dialog');\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tinput.focus();\n\t\t\t\t}\n\t\t\t\tfunction restoreFetchUrlOpener() {\n\t\t\t\t\tvar opener = _fetchUrlOpener;\n\t\t\t\t\t_fetchUrlOpener = null;\n\t\t\t\t\trestoreDialogOpener(opener);\n\t\t\t\t}\n\t\t\t\twindow.swOpenFetchUrlModal = function() {\n\t\t\t\t\t_fetchUrlSlot = null;\n\t\t\t\t\t_fetchUrlOpener = captureDialogOpener();\n\t\t\t\t\tvar input = document.getElementById('fetch-url-input');\n\t\t\t\t\tif (input) input.value = '';\n\t\t\t\t\tdocument.getElementById('fetch-url-modal').classList.remove('hidden');\n\t\t\t\t\tfocusFetchUrlInput(input);\n\t\t\t\t};\n\t\t\t\twindow.swCloseFetchUrlModal = function() {\n\t\t\t\t\t_fetchUrlSlot = null;\n\t\t\t\t\tdocument.getElementById('fetch-url-modal').classList.add('hidden');\n\t\t\t\t\trestoreFetchUrlOpener();\n\t\t\t\t};\n\t\t\t\t// #2511: Escape closes the dialog through the same path as Cancel\n\t\t\t\t// (clears the slot target, restores focus). Only reacts when the\n\t\t\t\t// key was pressed inside the dialog, so a confirm dialog layered\n\t\t\t\t// above it keeps its own Escape.\n\t\t\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\t\t\tif (e.key !== 'Escape' || !e.target || !e.target.closest || !e.target.closest('#fetch-url-modal')) return;\n\t\t\t\t\tif (document.getElementById('fetch-url-modal').classList.contains('hidden')) return;\n\t\t\t\t\twindow.swCloseFetchUrlModal();\n\t\t\t\t});\n\t\t\t\twindow.swOpenFetchUrlForSlot = function(slot) {\n\t\t\t\t\tswCloseAnyOpenContextMenu();\n\t\t\t\t\t_fetchUrlSlot = slot;\n\t\t\t\t\t_fetchUrlOpener = captureDialogOpener();\n\t\t\t\t\tvar input = document.getElementById('fetch-url-input');\n\t\t\t\t\tif (input) input.value = '';\n\t\t\t\t\tdocument.getElementById('fetch-url-modal').classList.remove('hidden');\n\t\t\t\t\tfocusFetchUrlInput(input);\n\t\t\t\t};\n\t\t\t\t// swOpenCropForSlot opens the crop modal directly on a saved\n\t\t\t\t// backdrop slot's same-origin file (no staging needed: it is\n\t\t\t\t// already our own saved file, not a remote provider URL).\n\t\t\t\twindow.swOpenCropForSlot = function(slot) {\n\t\t\t\t\tswCloseAnyOpenContextMenu();\n\t\t\t\t\tif (typeof openCropModal !== 'function') {\n\t\t\t\t\t\t// Capability check fails loudly rather than silently\n\t\t\t\t\t\t// no-opping the Crop button (mirrors guardedCloseCropModal's\n\t\t\t\t\t\t// showConfirmDialog guard above).\n\t\t\t\t\t\tconsole.error('openCropModal unavailable; cannot open the crop modal for fanart slot ' + slot);\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tvar bp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\t\t\tvar src = bp + '/api/v1/artists/' + artistID + '/images/fanart/' + slot + '/file';\n\t\t\t\t\topenCropModal(src, 'fanart', 16 / 9, false, slot);\n\t\t\t\t};\n\n\t\t\t\tdocument.getElementById('fetch-url-submit').addEventListener('click', function() {\n\t\t\t\t\tvar bp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\t\t\tvar url = document.getElementById('fetch-url-input').value.trim();\n\t\t\t\t\tif (!url) return;\n\t\t\t\t\tvar modal = document.getElementById('fetch-url-modal');\n\t\t\t\t\tvar slot = _fetchUrlSlot;\n\t\t\t\t\t_fetchUrlSlot = null;\n\t\t\t\t\tvar fetchType = (slot !== null) ? 'fanart' : imageType;\n\t\t\t\t\tsetStatus(container.dataset.msgFetching, 'text-gray-500');\n\t\t\t\t\tmodal.classList.add('hidden');\n\t\t\t\t\trestoreFetchUrlOpener();\n\t\t\t\t\tvar reqBody = {url: url, type: fetchType};\n\t\t\t\t\tif (slot !== null) reqBody.slot = slot;\n\t\t\t\t\tfetch(bp + '/api/v1/artists/' + artistID + '/images/fetch', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify(reqBody),\n\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\t// #3223 review round 3, C2: r.json() used to be called\n\t\t\t\t\t\t// unconditionally. A non-JSON or empty error body (a proxy's\n\t\t\t\t\t\t// HTML 502 page, or a plain empty body some upstreams send)\n\t\t\t\t\t\t// makes the Promise json() returns REJECT, which fell through\n\t\t\t\t\t\t// to the outer .catch below and showed msgFetchFailed --\n\t\t\t\t\t\t// contradicting the comment two lines down, which promised a\n\t\t\t\t\t\t// msgFetchUnable fallback. Parse defensively instead: read the\n\t\t\t\t\t\t// body as text (which does not reject on non-JSON content),\n\t\t\t\t\t\t// then JSON.parse it inside try/catch, treating a parse\n\t\t\t\t\t\t// failure as data = null. The outer .catch is kept for GENUINE\n\t\t\t\t\t\t// network failures (fetch() itself rejecting -- DNS, offline,\n\t\t\t\t\t\t// CORS), which is a materially different condition from \"the\n\t\t\t\t\t\t// server responded, but its body wasn't JSON\".\n\t\t\t\t\t\treturn r.text().then(function(text) {\n\t\t\t\t\t\t\tvar data = null;\n\t\t\t\t\t\t\ttry { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }\n\t\t\t\t\t\t\t// #3223 review round 2, F1: prefer the server's specific\n\t\t\t\t\t\t\t// message (e.g. the SVG-unsupported text) over the generic\n\t\t\t\t\t\t\t// \"Unable to fetch image\" fallback, so an operator who\n\t\t\t\t\t\t\t// pastes an SVG result sees why it was rejected instead of\n\t\t\t\t\t\t\t// a message that reads like a network failure. data.error\n\t\t\t\t\t\t\t// is only present on a non-2xx JSON body (see writeJSON\n\t\t\t\t\t\t\t// call sites in handleImageFetch); an empty, non-JSON, or\n\t\t\t\t\t\t\t// otherwise unparsable body now correctly falls back to the\n\t\t\t\t\t\t\t// generic msgFetchUnable text instead of rejecting into the\n\t\t\t\t\t\t\t// unrelated msgFetchFailed message below.\n\t\t\t\t\t\t\tif (!r.ok) { setStatus(data && data.error ? data.error : container.dataset.msgFetchUnable, 'text-red-500'); return; }\n\t\t\t\t\t\t\tif (data && data.needs_crop) { openAutoCrop(data); return; }\n\t\t\t\t\t\t\twindow.location.reload();\n\t\t\t\t\t\t});\n\t\t\t\t\t}).catch(function() { setStatus(container.dataset.msgFetchFailed, 'text-red-500'); });\n\t\t\t\t});\n\n\t\t\t\t// Show results panel and reveal compare/crop buttons when HTMX swap completes\n\t\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(e) {\n\t\t\t\t\tif (e.detail.target && e.detail.target.id === 'image-results') {\n\t\t\t\t\t\te.detail.target.classList.remove('hidden');\n\t\t\t\t\t\tvar hasCompare = document.getElementById('compare-section');\n\t\t\t\t\t\tvar btns = e.detail.target.querySelectorAll('.compare-btn, .crop-btn');\n\t\t\t\t\t\tfor (var i = 0; i < btns.length; i++) {\n\t\t\t\t\t\t\tif (btns[i].classList.contains('compare-btn') && !hasCompare) continue;\n\t\t\t\t\t\t\tbtns[i].classList.remove('hidden');\n\t\t\t\t\t\t\tbtns[i].classList.add('inline-flex');\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t});\n\n\t\t\t\t// Populate compare panel with data from an ImageCard\n\t\t\t\twindow.populateCompare = function(card) {\n\t\t\t\t\tif (!card) return;\n\t\t\t\t\tvar section = document.getElementById('compare-section');\n\t\t\t\t\tif (!section) return;\n\t\t\t\t\tsection.classList.remove('hidden');\n\n\t\t\t\t\tvar url = card.dataset.imgUrl;\n\t\t\t\t\tvar imgType = card.dataset.imgType;\n\t\t\t\t\tvar source = card.dataset.imgSource;\n\t\t\t\t\tvar width = card.dataset.imgWidth;\n\t\t\t\t\tvar height = card.dataset.imgHeight;\n\n\t\t\t\t\tvar imgContainer = document.getElementById('compare-right-image');\n\t\t\t\t\tvar isLogo = imgType === 'logo';\n\t\t\t\t\timgContainer.className = 'flex items-center justify-center overflow-hidden rounded max-h-64 min-h-32 ' +\n\t\t\t\t\t\t(isLogo ? 'checkered-bg' : 'bg-gray-100 dark:bg-gray-900');\n\t\t\t\t\timgContainer.innerHTML = '';\n\t\t\t\t\tvar imgEl = document.createElement('img');\n\t\t\t\t\timgEl.src = url;\n\t\t\t\t\timgEl.alt = imgType + ' from ' + source;\n\t\t\t\t\timgEl.className = 'max-w-full max-h-64 object-contain';\n\t\t\t\t\timgContainer.appendChild(imgEl);\n\n\t\t\t\t\tvar meta = document.getElementById('compare-right-meta');\n\t\t\t\t\tvar parts = [source];\n\t\t\t\t\tif (parseInt(width) > 0 && parseInt(height) > 0) {\n\t\t\t\t\t\tparts.push(width + 'x' + height);\n\t\t\t\t\t}\n\t\t\t\t\tmeta.textContent = parts.join(' \\u00b7 ');\n\n\t\t\t\t\tvar saveBtn = document.getElementById('compare-save-btn');\n\t\t\t\t\tsaveBtn.classList.remove('hidden');\n\t\t\t\t\tsaveBtn.setAttribute('hx-vals', JSON.stringify({url: url, type: imgType}));\n\t\t\t\t\thtmx.process(saveBtn);\n\n\t\t\t\t\tsection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });\n\t\t\t\t};\n\t\t\t})();\n\t\t</script></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, "</button></div></div></div><script>\n\t\t\t(function() {\n\t\t\t\t// Scope to the editor's contextualized container, which carries BOTH\n\t\t\t\t// data-artist-id AND data-image-type. The bare [data-artist-id] selector\n\t\t\t\t// matched the next/ page wrapper first (data-artist-id but no\n\t\t\t\t// data-image-type) when this editor is re-hosted in the Manage-artwork\n\t\t\t\t// modal, so the IIFE early-returned and drag-drop / fetch-URL / compare /\n\t\t\t\t// the #image-results un-hide were all dead in the modal (M55 #1336, 4B).\n\t\t\t\tvar container = document.querySelector('[data-artist-id][data-image-type]');\n\t\t\t\tif (!container) return;\n\t\t\t\tvar artistID = container.dataset.artistId;\n\t\t\t\tvar imageType = container.dataset.imageType;\n\t\t\t\tif (!artistID || !imageType) return;\n\n\t\t\t\tvar dropZone = document.getElementById('image-drop-zone');\n\t\t\t\tvar dropHint = document.getElementById('drop-hint');\n\t\t\t\tvar fileInput = document.getElementById('image-file-input');\n\t\t\t\tvar statusEl = document.getElementById('upload-status');\n\n\t\t\t\tfunction csrfToken() {\n\t\t\t\t\treturn document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\t}\n\n\t\t\t\tfunction setStatus(msg, cls) {\n\t\t\t\t\tvar s = document.createElement('span');\n\t\t\t\t\ts.className = 'text-sm ' + cls;\n\t\t\t\t\ts.textContent = msg;\n\t\t\t\t\tstatusEl.replaceChildren(s);\n\t\t\t\t}\n\n\t\t\t\t// #2415: openAutoCrop used to be defined HERE, inside this\n\t\t\t\t// contextualized-only IIFE, and merely exposed on window. That\n\t\t\t\t// left it undefined on the generic layout -- which is precisely\n\t\t\t\t// where components.ImageCard and components.ImageUpload render --\n\t\t\t\t// so those surfaces could not have reacted to needs_crop even if\n\t\t\t\t// they had been wired for it. It now lives in the crop script\n\t\t\t\t// block above, which BOTH layouts render, and the plain-JS\n\t\t\t\t// upload/fetch-URL flows below simply call that global.\n\n\t\t\t\tfunction uploadFile(file) {\n\t\t\t\t\tvar bp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\t\t\tvar fd = new FormData();\n\t\t\t\t\tfd.append('file', file);\n\t\t\t\t\tfd.append('type', imageType);\n\t\t\t\t\tsetStatus(container.dataset.msgUploading, 'text-gray-500');\n\t\t\t\t\tfetch(bp + '/api/v1/artists/' + artistID + '/images/upload', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\theaders: {'X-CSRF-Token': csrfToken()},\n\t\t\t\t\t\tbody: fd,\n\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\treturn r.json().then(function(data) {\n\t\t\t\t\t\t\tif (!r.ok) { setStatus(container.dataset.msgUploadFailed, 'text-red-500'); return; }\n\t\t\t\t\t\t\tif (data.needs_crop) { openAutoCrop(data); return; }\n\t\t\t\t\t\t\twindow.location.reload();\n\t\t\t\t\t\t});\n\t\t\t\t\t}).catch(function() { setStatus(container.dataset.msgUploadFailed, 'text-red-500'); });\n\t\t\t\t}\n\n\t\t\t\tdropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropHint.classList.remove('hidden'); });\n\t\t\t\tdropZone.addEventListener('dragenter', function(e) { e.preventDefault(); dropHint.classList.remove('hidden'); });\n\t\t\t\tdropZone.addEventListener('dragleave', function(e) { if (!dropZone.contains(e.relatedTarget)) dropHint.classList.add('hidden'); });\n\t\t\t\tdropZone.addEventListener('drop', function(e) {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tdropHint.classList.add('hidden');\n\t\t\t\t\tif (e.dataTransfer.files.length > 0) uploadFile(e.dataTransfer.files[0]);\n\t\t\t\t});\n\n\t\t\t\tfileInput.addEventListener('change', function() {\n\t\t\t\t\tif (fileInput.files.length > 0) uploadFile(fileInput.files[0]);\n\t\t\t\t});\n\n\t\t\t\t// #2281 QOL #48: per-slot fetch/replace on the backdrop management\n\t\t\t\t// gallery (backdrop_management.templ's FanartManagementGallery)\n\t\t\t\t// reuses this SAME modal + submit handler rather than a second\n\t\t\t\t// one. swOpenFetchUrlForSlot sets _fetchUrlSlot before showing the\n\t\t\t\t// modal; the submit handler below threads it into the request and\n\t\t\t\t// resets it afterward so a later \"current type\" fetch does not\n\t\t\t\t// inherit a stale slot.\n\t\t\t\t//\n\t\t\t\t// _fetchUrlSlot must ALSO be cleared on every OTHER path that can\n\t\t\t\t// leave the modal without submitting -- Cancel, and the\n\t\t\t\t// Actions-menu \"Fetch from URL\" entry that opens this same modal\n\t\t\t\t// for the current type -- otherwise a per-slot Fetch that gets\n\t\t\t\t// cancelled leaves a stale slot armed, and the next \"current\n\t\t\t\t// type\" fetch silently overwrites that backdrop slot instead of\n\t\t\t\t// appending (data loss). swOpenFetchUrlModal/swCloseFetchUrlModal\n\t\t\t\t// are the two page-level entry points that own clearing it; the\n\t\t\t\t// Actions-menu button and the modal's Cancel button are wired to\n\t\t\t\t// call them (falling back to a direct DOM toggle + console.error\n\t\t\t\t// if this IIFE never ran, e.g. no matching container).\n\t\t\t\tvar _fetchUrlSlot = null;\n\t\t\t\t// #3223 review round 3, C3: swOpenFetchUrlForSlot and\n\t\t\t\t// swOpenCropForSlot are both called directly from the indexed\n\t\t\t\t// backdrop branch's Actions menu (image_search.templ, fanartIdx\n\t\t\t\t// >= 0) AND from the ungated fanart gallery tiles\n\t\t\t\t// (backdrop_management.templ's per-tile crop/fetch-replace\n\t\t\t\t// buttons, which render outside any [data-context-menu] at all).\n\t\t\t\t// Before this fix, neither function closed the menu itself -- the\n\t\t\t\t// comments beside the Google Images entry claimed its own\n\t\t\t\t// menu-close \"matches the Fetch from URL button above\", but that\n\t\t\t\t// button (line ~642, calling swOpenFetchUrlForSlot) never closed\n\t\t\t\t// anything, so the comment was false and the class of defect F5\n\t\t\t\t// fixed on the Google entry was still live on its siblings.\n\t\t\t\t// swCloseAnyOpenContextMenu is the shared fix: it closes whatever\n\t\t\t\t// [data-context-menu] panel happens to be open (mirroring\n\t\t\t\t// openCropForType's own inline loop a few hundred lines below,\n\t\t\t\t// which the generic-branch Crop button already uses), and is a\n\t\t\t\t// harmless no-op when called from the gallery tiles, where there\n\t\t\t\t// is no open menu to find.\n\t\t\t\t//\n\t\t\t\t// #3223 review round 4, H3: the selector below used to be\n\t\t\t\t// '[data-context-menu] [role=menu]:not(.hidden)' with no\n\t\t\t\t// exclusion for .ctx-bottom-sheet -- the mobile bottom sheet\n\t\t\t\t// components.ContextMenu renders (web/components/context_menu.templ\n\t\t\t\t// ~77-83) ALSO has role=\"menu\" inside a [data-context-menu]\n\t\t\t\t// wrapper, and it is never hidden via the .hidden class (it opens\n\t\t\t\t// via .ctx-sheet-open / closes via aria-hidden + inert instead --\n\t\t\t\t// see closeAllContextMenus in context_menu.templ ~304). Without the\n\t\t\t\t// exclusion, this function matched a live bottom sheet belonging to\n\t\t\t\t// an ENTIRELY UNRELATED ContextMenu elsewhere on the page (e.g. an\n\t\t\t\t// artist-detail field's actions sheet, artist_field.templ ~510,\n\t\t\t\t// rendered alongside this editor inside the Manage-artwork modal --\n\t\t\t\t// handlers_artist_detail.go ~110) and added .hidden to it, which\n\t\t\t\t// that sheet's own open/close logic never checks or clears. The\n\t\t\t\t// sheet was then permanently display:none (its CSS keys off\n\t\t\t\t// .ctx-bottom-sheet.ctx-sheet-open, not merely absence of .hidden)\n\t\t\t\t// until a full page reload.\n\t\t\t\t//\n\t\t\t\t// This function's OWN Actions menu (rendered above/below in this\n\t\t\t\t// same file) is a hand-rolled dropdown, not components.ContextMenu\n\t\t\t\t// -- it never renders as a bottom sheet at any viewport width, so\n\t\t\t\t// this function has no bottom sheet of its OWN to manage either.\n\t\t\t\t// The correct fix is therefore narrower than \"close bottom sheets\n\t\t\t\t// too\": simply never touch .ctx-bottom-sheet elements at all, the\n\t\t\t\t// same way the shared ToggleContextMenu/closeAllContextMenus code\n\t\t\t\t// (context_menu.templ) excludes them from its OWN generic\n\t\t\t\t// \"everything else\" selector before handling sheets through their\n\t\t\t\t// own separate mechanism. That shared closeAllContextMenus helper\n\t\t\t\t// is private to an anonymous IIFE in ContextMenuGlobalJS and not\n\t\t\t\t// reachable from this separate script block (confirmed: it is\n\t\t\t\t// declared via `function closeAllContextMenus(exceptId) {` inside\n\t\t\t\t// `(function() { ... })()`, never assigned to window) -- but since\n\t\t\t\t// this function has no sheet of its own to close, delegating was\n\t\t\t\t// never actually necessary; excluding is sufficient.\n\t\t\t\tfunction swCloseAnyOpenContextMenu() {\n\t\t\t\t\tvar menus = document.querySelectorAll('[data-context-menu] [role=menu]:not(.hidden):not(.ctx-bottom-sheet)');\n\t\t\t\t\tfor (var i = 0; i < menus.length; i++) {\n\t\t\t\t\t\tmenus[i].classList.add('hidden');\n\t\t\t\t\t\tvar trigger = menus[i].closest('[data-context-menu]').querySelector('[aria-haspopup]');\n\t\t\t\t\t\tif (trigger) trigger.setAttribute('aria-expanded', 'false');\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\t// #2511: the modal is parsed while `hidden` and revealed by a\n\t\t\t\t// class toggle, so `autofocus` never fires; focus the input\n\t\t\t\t// explicitly once it is displayed. The opener is remembered so\n\t\t\t\t// closing returns focus to it (the display change is\n\t\t\t\t// synchronous, so no timer is needed).\n\t\t\t\t// This block is its own script scope (the crop block's\n\t\t\t\t// captureDialogOpener / restoreDialogOpener are not reachable\n\t\t\t\t// when this block is evaluated alone, as the unit test does),\n\t\t\t\t// so it carries its own fail-loud wrappers over the layout's\n\t\t\t\t// window.swCaptureOpener / window.swRestoreOpener.\n\t\t\t\tfunction captureDialogOpener() {\n\t\t\t\t\tif (typeof window.swCaptureOpener !== 'function') {\n\t\t\t\t\t\tconsole.error('swCaptureOpener unavailable; fetch-from-URL dialog focus will not be restored on close');\n\t\t\t\t\t\treturn null;\n\t\t\t\t\t}\n\t\t\t\t\treturn window.swCaptureOpener();\n\t\t\t\t}\n\t\t\t\tfunction restoreDialogOpener(op) {\n\t\t\t\t\tif (typeof window.swRestoreOpener !== 'function') {\n\t\t\t\t\t\tconsole.error('swRestoreOpener unavailable; fetch-from-URL dialog focus not restored on close');\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\twindow.swRestoreOpener(op);\n\t\t\t\t}\n\t\t\t\tvar _fetchUrlOpener = null;\n\t\t\t\tfunction focusFetchUrlInput(input) {\n\t\t\t\t\tif (!input) {\n\t\t\t\t\t\tconsole.error('fetch-url-input missing; cannot move focus into the fetch-from-URL dialog');\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tinput.focus();\n\t\t\t\t}\n\t\t\t\tfunction restoreFetchUrlOpener() {\n\t\t\t\t\tvar opener = _fetchUrlOpener;\n\t\t\t\t\t_fetchUrlOpener = null;\n\t\t\t\t\trestoreDialogOpener(opener);\n\t\t\t\t}\n\t\t\t\twindow.swOpenFetchUrlModal = function() {\n\t\t\t\t\t_fetchUrlSlot = null;\n\t\t\t\t\t_fetchUrlOpener = captureDialogOpener();\n\t\t\t\t\tvar input = document.getElementById('fetch-url-input');\n\t\t\t\t\tif (input) input.value = '';\n\t\t\t\t\tdocument.getElementById('fetch-url-modal').classList.remove('hidden');\n\t\t\t\t\tfocusFetchUrlInput(input);\n\t\t\t\t};\n\t\t\t\twindow.swCloseFetchUrlModal = function() {\n\t\t\t\t\t_fetchUrlSlot = null;\n\t\t\t\t\tdocument.getElementById('fetch-url-modal').classList.add('hidden');\n\t\t\t\t\trestoreFetchUrlOpener();\n\t\t\t\t};\n\t\t\t\t// #2511: Escape closes the dialog through the same path as Cancel\n\t\t\t\t// (clears the slot target, restores focus). Only reacts when the\n\t\t\t\t// key was pressed inside the dialog, so a confirm dialog layered\n\t\t\t\t// above it keeps its own Escape.\n\t\t\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\t\t\tif (e.key !== 'Escape' || !e.target || !e.target.closest || !e.target.closest('#fetch-url-modal')) return;\n\t\t\t\t\tif (document.getElementById('fetch-url-modal').classList.contains('hidden')) return;\n\t\t\t\t\twindow.swCloseFetchUrlModal();\n\t\t\t\t});\n\t\t\t\twindow.swOpenFetchUrlForSlot = function(slot) {\n\t\t\t\t\tswCloseAnyOpenContextMenu();\n\t\t\t\t\t_fetchUrlSlot = slot;\n\t\t\t\t\t_fetchUrlOpener = captureDialogOpener();\n\t\t\t\t\tvar input = document.getElementById('fetch-url-input');\n\t\t\t\t\tif (input) input.value = '';\n\t\t\t\t\tdocument.getElementById('fetch-url-modal').classList.remove('hidden');\n\t\t\t\t\tfocusFetchUrlInput(input);\n\t\t\t\t};\n\t\t\t\t// swOpenCropForSlot opens the crop modal directly on a saved\n\t\t\t\t// backdrop slot's same-origin file (no staging needed: it is\n\t\t\t\t// already our own saved file, not a remote provider URL).\n\t\t\t\twindow.swOpenCropForSlot = function(slot) {\n\t\t\t\t\tswCloseAnyOpenContextMenu();\n\t\t\t\t\tif (typeof openCropModal !== 'function') {\n\t\t\t\t\t\t// Capability check fails loudly rather than silently\n\t\t\t\t\t\t// no-opping the Crop button (mirrors guardedCloseCropModal's\n\t\t\t\t\t\t// showConfirmDialog guard above).\n\t\t\t\t\t\tconsole.error('openCropModal unavailable; cannot open the crop modal for fanart slot ' + slot);\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tvar bp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\t\t\tvar src = bp + '/api/v1/artists/' + artistID + '/images/fanart/' + slot + '/file';\n\t\t\t\t\topenCropModal(src, 'fanart', 16 / 9, false, slot);\n\t\t\t\t};\n\n\t\t\t\tdocument.getElementById('fetch-url-submit').addEventListener('click', function() {\n\t\t\t\t\tvar bp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\t\t\tvar url = document.getElementById('fetch-url-input').value.trim();\n\t\t\t\t\tif (!url) return;\n\t\t\t\t\tvar modal = document.getElementById('fetch-url-modal');\n\t\t\t\t\tvar slot = _fetchUrlSlot;\n\t\t\t\t\t_fetchUrlSlot = null;\n\t\t\t\t\tvar fetchType = (slot !== null) ? 'fanart' : imageType;\n\t\t\t\t\tsetStatus(container.dataset.msgFetching, 'text-gray-500');\n\t\t\t\t\tmodal.classList.add('hidden');\n\t\t\t\t\trestoreFetchUrlOpener();\n\t\t\t\t\tvar reqBody = {url: url, type: fetchType};\n\t\t\t\t\tif (slot !== null) reqBody.slot = slot;\n\t\t\t\t\tfetch(bp + '/api/v1/artists/' + artistID + '/images/fetch', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify(reqBody),\n\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\t// #3223 review round 3, C2: r.json() used to be called\n\t\t\t\t\t\t// unconditionally. A non-JSON or empty error body (a proxy's\n\t\t\t\t\t\t// HTML 502 page, or a plain empty body some upstreams send)\n\t\t\t\t\t\t// makes the Promise json() returns REJECT, which fell through\n\t\t\t\t\t\t// to the outer .catch below and showed msgFetchFailed --\n\t\t\t\t\t\t// contradicting the comment two lines down, which promised a\n\t\t\t\t\t\t// msgFetchUnable fallback. Parse defensively instead: read the\n\t\t\t\t\t\t// body as text (which does not reject on non-JSON content),\n\t\t\t\t\t\t// then JSON.parse it inside try/catch, treating a parse\n\t\t\t\t\t\t// failure as data = null. The outer .catch is kept for GENUINE\n\t\t\t\t\t\t// network failures (fetch() itself rejecting -- DNS, offline,\n\t\t\t\t\t\t// CORS), which is a materially different condition from \"the\n\t\t\t\t\t\t// server responded, but its body wasn't JSON\".\n\t\t\t\t\t\treturn r.text().then(function(text) {\n\t\t\t\t\t\t\tvar data = null;\n\t\t\t\t\t\t\ttry { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }\n\t\t\t\t\t\t\t// #3223 review round 2, F1: prefer the server's specific\n\t\t\t\t\t\t\t// message (e.g. the SVG-unsupported text) over the generic\n\t\t\t\t\t\t\t// \"Unable to fetch image\" fallback, so an operator who\n\t\t\t\t\t\t\t// pastes an SVG result sees why it was rejected instead of\n\t\t\t\t\t\t\t// a message that reads like a network failure. data.error\n\t\t\t\t\t\t\t// is only present on a non-2xx JSON body (see writeJSON\n\t\t\t\t\t\t\t// call sites in handleImageFetch); an empty, non-JSON, or\n\t\t\t\t\t\t\t// otherwise unparsable body now correctly falls back to the\n\t\t\t\t\t\t\t// generic msgFetchUnable text instead of rejecting into the\n\t\t\t\t\t\t\t// unrelated msgFetchFailed message below.\n\t\t\t\t\t\t\tif (!r.ok) { setStatus(data && data.error ? data.error : container.dataset.msgFetchUnable, 'text-red-500'); return; }\n\t\t\t\t\t\t\tif (data && data.needs_crop) { openAutoCrop(data); return; }\n\t\t\t\t\t\t\twindow.location.reload();\n\t\t\t\t\t\t});\n\t\t\t\t\t}).catch(function() { setStatus(container.dataset.msgFetchFailed, 'text-red-500'); });\n\t\t\t\t});\n\n\t\t\t\t// Show results panel and reveal compare/crop buttons when HTMX swap completes\n\t\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(e) {\n\t\t\t\t\tif (e.detail.target && e.detail.target.id === 'image-results') {\n\t\t\t\t\t\te.detail.target.classList.remove('hidden');\n\t\t\t\t\t\tvar hasCompare = document.getElementById('compare-section');\n\t\t\t\t\t\tvar btns = e.detail.target.querySelectorAll('.compare-btn, .crop-btn');\n\t\t\t\t\t\tfor (var i = 0; i < btns.length; i++) {\n\t\t\t\t\t\t\tif (btns[i].classList.contains('compare-btn') && !hasCompare) continue;\n\t\t\t\t\t\t\tbtns[i].classList.remove('hidden');\n\t\t\t\t\t\t\tbtns[i].classList.add('inline-flex');\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t});\n\n\t\t\t\t// Populate compare panel with data from an ImageCard\n\t\t\t\twindow.populateCompare = function(card) {\n\t\t\t\t\tif (!card) return;\n\t\t\t\t\tvar section = document.getElementById('compare-section');\n\t\t\t\t\tif (!section) return;\n\t\t\t\t\tsection.classList.remove('hidden');\n\n\t\t\t\t\tvar url = card.dataset.imgUrl;\n\t\t\t\t\tvar imgType = card.dataset.imgType;\n\t\t\t\t\tvar source = card.dataset.imgSource;\n\t\t\t\t\tvar width = card.dataset.imgWidth;\n\t\t\t\t\tvar height = card.dataset.imgHeight;\n\n\t\t\t\t\tvar imgContainer = document.getElementById('compare-right-image');\n\t\t\t\t\tvar isLogo = imgType === 'logo';\n\t\t\t\t\timgContainer.className = 'flex items-center justify-center overflow-hidden rounded max-h-64 min-h-32 ' +\n\t\t\t\t\t\t(isLogo ? 'checkered-bg' : 'bg-gray-100 dark:bg-gray-900');\n\t\t\t\t\timgContainer.innerHTML = '';\n\t\t\t\t\tvar imgEl = document.createElement('img');\n\t\t\t\t\timgEl.src = url;\n\t\t\t\t\timgEl.alt = imgType + ' from ' + source;\n\t\t\t\t\timgEl.className = 'max-w-full max-h-64 object-contain';\n\t\t\t\t\timgContainer.appendChild(imgEl);\n\n\t\t\t\t\tvar meta = document.getElementById('compare-right-meta');\n\t\t\t\t\tvar parts = [source];\n\t\t\t\t\tif (parseInt(width) > 0 && parseInt(height) > 0) {\n\t\t\t\t\t\tparts.push(width + 'x' + height);\n\t\t\t\t\t}\n\t\t\t\t\tmeta.textContent = parts.join(' \\u00b7 ');\n\n\t\t\t\t\tvar saveBtn = document.getElementById('compare-save-btn');\n\t\t\t\t\tsaveBtn.classList.remove('hidden');\n\t\t\t\t\tsaveBtn.setAttribute('hx-vals', JSON.stringify({url: url, type: imgType}));\n\t\t\t\t\thtmx.process(saveBtn);\n\n\t\t\t\t\tsection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });\n\t\t\t\t};\n\t\t\t})();\n\t\t</script></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1621,7 +1621,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var92 string
 			templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.search_providers"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1417, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1438, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
 			if templ_7745c5c3_Err != nil {
@@ -1639,7 +1639,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var93 string
 				templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, imageType))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1423, Col: 99}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1444, Col: 99}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var93)
 				if templ_7745c5c3_Err != nil {
@@ -1652,7 +1652,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var94 string
 				templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs(imageTypeLabel(imageType, data.ProfileName))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1428, Col: 53}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1449, Col: 53}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var94))
 				if templ_7745c5c3_Err != nil {
@@ -1670,7 +1670,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var95 string
 			templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/search", data.Artist.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1434, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1455, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var95)
 			if templ_7745c5c3_Err != nil {
@@ -1683,7 +1683,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var96 string
 			templ_7745c5c3_Var96, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.all"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1439, Col: 29}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1460, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var96))
 			if templ_7745c5c3_Err != nil {
@@ -1696,7 +1696,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var97 string
 			templ_7745c5c3_Var97, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.searching_providers"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1443, Col: 98}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1464, Col: 98}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var97))
 			if templ_7745c5c3_Err != nil {
@@ -1714,7 +1714,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var98 string
 			templ_7745c5c3_Var98, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.no_mbid_message"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1450, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1471, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var98))
 			if templ_7745c5c3_Err != nil {
@@ -1733,7 +1733,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var99 string
 			templ_7745c5c3_Var99, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.web_search_results"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1457, Col: 109}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1478, Col: 109}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var99))
 			if templ_7745c5c3_Err != nil {
@@ -1746,7 +1746,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var100 string
 			templ_7745c5c3_Var100, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.searching"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1458, Col: 128}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1479, Col: 128}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var100))
 			if templ_7745c5c3_Err != nil {
@@ -1764,7 +1764,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var101 string
 				templ_7745c5c3_Var101, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, imageType))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1465, Col: 102}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1486, Col: 102}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var101)
 				if templ_7745c5c3_Err != nil {
@@ -1777,7 +1777,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var102 string
 				templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.extend_type", imageTypeLabel(imageType, data.ProfileName)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1471, Col: 83}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1492, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var102))
 				if templ_7745c5c3_Err != nil {
@@ -1800,7 +1800,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var103 string
 		templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.current_images"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1481, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1502, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var103))
 		if templ_7745c5c3_Err != nil {
@@ -1833,7 +1833,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var104 string
 		templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.compare"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1490, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1511, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var104))
 		if templ_7745c5c3_Err != nil {
@@ -1887,7 +1887,7 @@ func imageSortBar(activeSort string) templ.Component {
 		var templ_7745c5c3_Var106 string
 		templ_7745c5c3_Var106, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.sort_by"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1503, Col: 82}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1524, Col: 82}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var106))
 		if templ_7745c5c3_Err != nil {
@@ -1900,7 +1900,7 @@ func imageSortBar(activeSort string) templ.Component {
 		var templ_7745c5c3_Var107 string
 		templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.sort_by"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1505, Col: 39}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1526, Col: 39}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var107)
 		if templ_7745c5c3_Err != nil {
@@ -1923,7 +1923,7 @@ func imageSortBar(activeSort string) templ.Component {
 		var templ_7745c5c3_Var108 string
 		templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.sort_likes"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1509, Col: 94}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1530, Col: 94}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var108))
 		if templ_7745c5c3_Err != nil {
@@ -1946,7 +1946,7 @@ func imageSortBar(activeSort string) templ.Component {
 		var templ_7745c5c3_Var109 string
 		templ_7745c5c3_Var109, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.sort_resolution"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1510, Col: 104}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1531, Col: 104}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var109))
 		if templ_7745c5c3_Err != nil {
@@ -1993,7 +1993,7 @@ func imageProviderStatusBanner(statuses []provider.ProviderImageStatus) templ.Co
 			var templ_7745c5c3_Var111 string
 			templ_7745c5c3_Var111, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.providers_skipped", skippedProviderNames(statuses)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1522, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1543, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var111))
 			if templ_7745c5c3_Err != nil {
@@ -2012,7 +2012,7 @@ func imageProviderStatusBanner(statuses []provider.ProviderImageStatus) templ.Co
 			var templ_7745c5c3_Var112 string
 			templ_7745c5c3_Var112, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.provider_errored", st.Provider.DisplayName(), st.Reason))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1527, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1548, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var112))
 			if templ_7745c5c3_Err != nil {
@@ -2064,7 +2064,7 @@ func ImageSearchResults(artistID string, images []provider.ImageResult, activeSo
 				var templ_7745c5c3_Var114 string
 				templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.no_providers_searched"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1539, Col: 99}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1560, Col: 99}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var114))
 				if templ_7745c5c3_Err != nil {
@@ -2082,7 +2082,7 @@ func ImageSearchResults(artistID string, images []provider.ImageResult, activeSo
 				var templ_7745c5c3_Var115 string
 				templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.no_images_from_providers"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1541, Col: 102}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1562, Col: 102}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var115))
 				if templ_7745c5c3_Err != nil {
@@ -2153,7 +2153,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var117 string
 				templ_7745c5c3_Var117, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.no_providers_searched"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1559, Col: 99}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1580, Col: 99}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var117))
 				if templ_7745c5c3_Err != nil {
@@ -2171,7 +2171,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var118 string
 				templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.no_fanart_from_providers"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1561, Col: 102}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1582, Col: 102}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var118))
 				if templ_7745c5c3_Err != nil {
@@ -2190,7 +2190,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 			var templ_7745c5c3_Var119 string
 			templ_7745c5c3_Var119, templ_7745c5c3_Err = templ.ResolveAttributeValue(artistID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1564, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1585, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var119)
 			if templ_7745c5c3_Err != nil {
@@ -2216,7 +2216,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var120 string
 				templ_7745c5c3_Var120, templ_7745c5c3_Err = templ.ResolveAttributeValue(img.URL)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1570, Col: 28}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1591, Col: 28}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var120)
 				if templ_7745c5c3_Err != nil {
@@ -2229,7 +2229,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var121 string
 				templ_7745c5c3_Var121, templ_7745c5c3_Err = templ.ResolveAttributeValue(img.Source)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1572, Col: 34}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1593, Col: 34}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var121)
 				if templ_7745c5c3_Err != nil {
@@ -2242,7 +2242,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var122 string
 				templ_7745c5c3_Var122, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(img.Width))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1573, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1594, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var122)
 				if templ_7745c5c3_Err != nil {
@@ -2255,7 +2255,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var123 string
 				templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(img.Height))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1574, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1595, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var123)
 				if templ_7745c5c3_Err != nil {
@@ -2268,7 +2268,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var124 string
 				templ_7745c5c3_Var124, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(img.Likes))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1575, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1596, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var124)
 				if templ_7745c5c3_Err != nil {
@@ -2281,7 +2281,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var125 string
 				templ_7745c5c3_Var125, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(img.Width * img.Height))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1576, Col: 58}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1597, Col: 58}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var125)
 				if templ_7745c5c3_Err != nil {
@@ -2294,7 +2294,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var126 string
 				templ_7745c5c3_Var126, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.Itoa(i))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1582, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1603, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var126)
 				if templ_7745c5c3_Err != nil {
@@ -2307,7 +2307,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var127 string
 				templ_7745c5c3_Var127, templ_7745c5c3_Err = templ.ResolveAttributeValue(img.URL)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1583, Col: 26}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1604, Col: 26}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var127)
 				if templ_7745c5c3_Err != nil {
@@ -2320,7 +2320,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var128 string
 				templ_7745c5c3_Var128, templ_7745c5c3_Err = templ.ResolveAttributeValue(img.URL)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1587, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1608, Col: 22}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var128)
 				if templ_7745c5c3_Err != nil {
@@ -2333,7 +2333,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var129 string
 				templ_7745c5c3_Var129, templ_7745c5c3_Err = templ.ResolveAttributeValue(string(img.Type) + " from " + img.Source)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1588, Col: 55}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1609, Col: 55}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var129)
 				if templ_7745c5c3_Err != nil {
@@ -2346,7 +2346,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var130 string
 				templ_7745c5c3_Var130, templ_7745c5c3_Err = templ.JoinStringErrs(provider.ProviderName(img.Source).DisplayName())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1598, Col: 58}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1619, Col: 58}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var130))
 				if templ_7745c5c3_Err != nil {
@@ -2364,7 +2364,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 					var templ_7745c5c3_Var131 string
 					templ_7745c5c3_Var131, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(img.Width))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1603, Col: 40}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1624, Col: 40}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var131))
 					if templ_7745c5c3_Err != nil {
@@ -2377,7 +2377,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 					var templ_7745c5c3_Var132 string
 					templ_7745c5c3_Var132, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(img.Height))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1603, Col: 69}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1624, Col: 69}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var132))
 					if templ_7745c5c3_Err != nil {
@@ -2396,7 +2396,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 					var templ_7745c5c3_Var133 string
 					templ_7745c5c3_Var133, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "image.likes_count", img.Likes))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1606, Col: 69}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1627, Col: 69}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var133))
 					if templ_7745c5c3_Err != nil {
@@ -2414,7 +2414,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var134 string
 				templ_7745c5c3_Var134, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("/api/v1/artists/%s/images/fetch", artistID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1616, Col: 74}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1637, Col: 74}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var134)
 				if templ_7745c5c3_Err != nil {
@@ -2427,7 +2427,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var135 string
 				templ_7745c5c3_Var135, templ_7745c5c3_Err = templ.ResolveAttributeValue(hxValsJSON(map[string]string{"url": img.URL, "type": "fanart"}))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1617, Col: 81}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1638, Col: 81}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var135)
 				if templ_7745c5c3_Err != nil {
@@ -2440,7 +2440,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var136 string
 				templ_7745c5c3_Var136, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.confirm_save_fanart"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1619, Col: 56}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1640, Col: 56}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var136)
 				if templ_7745c5c3_Err != nil {
@@ -2453,7 +2453,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var137 string
 				templ_7745c5c3_Var137, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.disabled_during_conflict"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1622, Col: 56}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1643, Col: 56}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var137)
 				if templ_7745c5c3_Err != nil {
@@ -2466,7 +2466,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 				var templ_7745c5c3_Var138 string
 				templ_7745c5c3_Var138, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.save"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1625, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1646, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var138))
 				if templ_7745c5c3_Err != nil {
@@ -2484,7 +2484,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 			var templ_7745c5c3_Var139 string
 			templ_7745c5c3_Var139, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.session_expired"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1634, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1655, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var139)
 			if templ_7745c5c3_Err != nil {
@@ -2497,7 +2497,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 			var templ_7745c5c3_Var140 string
 			templ_7745c5c3_Var140, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.network_error"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1635, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1656, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var140)
 			if templ_7745c5c3_Err != nil {
@@ -2510,7 +2510,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 			var templ_7745c5c3_Var141 string
 			templ_7745c5c3_Var141, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.save_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1636, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1657, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var141)
 			if templ_7745c5c3_Err != nil {
@@ -2523,7 +2523,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 			var templ_7745c5c3_Var142 string
 			templ_7745c5c3_Var142, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.save_partial"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1637, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1658, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var142)
 			if templ_7745c5c3_Err != nil {
@@ -2536,7 +2536,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult, activeS
 			var templ_7745c5c3_Var143 string
 			templ_7745c5c3_Var143, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.save_all"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1641, Col: 31}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1662, Col: 31}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var143))
 			if templ_7745c5c3_Err != nil {
@@ -2598,7 +2598,7 @@ func WebImageSearchResults(artistID string, images []provider.ImageResult, activ
 				var templ_7745c5c3_Var145 string
 				templ_7745c5c3_Var145, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.filter_ai_images_disabled"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1667, Col: 47}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1688, Col: 47}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var145))
 				if templ_7745c5c3_Err != nil {
@@ -2616,7 +2616,7 @@ func WebImageSearchResults(artistID string, images []provider.ImageResult, activ
 				var templ_7745c5c3_Var146 string
 				templ_7745c5c3_Var146, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.filter_ai_images_not_loaded"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1671, Col: 49}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1692, Col: 49}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var146))
 				if templ_7745c5c3_Err != nil {
@@ -2636,7 +2636,7 @@ func WebImageSearchResults(artistID string, images []provider.ImageResult, activ
 			var templ_7745c5c3_Var147 string
 			templ_7745c5c3_Var147, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.web_search_unavailable", webSearchProviderDisplayNames(unavailableProviders)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1677, Col: 97}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1698, Col: 97}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var147))
 			if templ_7745c5c3_Err != nil {
@@ -2654,7 +2654,7 @@ func WebImageSearchResults(artistID string, images []provider.ImageResult, activ
 			var templ_7745c5c3_Var148 string
 			templ_7745c5c3_Var148, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.no_images_from_web_search"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1680, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1701, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var148))
 			if templ_7745c5c3_Err != nil {
@@ -2672,7 +2672,7 @@ func WebImageSearchResults(artistID string, images []provider.ImageResult, activ
 			var templ_7745c5c3_Var149 string
 			templ_7745c5c3_Var149, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.web_search_warning"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1683, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1704, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var149))
 			if templ_7745c5c3_Err != nil {
@@ -2764,7 +2764,7 @@ func webSearchAIFilterToggle(artistID string, f WebSearchAIFilter, activeSort st
 		var templ_7745c5c3_Var151 string
 		templ_7745c5c3_Var151, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "image.filter_ai_images_refresh_failed"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1726, Col: 149}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1747, Col: 149}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var151)
 		if templ_7745c5c3_Err != nil {
@@ -2777,7 +2777,7 @@ func webSearchAIFilterToggle(artistID string, f WebSearchAIFilter, activeSort st
 		var templ_7745c5c3_Var152 string
 		templ_7745c5c3_Var152, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.filter_ai_images"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1727, Col: 115}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1748, Col: 115}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var152))
 		if templ_7745c5c3_Err != nil {
@@ -2803,7 +2803,7 @@ func webSearchAIFilterToggle(artistID string, f WebSearchAIFilter, activeSort st
 		var templ_7745c5c3_Var154 string
 		templ_7745c5c3_Var154, templ_7745c5c3_Err = templ.ResolveAttributeValue(webSearchAIFilterToggleID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1729, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1750, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var154)
 		if templ_7745c5c3_Err != nil {
@@ -2829,7 +2829,7 @@ func webSearchAIFilterToggle(artistID string, f WebSearchAIFilter, activeSort st
 		var templ_7745c5c3_Var156 string
 		templ_7745c5c3_Var156, templ_7745c5c3_Err = templ.ResolveAttributeValue(boolAttr(f.Filtered))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1733, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1754, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var156)
 		if templ_7745c5c3_Err != nil {
@@ -2842,7 +2842,7 @@ func webSearchAIFilterToggle(artistID string, f WebSearchAIFilter, activeSort st
 		var templ_7745c5c3_Var157 string
 		templ_7745c5c3_Var157, templ_7745c5c3_Err = templ.ResolveAttributeValue(ruleToggleBtnClasses(true))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1735, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1756, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var157)
 		if templ_7745c5c3_Err != nil {
@@ -2855,7 +2855,7 @@ func webSearchAIFilterToggle(artistID string, f WebSearchAIFilter, activeSort st
 		var templ_7745c5c3_Var158 string
 		templ_7745c5c3_Var158, templ_7745c5c3_Err = templ.ResolveAttributeValue(ruleToggleBtnClasses(false))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1736, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1757, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var158)
 		if templ_7745c5c3_Err != nil {
@@ -2868,7 +2868,7 @@ func webSearchAIFilterToggle(artistID string, f WebSearchAIFilter, activeSort st
 		var templ_7745c5c3_Var159 string
 		templ_7745c5c3_Var159, templ_7745c5c3_Err = templ.ResolveAttributeValue(ruleToggleKnobClasses(true))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1737, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1758, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var159)
 		if templ_7745c5c3_Err != nil {
@@ -2881,7 +2881,7 @@ func webSearchAIFilterToggle(artistID string, f WebSearchAIFilter, activeSort st
 		var templ_7745c5c3_Var160 string
 		templ_7745c5c3_Var160, templ_7745c5c3_Err = templ.ResolveAttributeValue(ruleToggleKnobClasses(false))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1738, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 1759, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var160)
 		if templ_7745c5c3_Err != nil {
