@@ -12,6 +12,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/logging"
+	"github.com/sydlexius/stillwater/internal/provider"
 )
 
 // The rate-limited background sweep that drives the resolver (#2810).
@@ -523,6 +524,12 @@ func (s *Sweep) runOnce(ctx context.Context, failureMsg string) {
 // goroutine only. Start satisfies that; a second caller would race.
 func (s *Sweep) Run(ctx context.Context) (Counters, error) {
 	var c Counters
+
+	// Say why every provider call in this pass is made. Enrich rather than
+	// replace, so a caller that already named a class (a future "run now"
+	// endpoint) keeps it and only gains the detail. The resolver's log lines
+	// read this back through provider.CauseAttr.
+	ctx = provider.EnrichCause(ctx, provider.CauseClassSweep, "mbid_revalidate")
 
 	population, err := s.population.ListMBIDPopulation(ctx)
 	if err != nil {

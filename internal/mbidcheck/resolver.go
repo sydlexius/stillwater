@@ -436,7 +436,7 @@ func (r *Resolver) Resolve(ctx context.Context, a *artist.Artist) (Result, error
 		// as the other anomalies. The same attribute set as a normal line, plus
 		// the validation error, so the two are greppable together.
 		r.logger.Error("mbid re-validation built an invalid verdict",
-			append(r.logAttrs(res), slog.String("error", err.Error()))...)
+			append(r.logAttrs(ctx, res), slog.String("error", err.Error()))...)
 		return Result{}, fmt.Errorf("mbidcheck: built an invalid verdict for artist %s: %w", a.ID, err)
 	}
 	// A verdict that is transient AND arrived on a context that has since been
@@ -448,7 +448,7 @@ func (r *Resolver) Resolve(ctx context.Context, a *artist.Artist) (Result, error
 	// Narrowed to transient verdicts on purpose: a real FAILED finding that
 	// happened to land as the sweep was stopping is still a finding, and must
 	// keep its level.
-	r.log(res, res.Transient && isCanceled(ctx.Err()))
+	r.log(ctx, res, res.Transient && isCanceled(ctx.Err()))
 	return res, nil
 }
 
@@ -719,8 +719,8 @@ func (r *Resolver) notCheckable(a *artist.Artist, mbid string, reason artist.MBI
 // remaining artist would make a routine shutdown read as a library-wide
 // outage. The verdict itself is unchanged -- it is still transient, so it is
 // still never persisted -- only the level a reader is asked to care about.
-func (r *Resolver) log(res Result, duringShutdown bool) {
-	attrs := r.logAttrs(res)
+func (r *Resolver) log(ctx context.Context, res Result, duringShutdown bool) {
+	attrs := r.logAttrs(ctx, res)
 
 	if duringShutdown {
 		r.logger.Debug("mbid re-validation abandoned a check during shutdown", attrs...)
@@ -746,7 +746,7 @@ func (r *Resolver) log(res Result, duringShutdown bool) {
 // Shared with Resolve's rejected-verdict line rather than duplicated there, so
 // a field added here reaches both surfaces and the two lines stay greppable by
 // the same keys.
-func (r *Resolver) logAttrs(res Result) []any {
+func (r *Resolver) logAttrs(ctx context.Context, res Result) []any {
 	attrs := []any{
 		slog.String("artist_id", res.Validation.ArtistID),
 		slog.String("mbid", res.Validation.MBID),
@@ -758,6 +758,10 @@ func (r *Resolver) logAttrs(res Result) []any {
 		slog.Int("name_similarity_percent", res.NameScorePercent),
 		slog.Bool("transient", res.Transient),
 		slog.String("detail", res.Validation.Detail),
+		// Why this check ran (for the sweep, "sweep:mbid_revalidate"). CauseAttr
+		// is the single owner of the "unattributed" marker, so a Resolve call on
+		// a bare context logs that marker rather than a blank or no attribute.
+		provider.CauseAttr(ctx),
 	}
 	if res.Validation.CatalogueMatchPercent != nil {
 		attrs = append(attrs, slog.Float64("catalogue_match_percent", *res.Validation.CatalogueMatchPercent))
