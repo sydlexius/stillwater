@@ -2897,9 +2897,12 @@ paths:
         to login and admin creation. CSRF-exempt (entry point: no session
         exists yet to attach a token to).
 
-        On success the response sets `HX-Redirect` (HTMX) or includes a
-        `redirect` field (JSON) pointing at the root so the user signs in
-        with the restored credentials.
+        On success a JSON response includes a `redirect` field pointing at
+        the root so the user signs in with the restored credentials. A clean
+        HTMX restore sets `HX-Redirect` to the same place. An HTMX restore
+        that dropped rows sets no `HX-Redirect`: it returns the dropped-rows
+        notice and a manual continue link instead, so the notice is not lost
+        to an instant redirect.
       security: []
       operationId: setupRestore
       requestBody:
@@ -2921,19 +2924,23 @@ paths:
         "200":
           description: |
             Restore applied. JSON clients receive `redirect` in the response
-            body and navigate themselves. HTMX clients receive a generic HTML
-            fragment plus an `HX-Redirect` response header, which HTMX
-            consumes to drive the browser to the post-restore sign-in page.
+            body and navigate themselves. HTMX clients receive an HTML
+            fragment. After a clean restore it comes with an `HX-Redirect`
+            response header, which HTMX consumes to drive the browser to the
+            post-restore sign-in page. After a restore that dropped rows the
+            fragment is the dropped-rows notice plus a manual continue link,
+            and no `HX-Redirect` header is set.
           headers:
             HX-Redirect:
               schema:
                 type: string
               description: |
-                Present on responses to HTMX requests (HX-Request: true with
-                an Accept header that does not include application/json).
-                HTMX follows this URL after the swap completes. Absent on
-                JSON responses; clients use the body's `redirect` field
-                instead.
+                Present on clean-restore responses to HTMX requests
+                (HX-Request: true with an Accept header that does not include
+                application/json). HTMX follows this URL after the swap
+                completes. Absent when the restore dropped rows (the fragment
+                carries a manual continue link instead) and on JSON
+                responses; JSON clients use the body's `redirect` field.
           content:
             application/json:
               schema:
@@ -2960,9 +2967,13 @@ paths:
               schema:
                 type: string
                 description: |
-                  HTMX swap fragment returned alongside the `HX-Redirect`
-                  header so the OOBE wizard's container can show a brief
-                  "Restoring..." copy while the browser navigates.
+                  HTMX swap fragment. After a clean restore it is returned
+                  alongside the `HX-Redirect` header so the OOBE wizard's
+                  container can show a brief confirmation while the browser
+                  navigates. After a restore that dropped rows it is the
+                  dropped-rows notice plus a continue link ("Continue to sign
+                  in" when a user was restored, otherwise "Continue"), with no
+                  `HX-Redirect` header.
         "400":
           description: Invalid request or client-side restore error (missing file/passphrase, malformed multipart body, wrong passphrase, corrupt envelope, or unsupported envelope version)
           content:

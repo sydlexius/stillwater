@@ -222,6 +222,28 @@ templ ArtworkManageEditor(data ImageSearchData) {
 			statusEl.replaceChildren(s);
 		}
 
+		// #2511: thin wrappers over the layout's swCaptureOpener /
+		// swRestoreOpener (field_provider_modal.templ) that fail loudly if
+		// the helpers are missing instead of silently skipping focus restore.
+		// Used by the crop dialog only; the fetch-from-URL block below keeps
+		// its own pair because it is a separate script scope.
+		function captureDialogOpener() {
+			if (typeof window.swCaptureOpener !== 'function') {
+				console.error('swCaptureOpener unavailable; dialog focus will not be restored on close');
+				return null;
+			}
+			return window.swCaptureOpener();
+		}
+		function restoreDialogOpener(op) {
+			if (typeof window.swRestoreOpener !== 'function') {
+				console.error('swRestoreOpener unavailable; dialog focus not restored on close');
+				return;
+			}
+			window.swRestoreOpener(op);
+		}
+		// _cropOpener is the element that had focus when the crop dialog
+		// opened (#2511); closeCropModal returns focus to it.
+		var _cropOpener = null;
 		// openCropModal opens the crop dialog for imgSrc. slot (optional) is
 		// the explicit fanart slot (#2281 QOL #48) this crop should persist
 		// to; stashed on the modal so saveCroppedImage can thread it into the
@@ -256,6 +278,11 @@ templ ArtworkManageEditor(data ImageSearchData) {
 			}
 			var saveBtn = document.getElementById('crop-save-btn');
 			if (saveBtn) saveBtn.disabled = false;
+			// #2511: move focus into the dialog (it was left on the
+			// trigger behind the overlay). Remember the opener only for a
+			// fresh open, not a re-open while already showing.
+			if (!_cropOpener) _cropOpener = captureDialogOpener();
+			cropType.focus();
 			// Clear the global cropper ref BEFORE the new cropImage.onload
 			// fires, otherwise saveCroppedImage's `if (!window._cropper)`
 			// readiness guard sees a truthy reference to the previous (now
@@ -341,6 +368,10 @@ templ ArtworkManageEditor(data ImageSearchData) {
 			// saveCroppedImage sees a clean state next time.
 			window._cropper = null;
 			_cropDirty = false;
+			// #2511: return focus to whatever opened the crop dialog.
+			var opener = _cropOpener;
+			_cropOpener = null;
+			restoreDialogOpener(opener);
 		}
 		// guardedCloseCropModal is the discard-guard entry point (#2281 QOL
 		// #48, widened for #2323): the header X, footer Cancel, and backdrop
@@ -369,6 +400,19 @@ templ ArtworkManageEditor(data ImageSearchData) {
 				closeCropModal();
 			});
 		}
+		// #2511: Escape inside the crop dialog takes the same discard-guarded
+		// path as Cancel. Scoped to key events inside the dialog so the
+		// confirm dialog it may raise keeps its own Escape.
+		// Registered once per page: this fragment is re-evaluated on every HTMX
+		// swap (artwork modal kind switch), so drop the previous handler first.
+		if (window._swCropEscape) document.removeEventListener('keydown', window._swCropEscape);
+		window._swCropEscape = function(e) {
+			if (e.key !== 'Escape' || !e.target || !e.target.closest || !e.target.closest('#crop-modal')) return;
+			var modal = document.getElementById('crop-modal');
+			if (!modal || modal.classList.contains('hidden')) return;
+			guardedCloseCropModal();
+		};
+		document.addEventListener('keydown', window._swCropEscape);
 		function setCropRatio(ratio) {
 			_currentRatio = ratio;
 			var lockCb = document.getElementById('crop-lock-ratio');
@@ -1013,9 +1057,9 @@ templ imageSearchContextualized(data ImageSearchData) {
 			class="hidden"
 		/>
 		// -- Fetch from URL modal --
-		<div id="fetch-url-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+		<div id="fetch-url-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="dialog" aria-modal="true" aria-labelledby="fetch-url-modal-title">
 			<div class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow-xl w-full max-w-md mx-4">
-				<h3 class="text-lg font-semibold mb-4">{ t(ctx, "image.fetch_from_url") }</h3>
+				<h3 id="fetch-url-modal-title" class="text-lg font-semibold mb-4">{ t(ctx, "image.fetch_from_url") }</h3>
 				<input
 					type="url"
 					id="fetch-url-input"
@@ -1194,22 +1238,77 @@ templ imageSearchContextualized(data ImageSearchData) {
 						if (trigger) trigger.setAttribute('aria-expanded', 'false');
 					}
 				}
+				// #2511: the modal is parsed while `hidden` and revealed by a
+				// class toggle, so `autofocus` never fires; focus the input
+				// explicitly once it is displayed. The opener is remembered so
+				// closing returns focus to it (the display change is
+				// synchronous, so no timer is needed).
+				// This block is its own script scope (the crop block's
+				// captureDialogOpener / restoreDialogOpener are not reachable
+				// when this block is evaluated alone, as the unit test does),
+				// so it carries its own fail-loud wrappers over the layout's
+				// window.swCaptureOpener / window.swRestoreOpener.
+				function captureDialogOpener() {
+					if (typeof window.swCaptureOpener !== 'function') {
+						console.error('swCaptureOpener unavailable; fetch-from-URL dialog focus will not be restored on close');
+						return null;
+					}
+					return window.swCaptureOpener();
+				}
+				function restoreDialogOpener(op) {
+					if (typeof window.swRestoreOpener !== 'function') {
+						console.error('swRestoreOpener unavailable; fetch-from-URL dialog focus not restored on close');
+						return;
+					}
+					window.swRestoreOpener(op);
+				}
+				var _fetchUrlOpener = null;
+				function focusFetchUrlInput(input) {
+					if (!input) {
+						console.error('fetch-url-input missing; cannot move focus into the fetch-from-URL dialog');
+						return;
+					}
+					input.focus();
+				}
+				function restoreFetchUrlOpener() {
+					var opener = _fetchUrlOpener;
+					_fetchUrlOpener = null;
+					restoreDialogOpener(opener);
+				}
 				window.swOpenFetchUrlModal = function() {
 					_fetchUrlSlot = null;
+					_fetchUrlOpener = captureDialogOpener();
 					var input = document.getElementById('fetch-url-input');
 					if (input) input.value = '';
 					document.getElementById('fetch-url-modal').classList.remove('hidden');
+					focusFetchUrlInput(input);
 				};
 				window.swCloseFetchUrlModal = function() {
 					_fetchUrlSlot = null;
 					document.getElementById('fetch-url-modal').classList.add('hidden');
+					restoreFetchUrlOpener();
 				};
+				// #2511: Escape closes the dialog through the same path as Cancel
+				// (clears the slot target, restores focus). Only reacts when the
+				// key was pressed inside the dialog, so a confirm dialog layered
+				// above it keeps its own Escape.
+				// Same once-per-page rule as the crop handler above.
+				if (window._swFetchUrlEscape) document.removeEventListener('keydown', window._swFetchUrlEscape);
+				window._swFetchUrlEscape = function(e) {
+					if (e.key !== 'Escape' || !e.target || !e.target.closest || !e.target.closest('#fetch-url-modal')) return;
+					var m = document.getElementById('fetch-url-modal');
+					if (!m || m.classList.contains('hidden')) return;
+					window.swCloseFetchUrlModal();
+				};
+				document.addEventListener('keydown', window._swFetchUrlEscape);
 				window.swOpenFetchUrlForSlot = function(slot) {
 					swCloseAnyOpenContextMenu();
 					_fetchUrlSlot = slot;
+					_fetchUrlOpener = captureDialogOpener();
 					var input = document.getElementById('fetch-url-input');
 					if (input) input.value = '';
 					document.getElementById('fetch-url-modal').classList.remove('hidden');
+					focusFetchUrlInput(input);
 				};
 				// swOpenCropForSlot opens the crop modal directly on a saved
 				// backdrop slot's same-origin file (no staging needed: it is
@@ -1238,6 +1337,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 					var fetchType = (slot !== null) ? 'fanart' : imageType;
 					setStatus(container.dataset.msgFetching, 'text-gray-500');
 					modal.classList.add('hidden');
+					restoreFetchUrlOpener();
 					var reqBody = {url: url, type: fetchType};
 					if (slot !== null) reqBody.slot = slot;
 					fetch(bp + '/api/v1/artists/' + artistID + '/images/fetch', {

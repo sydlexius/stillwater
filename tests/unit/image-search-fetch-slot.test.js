@@ -122,9 +122,23 @@ const FIXTURE_HTML = `<!doctype html><html><body>
 </div>
 </body></html>`;
 
-function loadDom() {
+// installOpenerHelpers stands in for the layout's swCaptureOpener /
+// swRestoreOpener (web/components/field_provider_modal.templ), which the
+// isolated eval of this block never loads. The existing tests below therefore
+// run with the helpers PRESENT and no longer exercise the missing-helper
+// branch; the #2511 cases at the end of the file cover that branch explicitly
+// with { helpers: false }.
+function installOpenerHelpers(win) {
+  win.swCaptureOpener = () => ({ el: win.document.activeElement });
+  win.swRestoreOpener = (op) => { if (op && op.el) op.el.focus(); };
+}
+
+function loadDom({ helpers = true } = {}) {
   const scriptPath = writeScriptToTempFile();
-  return createDom({ html: FIXTURE_HTML, modules: [scriptPath] });
+  const dom = createDom({ html: FIXTURE_HTML, modules: [] });
+  if (helpers) installOpenerHelpers(dom.window);
+  dom.window.eval(readFileSync(scriptPath, 'utf-8'));
+  return dom;
 }
 
 // submitAndCaptureBody arms the fetch-url-input with a URL, clicks Submit,
@@ -392,5 +406,34 @@ describe('image_search.templ Actions menu: swOpenFetchUrlForSlot / swOpenCropFor
     const after = unrelatedSheetState(dom);
     assert.equal(after.hidden, false, 'swOpenCropForSlot must NOT add .hidden to an unrelated bottom sheet');
     assert.equal(after.sheetOpen, true, 'the unrelated sheet must remain open');
+  });
+});
+
+// #2511: focus capture/restore around the fetch-from-URL dialog. The script
+// block is evaluated alone, so the fail-loud wrappers must live inside it.
+describe('image_search.templ fetch-url-modal: opener focus capture/restore (#2511)', () => {
+  it('with the helpers present, the slot open captures the opener and Cancel restores focus to it', () => {
+    const dom = loadDom();
+    const doc = dom.window.document;
+    const opener = doc.getElementById('menu-fetch-btn');
+    opener.focus();
+    assert.equal(doc.activeElement, opener, 'precondition: opener is focused');
+    dom.window.swOpenFetchUrlForSlot(1);
+    assert.equal(doc.activeElement, doc.getElementById('fetch-url-input'), 'opening moves focus into the input');
+    dom.window.swCloseFetchUrlModal();
+    assert.equal(doc.activeElement, opener, 'Cancel returns focus to the captured opener');
+  });
+
+  it('with the helpers absent, open and Cancel still work and the failure is logged, not thrown', () => {
+    const dom = loadDom({ helpers: false });
+    const errors = [];
+    dom.window.console.error = (...a) => errors.push(a.join(' '));
+    const modal = dom.window.document.getElementById('fetch-url-modal');
+    dom.window.swOpenFetchUrlForSlot(1);
+    assert.ok(!modal.classList.contains('hidden'), 'modal opens without the helpers');
+    dom.window.swCloseFetchUrlModal();
+    assert.ok(modal.classList.contains('hidden'), 'modal closes without the helpers');
+    assert.ok(errors.some(e => e.includes('swCaptureOpener unavailable')), 'missing capture helper is logged');
+    assert.ok(errors.some(e => e.includes('swRestoreOpener unavailable')), 'missing restore helper is logged');
   });
 });

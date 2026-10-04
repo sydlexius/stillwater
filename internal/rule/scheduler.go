@@ -187,6 +187,9 @@ func (s *Scheduler) Status() SchedulerStatus {
 
 func (s *Scheduler) runEnabledRules(ctx context.Context) {
 	s.logger.Info("rule scheduler running evaluation")
+	// #2784: provider calls made under this tick are attributed to the
+	// schedule; the fixer adds which rule.
+	ctx = provider.WithCause(ctx, provider.Cause{Class: provider.CauseClassScheduled})
 
 	// Inject language preferences for language-aware rules (#1139). The
 	// HTTP path populates these from middleware.UserIDFromContext, which

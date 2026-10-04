@@ -238,8 +238,11 @@ const maxShownRejectedKeys = 10
 // importDropWarning renders an amber notice listing every row the import
 // dropped, skipped or rejected (#3012), so a partial restore cannot read as a
 // complete one. It returns "" when nothing was dropped, leaving the summary
-// unchanged. Rejected key names come from the uploaded file (untrusted), so
-// each is HTML-escaped before it is written into the fragment.
+// unchanged. It carries no live region of its own: the swap target
+// (#import-result, #setup-restore-result) is the polite live region, and a
+// nested role="status" would announce the notice twice. Rejected key names
+// come from the uploaded file (untrusted), so each is HTML-escaped before it
+// is written into the fragment.
 func importDropWarning(result *settingsio.ImportResult) string {
 	// "Label: N" reads correctly for 1 and for many, so no plural handling.
 	var items []string
@@ -278,7 +281,7 @@ func importDropWarning(result *settingsio.ImportResult) string {
 	if len(items) == 0 {
 		return ""
 	}
-	return `<div role="status" class="mt-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">` +
+	return `<div data-import-drops class="mt-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">` +
 		`Import completed with dropped rows:<ul class="list-disc pl-5">` +
 		"<li>" + strings.Join(items, "</li><li>") + "</li></ul></div>"
 }

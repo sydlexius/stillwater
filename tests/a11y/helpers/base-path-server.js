@@ -68,7 +68,10 @@ async function waitForHealth(baseURL, deadlineMs) {
 
 /**
  * startBasePathServer boots an isolated Stillwater instance under basePath
- * (e.g. "/sw-basepath-test") and returns { baseURL, csrfToken, sessionCookie, stop }.
+ * (e.g. "/sw-basepath-test") and returns { baseURL, rootURL, csrfToken,
+ * sessionCookie, stop }. With opts.skipBootstrap it returns only
+ * { baseURL, rootURL, stop }: no admin exists, so there is no csrfToken or
+ * sessionCookie.
  *
  * baseURL already includes the base path prefix (e.g.
  * "http://127.0.0.1:54321/sw-basepath-test"), so callers can navigate/fetch
@@ -153,6 +156,12 @@ export async function startBasePathServer(basePath, opts = {}) {
     } catch (err) {
       const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : '(no log)';
       throw new Error(`${err.message}\nexited=${exited}\nserver log:\n${log}`);
+    }
+
+    // opts.skipBootstrap leaves the server FRESH: no admin, onboarding not
+    // complete, so the first-run setup page (and its restore form) is served.
+    if (opts.skipBootstrap) {
+      return { baseURL, rootURL, stop: cleanup };
     }
 
     // Bootstrap: CSRF cookie from health, admin account, session cookie,

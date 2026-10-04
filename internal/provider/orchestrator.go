@@ -454,6 +454,7 @@ func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs
 	if err != nil {
 		return nil, err
 	}
+	cause := causeAttr(ctx)
 
 	for _, p := range providers {
 		name := p.Name()
@@ -465,7 +466,8 @@ func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs
 			// lookup: it cannot be queried at all. Report the skip instead of
 			// silently dropping it (issue #2457).
 			o.logger.Debug("provider skipped: no provider-specific ID",
-				slog.String("provider", string(name)))
+				slog.String("provider", string(name)),
+				cause)
 			result.ImageProviderStatuses = append(result.ImageProviderStatuses, ProviderImageStatus{
 				Provider: name,
 				Outcome:  ImageOutcomeSkipped,
@@ -479,7 +481,8 @@ func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs
 			if errors.As(err, &notFound) {
 				o.logger.Debug("provider has no images for artist",
 					slog.String("provider", string(name)),
-					slog.String("id", id))
+					slog.String("id", id),
+					cause)
 				// Not-found is a genuine "queried, found nothing", not a failure.
 				result.ImageProviderStatuses = append(result.ImageProviderStatuses, ProviderImageStatus{
 					Provider: name,
@@ -491,7 +494,8 @@ func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs
 			o.logger.Warn("provider image fetch failed",
 				slog.String("provider", string(name)),
 				slog.String("error", scrubbed),
-				retryAfterAttr(err))
+				retryAfterAttr(err),
+				cause)
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: image fetch failed", name))
 			result.ImageProviderStatuses = append(result.ImageProviderStatuses, ProviderImageStatus{
 				Provider: name,
@@ -526,6 +530,7 @@ func (o *Orchestrator) Search(ctx context.Context, name string) ([]ArtistSearchR
 	if err != nil {
 		return nil, err
 	}
+	cause := causeAttr(ctx)
 
 	for _, p := range providers {
 		results, err := p.SearchArtist(ctx, name)
@@ -533,7 +538,8 @@ func (o *Orchestrator) Search(ctx context.Context, name string) ([]ArtistSearchR
 			o.logger.Warn("provider search failed",
 				slog.String("provider", string(p.Name())),
 				slog.String("error", ScrubError(err)),
-				retryAfterAttr(err))
+				retryAfterAttr(err),
+				cause)
 			// Only signal AIMD on rate-limit / provider-unavailable errors.
 			// Ordinary errors (not-found, auth, JSON parse) are not AIMD signals.
 			if o.aimd != nil && IsRateLimitError(err) {
@@ -1092,6 +1098,7 @@ func (o *Orchestrator) FetchFieldFromProviders(ctx context.Context, mbid, name, 
 	var mu sync.Mutex
 	cache := make(map[ProviderName]*ProviderResult)
 	var results []FieldProviderResult
+	cause := causeAttr(ctx)
 
 	for _, provName := range providers {
 		pr := o.getProviderResult(ctx, provName, mbid, name, providerIDs, cache, &mu)
@@ -1110,7 +1117,8 @@ func (o *Orchestrator) FetchFieldFromProviders(ctx context.Context, mbid, name, 
 			o.logger.Warn("provider image fetch failed for comparison",
 				slog.String("provider", string(provName)),
 				slog.String("field", field),
-				slog.String("error", ScrubError(pr.imageErr)))
+				slog.String("error", ScrubError(pr.imageErr)),
+				cause)
 			fpr.Error = "image fetch failed"
 		} else if pr.meta != nil {
 			extractFieldForComparison(&fpr, field, pr.meta)
@@ -1358,6 +1366,9 @@ func (o *Orchestrator) SearchForLinking(ctx context.Context, name string, provid
 	// banner up with the provider the operator configured.
 	perResults := make([][]ArtistSearchResult, len(queried))
 	perStatus := make([]ProviderSearchStatus, len(queried))
+	// Read before the fan-out so every provider goroutine reports the one
+	// cause this search was started for.
+	cause := causeAttr(ctx)
 
 	var wg sync.WaitGroup
 	for i := range queried {
@@ -1376,7 +1387,8 @@ func (o *Orchestrator) SearchForLinking(ctx context.Context, name string, provid
 					o.logger.Error("provider search panicked",
 						slog.String("provider", string(names[i])),
 						slog.Any("panic", v),
-						slog.String("stack", string(debug.Stack())))
+						slog.String("stack", string(debug.Stack())),
+						cause)
 					// Fill the slot: a zero-valued status carries an EMPTY
 					// provider name, so the row would render as an unnamed
 					// provider that quietly matched nothing. Report it as
@@ -1404,7 +1416,8 @@ func (o *Orchestrator) SearchForLinking(ctx context.Context, name string, provid
 				o.logger.Warn("provider search failed",
 					slog.String("provider", string(names[i])),
 					slog.String("error", scrubbed),
-					retryAfterAttr(err))
+					retryAfterAttr(err),
+					cause)
 				perStatus[i] = ProviderSearchStatus{
 					Provider:        names[i],
 					Errored:         true,

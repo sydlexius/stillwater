@@ -16,6 +16,7 @@ import (
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/logging"
 	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/publish"
 )
 
@@ -2234,6 +2235,11 @@ func orderForDispatch(p *Pipeline, violations []Violation) []Violation {
 
 // attemptFix tries each registered fixer for the violation.
 func (p *Pipeline) attemptFix(ctx context.Context, a *artist.Artist, v *Violation) *FixResult {
+	// #2784: every provider call a fixer makes is attributed to the rule being
+	// fixed. Set here because this is the one point every fix path converges
+	// on (FixViolation, the auto path, manual candidate discovery). An outer
+	// trigger's class is kept: a scheduled tick reads "scheduled:rule:<id>".
+	ctx = provider.EnrichCause(ctx, provider.CauseClassRule, v.RuleID)
 	// If a conflict gate is installed, refuse to run auto-fixers whose
 	// category would land a file on disk (image, nfo) while write-back or
 	// round-trip gating is active. The violation is kept open so the user

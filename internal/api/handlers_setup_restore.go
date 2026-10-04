@@ -37,8 +37,9 @@ import (
 // Rate-limiting is wired at the router (loginRL) so brute-forcing the
 // passphrase against this endpoint is throttled the same way as login.
 //
-// On success the response carries an HX-Redirect to the root path so the
-// user signs in with the restored credentials.
+// On a clean success an HTMX response carries an HX-Redirect to the root path
+// so the user signs in with the restored credentials. When the restore dropped
+// rows it instead renders the notice and a manual continue link (#3012).
 //
 // POST /api/v1/setup/restore (multipart form: file, passphrase)
 func (r *Router) handleSetupRestore(w http.ResponseWriter, req *http.Request) {
@@ -118,13 +119,30 @@ func (r *Router) handleSetupRestore(w http.ResponseWriter, req *http.Request) {
 		"user_preferences_skipped", result.UserPreferencesSkipped,
 		"users_skipped", result.UsersSkipped,
 	}
-	if importDropWarning(result) != "" {
+	dropNotice := importDropWarning(result)
+	if dropNotice != "" {
 		r.logger.Warn("setup restore complete with dropped rows", attrs...)
 	} else {
 		r.logger.Info("setup restore complete", attrs...)
 	}
 
 	loginPath := r.basePath + "/"
+	if req.Header.Get("HX-Request") == "true" && dropNotice != "" {
+		// A partial restore must not vanish behind an instant redirect (#3012):
+		// show the notice and let the operator continue to sign in themselves.
+		// No state is carried across a redirect on this unauthenticated endpoint.
+		w.Header().Set("Content-Type", "text/html")
+		// "Continue to sign in" is only honest when a user was restored; with
+		// none, the root path lands back on setup.
+		label := "Continue"
+		if result.UsersImported > 0 {
+			label = "Continue to sign in"
+		}
+		fmt.Fprintf(w, `<div class="text-sm text-green-800 dark:text-green-400">Restore complete.</div>%s`+ //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
+			`<a href="%s" id="setup-restore-continue" class="mt-3 inline-block text-sm font-semibold text-blue-800 dark:text-blue-300 underline">%s</a>`,
+			dropNotice, html.EscapeString(loginPath), label)
+		return
+	}
 	if req.Header.Get("HX-Request") == "true" {
 		w.Header().Set("HX-Redirect", loginPath)
 		w.Header().Set("Content-Type", "text/html")
@@ -166,11 +184,11 @@ func (r *Router) handleSetupRestore(w http.ResponseWriter, req *http.Request) {
 // is also present.
 func (r *Router) writeRestoreErr(w http.ResponseWriter, req *http.Request, status int, msg string) {
 	if !acceptsJSON(req) && req.Header.Get("HX-Request") == "true" {
-		// WriteHeader must precede the body write or net/http promotes
-		// the implicit 200 to the wire status; HTMX swap-on-error then
-		// silently treats the error fragment as a successful render.
+		// HTMX does not swap non-2xx responses, so a 4xx/5xx here left
+		// #setup-restore-result empty and the failure silent (#3012). Answer
+		// 200 with the red fragment, as the settings import handler does;
+		// JSON callers keep the real status below.
 		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(status)
 		fmt.Fprintf(w, `<div class="text-sm text-red-600 dark:text-red-400">%s</div>`, html.EscapeString(msg)) //nolint:errcheck // Best-effort write to HTTP response; client disconnect mid-write is not actionable
 		return
 	}
