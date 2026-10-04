@@ -763,6 +763,7 @@ components:
             settings_rejected_keys: { type: array, items: { type: string } }
             settings_renamed: { type: integer }
             settings_renamed_dropped: { type: integer }
+            connection_features_ignored: { type: integer }
             rules_skipped: { type: integer }
             scraper_configs_skipped: { type: integer }
             user_preferences_skipped: { type: integer }
@@ -882,6 +883,34 @@ components:
                 DISCARDED because the envelope also carried the current name,
                 which wins. Counted separately from settings_renamed because
                 the operator loses a value here (the staler of the two).
+            connection_features_ignored:
+              type: integer
+              description: >
+                Import-result counter; the export writer does not emit it.
+                Per-feature connection toggles ignored on import because the
+                connection type does not support them.
+            rules_skipped:
+              type: integer
+              description: >
+                Import-result counter; the export writer does not emit it.
+                Rule entries not applied on import (empty id, id unknown to
+                the instance, or invalid automation mode).
+            scraper_configs_skipped:
+              type: integer
+              description: >
+                Import-result counter; the export writer does not emit it.
+                Scraper configs skipped on import because they had no scope.
+            user_preferences_skipped:
+              type: integer
+              description: >
+                Import-result counter; the export writer does not emit it.
+                Preference rows (not users) skipped on import because their
+                user was not found on the instance.
+            users_skipped:
+              type: integer
+              description: >
+                Import-result counter; the export writer does not emit it.
+                User rows skipped on import because they had no username.
     RegistryRepairBanner:
       type: object
       description: Cached registry-repair detector result (#2678).
