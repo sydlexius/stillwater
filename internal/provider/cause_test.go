@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/logging/logtest"
 )
@@ -82,6 +83,18 @@ func TestCause_AbsentIsZeroAndEnrichPreservesOuterClass(t *testing.T) {
 		{"a second rule replaces the first, it does not stack",
 			EnrichCause(EnrichCause(scheduled, CauseClassRule, "nfo_exists"), CauseClassRule, "bio_exists"),
 			Cause{Class: CauseClassScheduled, Detail: "rule:bio_exists"}},
+		{"same class as the existing cause replaces the detail, it does not nest",
+			EnrichCause(EnrichCause(bg, CauseClassRule, "A"), CauseClassRule, "B"),
+			Cause{Class: CauseClassRule, Detail: "B"}},
+		{"same class, empty detail: the existing detail is kept",
+			EnrichCause(WithCause(bg, Cause{Class: CauseClassScan, Detail: "full"}), CauseClassScan, ""),
+			Cause{Class: CauseClassScan, Detail: "full"}},
+		{"same class, outer detail is itself a nested cause: replaced",
+			EnrichCause(WithCause(bg, Cause{Class: CauseClassRule, Detail: "rule:X"}), CauseClassRule, "B"),
+			Cause{Class: CauseClassRule, Detail: "B"}},
+		{"same class, empty detail on a bare outer: stays class-only",
+			EnrichCause(WithCause(bg, Cause{Class: CauseClassScan}), CauseClassScan, ""),
+			Cause{Class: CauseClassScan}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -89,6 +102,9 @@ func TestCause_AbsentIsZeroAndEnrichPreservesOuterClass(t *testing.T) {
 				t.Errorf("cause = %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+	if got := CauseFromContext(EnrichCause(WithCause(bg, Cause{Class: CauseClassScan}), CauseClassScan, "")).String(); got != "scan" {
+		t.Errorf("bare same-class enrich renders %q, want %q", got, "scan")
 	}
 	if got := CauseFromContext(scheduled); got != (Cause{Class: CauseClassScheduled}) {
 		t.Errorf("enriching a child changed the parent context's cause to %+v", got)
@@ -257,5 +273,60 @@ func TestCause_DoesNotLeakBetweenConcurrentOperations(t *testing.T) {
 		if *rec.Cause != want.String() {
 			t.Errorf("operation %s logged cause %q, want %q", name, *rec.Cause, want.String())
 		}
+	}
+}
+
+type carryTestKey struct{}
+
+func TestCarryCause(t *testing.T) {
+	want := Cause{Class: CauseClassScan, Detail: "full"}
+
+	t.Run("copies the source cause", func(t *testing.T) {
+		src := WithCause(context.Background(), want)
+		if got := CauseFromContext(CarryCause(context.Background(), src)); got != want {
+			t.Errorf("cause = %+v, want %+v", got, want)
+		}
+	})
+
+	t.Run("no source cause returns dst itself", func(t *testing.T) {
+		dst := context.WithValue(context.Background(), carryTestKey{}, "dst")
+		got := CarryCause(dst, context.Background())
+		if got != dst {
+			t.Error("CarryCause with a cause-less source did not return the very same dst")
+		}
+		if c := CauseFromContext(got); c != (Cause{}) {
+			t.Errorf("cause = %+v, want the zero Cause", c)
+		}
+	})
+
+	t.Run("takes only the cause: not cancellation, deadline or other values", func(t *testing.T) {
+		base := WithCause(context.WithValue(context.Background(), carryTestKey{}, "src"), want)
+		src, cancel := context.WithTimeout(base, time.Hour)
+		cancel() // src is now canceled and has a deadline
+		got := CarryCause(context.Background(), src)
+		if got.Err() != nil {
+			t.Errorf("result is canceled (%v); src's cancellation must not carry over", got.Err())
+		}
+		if _, ok := got.Deadline(); ok {
+			t.Error("result has a deadline; src's deadline must not carry over")
+		}
+		if v := got.Value(carryTestKey{}); v != nil {
+			t.Errorf("result sees src's value %v; only the cause may carry over", v)
+		}
+		if c := CauseFromContext(got); c != want {
+			t.Errorf("cause = %+v, want %+v", c, want)
+		}
+	})
+}
+
+func TestCauseAttr(t *testing.T) {
+	bare := CauseAttr(context.Background())
+	if bare.Key != "cause" || bare.Value.String() != "unattributed" {
+		t.Errorf("bare context attr = %v, want cause=unattributed", bare)
+	}
+	ctx := WithCause(context.Background(), Cause{Class: CauseClassWatcher, Detail: "create"})
+	got := CauseAttr(ctx)
+	if got.Key != "cause" || got.Value.String() != "watcher:create" {
+		t.Errorf("attr = %v, want cause=watcher:create", got)
 	}
 }
