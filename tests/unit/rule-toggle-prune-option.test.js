@@ -34,7 +34,7 @@ function formHtml({ stored, blocked = false, tolerance = '0.95' }) {
       data-sw-knob-on="KNOB-ON" data-sw-knob-off="KNOB-OFF"
       data-prune-confirm-title="TITLE" data-prune-confirm-body="BODY"
       data-prune-confirm-accept="ACCEPT"><span class="${stored ? 'KNOB-ON' : 'KNOB-OFF'}"></span></button>
-    <select name="severity"><option value="warning" selected>warning</option></select>
+    <select name="severity"><option value="warning" selected>warning</option><option value="error">error</option></select>
   </form>
 </div></body></html>`;
 }
@@ -221,7 +221,42 @@ describe('prune switch: stored on, switch on re-checks the server first', () => 
     await flush();
     assert.equal(puts().length, 0);
     assert.equal(dialogs.length, 0);
-    assert.match(errors.join('\n'), /rule missing from the response/);
+    assert.match(errors.join('\n'), /rule missing or malformed/);
+  });
+
+  it('a field edited during the GET is what the PUT carries; the next Save checks again', async () => {
+    const { win, submit, sentConfigs, form } = setup({ stored: true });
+    const release = holdGet(win, ON);
+    submit();
+    form.elements.severity.value = 'error';
+    release(); await flush();
+    assert.deepEqual(sentConfigs().map((c) => c.severity), ['error']);
+    assert.equal('pruneRechecked' in form.dataset, false, 'the one-shot marker is consumed');
+    submit(); await flush();
+    assert.equal(win.fetch.calls.filter((c) => c.options.method !== 'PUT').length, 2, 'the second Save reads the server again');
+  });
+
+  it('the marker is cleared even when the re-entry returns early', async () => {
+    const { win, submit, puts, form } = setup({ stored: true });
+    form.dataset.pruneRechecked = '1';
+    form.dataset.inflight = '1';
+    submit();
+    assert.equal('pruneRechecked' in form.dataset, false);
+    delete form.dataset.inflight;
+    submit(); await flush();
+    assert.equal(win.fetch.calls[0].options.method !== 'PUT', true, 'a later Save still starts with the GET');
+    assert.equal(puts().length, 1);
+  });
+
+  it('a malformed stored answer fails closed: no PUT, no dialog, guard released, failure toast', async () => {
+    for (const config of [[], 'on', { prune_platform_copies: 'true' }, { prune_platform_copies: 1 }]) {
+      const { sw, win, submit, puts, dialogs, toasts } = setup({ stored: true, rulesList: [{ id: 'image_duplicate', config }] });
+      submit(); await flush();
+      assert.equal(puts().length + dialogs.length, 0, JSON.stringify(config));
+      assert.deepEqual(toasts, ['Failed to update rule.']);
+      win.togglePrunePlatformCopies(sw); // unlocked again: the guard was released
+      assert.equal(isOn(sw), false);
+    }
   });
 
   it('the rule is picked by id, not by position', async () => {

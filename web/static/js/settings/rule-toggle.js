@@ -249,6 +249,10 @@
   function handleRuleConfigSubmit(event) {
     event.preventDefault();
     var form = event.target;
+    // One-shot: set only by the stored-option re-check below, which re-enters
+    // synchronously. Consumed here, before any early return, so it never survives.
+    var rechecked = form.dataset.pruneRechecked === '1';
+    delete form.dataset.pruneRechecked;
     // One save per form at a time, so a late response from an older save
     // cannot repaint the switch from state captured before the wait.
     if (form.dataset.inflight === '1') {
@@ -368,6 +372,7 @@
       return;
     }
     if (pruneSw.dataset.initial === 'true') {
+      if (rechecked) { save(); return; } // the server just confirmed on
       // "Stored on" is a page-load snapshot; the option may have been turned
       // off elsewhere since. Ask the server: if it says off, correct the
       // baseline and submit again, which takes the consent path below. An
@@ -378,12 +383,16 @@
         return r.json();
       }).then(function(data) {
         var cur = (data.rules || []).filter(function(x) { return x.id === ruleID; })[0];
-        if (!cur || !cur.config) throw new Error('rule missing from the response');
-        return cur.config.prune_platform_copies === true;
+        var c = cur && cur.config;
+        if (!c || typeof c !== 'object' || Array.isArray(c)) throw new Error('rule missing or malformed in the response');
+        if ('prune_platform_copies' in c && typeof c.prune_platform_copies !== 'boolean') throw new Error('malformed prune_platform_copies');
+        return c.prune_platform_copies === true;
       }).then(function(storedOn) {
         delete form.dataset.inflight;
-        if (storedOn) { save(); return; }
-        pruneSw.dataset.initial = 'false';
+        // Re-enter so cfg is rebuilt from the form as it is now (other fields
+        // stay editable during the read); the marker skips this check once.
+        if (storedOn) form.dataset.pruneRechecked = '1';
+        else pruneSw.dataset.initial = 'false';
         handleRuleConfigSubmit(event);
       }, function(err) {
         delete form.dataset.inflight;
