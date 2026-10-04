@@ -184,32 +184,36 @@ func (c *countingFailingFetcher) GetReleaseGroups(context.Context, string) ([]pr
 	return nil, errors.New("musicbrainz unavailable")
 }
 
-// The production path coalesces: two rules asking for the same artist's release
-// groups share ONE upstream fetch, and the failure is cached and served to the
-// second asker. The shared fetch runs on the FIRST asker's detached context, so
-// a line that read its cause from there would name the wrong rule for the
-// second caller. Each caller must log under its OWN cause. This drives the
-// checker's real fetch step (countMBReleaseGroups) under one shared
-// EvaluationContext, which the other tests in this file do not attach.
+// The production path coalesces: the discography checker and the album gate
+// ask for the same artist's release groups and share ONE upstream fetch, whose
+// failure is cached and served to the second asker. The shared fetch runs on
+// the FIRST asker's detached context and the coalescer logs nothing, so a line
+// that read its cause from there would name the wrong operation for the second
+// caller. Each of the two real callers must log under its OWN cause. The
+// discography checker runs first (it starts the fetch); the album gate's
+// catalogue fetch runs second and is the cache-served one.
 func TestCause_CoalescedSharedFailureEachCallerNamesItself(t *testing.T) {
 	engine, _, a, logs := bypassEngineFixture(t, RuleDiscographyPopulated)
 	fetcher := &countingFailingFetcher{}
 	engine.SetReleaseGroupFetcher(fetcher)
+	gateLogger, gateLogs := logtest.NewJSONLogger()
+	gate := ruleAlbumGate{fetcher: fetcher, logger: gateLogger}
 
 	ec := NewEvaluationContext(a, probeEvalProvider{}, nil)
 	base := WithEvaluationContext(context.Background(), ec)
-	for _, id := range []string{"rule_a", "rule_b"} {
-		engine.countMBReleaseGroups(provider.EnrichCause(base, provider.CauseClassRule, id), a, RuleConfig{})
+
+	engine.countMBReleaseGroups(provider.EnrichCause(base, provider.CauseClassRule, "rule_a"), a, RuleConfig{})
+	gateCtx := provider.EnrichCause(base, provider.CauseClassBulk, "job_b")
+	if _, known := gate.candidateTitles(gateCtx, "rule_b", a, a.MusicBrainzID); known {
+		t.Fatalf("candidateTitles reported a determination for a failing fetch")
 	}
 
 	// Precondition: the fetch really was shared, not run twice.
 	if got := fetcher.calls.Load(); got != 1 {
 		t.Fatalf("fetcher called %d times, want 1: the two callers did not share one coalesced fetch", got)
 	}
-	got := causeOnLine(t, logs, discographyFetchFailedMsg)
-	if len(got) != 2 || got[0] != "rule:rule_a" || got[1] != "rule:rule_b" {
-		t.Errorf("failure lines carry causes %v, want [rule:rule_a rule:rule_b]: each caller must name itself, not the starter", got)
-	}
+	requireCause(t, logs, discographyFetchFailedMsg, "rule:rule_a")
+	requireCause(t, gateLogs, albumGateFetchFailedMsg, "bulk:job_b")
 }
 
 // probeEvalProvider satisfies the EvaluationContext's orchestrator slot; the

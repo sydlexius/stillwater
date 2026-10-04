@@ -172,12 +172,9 @@ func (e *Engine) countMBReleaseGroups(ctx context.Context, a *artist.Artist, cfg
 			slog.String("artist", a.Name),
 			slog.String("mbid", a.MusicBrainzID),
 			slog.String("error", err.Error()),
-			// The release-group fetcher is called directly, not through a
-			// shared fetch point, so this line is the only place the failure
-			// can say which operation (and which rule) asked for the call.
-			// Each caller of a shared failed fetch logs this line under its
-			// own cause, so a failure shared by two rules produces one line
-			// per rule, each naming itself.
+			// The EvaluationContext may coalesce this fetch but does not log
+			// failures. Each caller logs this line with its own fetchCtx, so
+			// callers of a shared failed fetch each record their own cause.
 			provider.CauseAttr(fetchCtx))
 		return 0
 	}

@@ -235,9 +235,11 @@ func (g ruleAlbumGate) candidateTitles(ctx context.Context, ruleID string, a *ar
 			slog.String("artist", a.Name),
 			slog.String("candidate_mbid", mbid),
 			slog.String("error", err.Error()),
-			// fetchGroups calls the release-group fetcher directly (no shared
-			// fetch point), so the cause is read here, from the context the
-			// fetch was started with: it names the fix (rule:<id>) that asked.
+			// The fetch may be coalesced through the EvaluationContext or go
+			// straight to the fetcher; neither logs. The cause is read from
+			// this caller's own context, so it names whoever asked: the rule
+			// fixer (rule:<id>, fixers.go) or the bulk executor, which passes
+			// its job cause (bulk:<job type>, bulk_executor.go).
 			provider.CauseAttr(ctx))
 		return nil, false
 	}
