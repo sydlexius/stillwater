@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/filesystem"
+	"github.com/sydlexius/stillwater/internal/logging"
 )
 
 // FanartFilename returns the correct filename for a fanart image at the given
@@ -630,8 +631,7 @@ func quarantineStrandedTemp(path, ext string) error {
 		// artwork -- an operator who never sees this line has no way to learn
 		// the file exists or where it went. Persistent operator-visible
 		// surfacing is the deferred follow-up (#2954); this is the immediate signal.
-		slog.Warn("quarantined a stranded temp file instead of deleting it; it may be the only copy of this artwork",
-			slog.String("component", "fanart-renumber"),
+		logging.WithComponent(slog.Default(), "fanart-renumber").Warn("quarantined a stranded temp file instead of deleting it; it may be the only copy of this artwork",
 			slog.String("original", path),
 			slog.String("quarantined_to", dest))
 		return nil

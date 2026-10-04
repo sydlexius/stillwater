@@ -7,6 +7,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
+	"github.com/sydlexius/stillwater/internal/logging"
 )
 
 // dirtyMarkTimeout caps how long a single dirty-mark write is allowed to
@@ -47,7 +48,7 @@ type DirtySubscriber struct {
 func NewDirtySubscriber(artistService *artist.Service, logger *slog.Logger) *DirtySubscriber {
 	return &DirtySubscriber{
 		artistService: artistService,
-		logger:        logger.With(slog.String("component", "rule-dirty-subscriber")),
+		logger:        logging.WithComponent(logger, "rule-dirty-subscriber"),
 	}
 }
 

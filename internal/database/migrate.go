@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/pressly/goose/v3"
+	"github.com/sydlexius/stillwater/internal/logging"
 )
 
 //go:embed migrations/*.sql
@@ -107,7 +108,7 @@ var (
 func Migrate(db *sql.DB) error {
 	gooseOnce.Do(func() {
 		goose.SetBaseFS(migrations)
-		goose.SetLogger(&gooseLogger{logger: slog.Default().With("component", "database")})
+		goose.SetLogger(&gooseLogger{logger: logging.WithComponent(slog.Default(), "database")})
 		gooseInitErr = goose.SetDialect("sqlite3")
 	})
 	if gooseInitErr != nil {
@@ -237,7 +238,7 @@ func backfillRuleResultsFromViolations(db *sql.DB) error {
 // marker row already exists.
 func markPre002Applied(db *sql.DB) error {
 	ctx := context.Background()
-	logger := slog.Default().With("component", "database")
+	logger := logging.WithComponent(slog.Default(), "database")
 
 	hasTracker, err := tableExists(db, "goose_db_version")
 	if err != nil {
@@ -310,7 +311,7 @@ func cleanupOrphanArtistPlatformIDs(db *sql.DB) error {
 		return fmt.Errorf("deleting orphan artist_platform_ids: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
-		slog.Default().With("component", "database").Info(
+		logging.WithComponent(slog.Default(), "database").Info(
 			"removed orphan artist_platform_ids rows",
 			"count", n,
 		)
@@ -376,7 +377,7 @@ func collectDuplicatePlatformKeys(ctx context.Context, db *sql.DB) ([]dupPlatfor
 
 func ensureArtistPlatformIDsUnique(db *sql.DB) error {
 	ctx := context.Background()
-	logger := slog.Default().With("component", "database")
+	logger := logging.WithComponent(slog.Default(), "database")
 
 	// Find all (connection_id, platform_artist_id) tuples with more than one
 	// artist row. For each, pick the keeper artist (most recent updated_at)
@@ -457,7 +458,7 @@ func ensureArtistPlatformIDsUnique(db *sql.DB) error {
 // canonical's existing data).
 func ensureArtistLibrariesMembership(db *sql.DB) error {
 	ctx := context.Background()
-	logger := slog.Default().With("component", "database")
+	logger := logging.WithComponent(slog.Default(), "database")
 
 	// Step 1: idempotent table + index. 001 has these for fresh installs;
 	// pre-1004 DBs need them at startup. The CHECK constraint includes
@@ -990,7 +991,7 @@ func rebuildArtistLibrariesIfStaleCheck(ctx context.Context, db *sql.DB) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit rebuild: %w", err)
 	}
-	slog.Default().With("component", "database").Info(
+	logging.WithComponent(slog.Default(), "database").Info(
 		"rebuilt artist_libraries table to refresh CHECK constraint")
 	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/logging"
 )
 
 // Background sweep that fills PlatformDupCache (#3138 S3a).
@@ -110,7 +111,7 @@ func NewPlatformDupSweep(p *Publisher, policy PlatformDupSweepPolicy, cfg Platfo
 	}
 	s := &PlatformDupSweep{
 		p: p, policy: policy, cfg: cfg, cache: newPlatformDupCache(), now: time.Now,
-		logger: logger.With(slog.String("component", "platform-dup-sweep")),
+		logger: logging.WithComponent(logger, "platform-dup-sweep"),
 	}
 	observer := s.cache.invalidateTarget
 	p.backdropWriteObserver.Store(&observer)

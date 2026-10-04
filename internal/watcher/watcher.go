@@ -11,6 +11,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/library"
+	"github.com/sydlexius/stillwater/internal/logging"
 )
 
 // LibraryLister retrieves the list of configured libraries.
@@ -48,7 +49,7 @@ func NewService(scanFn func(ctx context.Context) error, libraries LibraryLister,
 		scanFn:         scanFn,
 		libraries:      libraries,
 		eventBus:       eventBus,
-		logger:         logger.With("component", "fs-watcher"),
+		logger:         logging.WithComponent(logger, "fs-watcher"),
 		debounce:       1 * time.Second,
 		refreshPeriod:  5 * time.Minute,
 		probeCache:     probeCache,

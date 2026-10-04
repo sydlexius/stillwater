@@ -18,6 +18,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/httpsafe"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/logging"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -238,7 +239,7 @@ func NewBulkExecutor(bulkService *BulkService, artistService *artist.Service, or
 		platformService: platformService,
 		expectedWrites:  expectedWrites,
 		publisher:       publisher,
-		logger:          logger.With(slog.String("component", "bulk-executor")),
+		logger:          logging.WithComponent(logger, "bulk-executor"),
 		httpClient:      httpsafe.SafeClient(fetchTimeout),
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/logging"
 )
 
 // backdropCollisionRemediator is the narrow seam the collision fixer needs from
@@ -37,7 +38,7 @@ type CrossArtistBackdropCollisionFixer struct {
 // is recognized as fixable, and Fix fails loudly if invoked unwired.
 func NewCrossArtistBackdropCollisionFixer(logger *slog.Logger) *CrossArtistBackdropCollisionFixer {
 	return &CrossArtistBackdropCollisionFixer{
-		logger: logger.With(slog.String("component", "cross-artist-backdrop-collision-fixer")),
+		logger: logging.WithComponent(logger, "cross-artist-backdrop-collision-fixer"),
 	}
 }
 

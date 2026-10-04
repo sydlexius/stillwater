@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/logging"
 	"github.com/sydlexius/stillwater/internal/provider/tagdict"
 )
 
@@ -192,7 +193,7 @@ func NewOrchestrator(registry *Registry, settings *SettingsService, logger *slog
 		registry: registry,
 		settings: settings,
 		aimd:     aimd,
-		logger:   logger.With(slog.String("component", "orchestrator")),
+		logger:   logging.WithComponent(logger, "orchestrator"),
 	}
 }
 
