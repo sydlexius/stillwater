@@ -1331,14 +1331,24 @@ func isAPITokenRequest(r *http.Request) bool {
 // wrapAuth wraps a handler function with auth middleware.
 func wrapAuth(fn http.HandlerFunc, authMw func(http.Handler) http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		authMw(fn).ServeHTTP(w, r)
+		authMw(fn).ServeHTTP(w, withUserCause(r))
 	}
+}
+
+// withUserCause attributes everything a request triggers to the user action
+// that asked for it, naming the matched route (#2784). It is applied in the two
+// auth wrappers rather than in each handler so no provider-fetching handler can
+// be added without it. A handler that hands work to a context NOT derived from
+// the request (the scanner, the inbound webhooks) drops the cause with it.
+func withUserCause(r *http.Request) *http.Request {
+	return r.WithContext(provider.WithCause(r.Context(),
+		provider.Cause{Class: provider.CauseClassUser, Detail: r.Pattern}))
 }
 
 // wrapOptionalAuth wraps a handler function with optional auth middleware.
 func wrapOptionalAuth(fn http.HandlerFunc, mw func(http.Handler) http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		mw(fn).ServeHTTP(w, r)
+		mw(fn).ServeHTTP(w, withUserCause(r))
 	}
 }
 

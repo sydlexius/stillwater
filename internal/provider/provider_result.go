@@ -53,6 +53,9 @@ func FetchProviderResult(
 	aimd *AIMDController,
 ) *ProviderResult {
 	pr := &ProviderResult{}
+	// Read once: every line this function (and fetchArtist) emits says why
+	// the fetch is happening (#2784).
+	cause := causeAttr(ctx)
 
 	var aimdRateLimitErr error
 	aimdGotResult := false
@@ -67,18 +70,20 @@ func FetchProviderResult(
 	}
 
 	if id != "" {
-		meta, queryID, err := fetchArtist(ctx, p, name, id, mbid, artistName, usedProviderID, logger)
+		meta, queryID, err := fetchArtist(ctx, p, name, id, mbid, artistName, usedProviderID, logger, cause)
 		if err != nil {
 			var notFound *ErrNotFound
 			if errors.As(err, &notFound) {
 				logger.Debug("provider has no data for artist",
 					slog.String("provider", string(name)),
-					slog.String("id", queryID))
+					slog.String("id", queryID),
+					cause)
 			} else {
 				logger.Debug("provider GetArtist failed",
 					slog.String("provider", string(name)),
 					slog.String("error", ScrubError(err)),
-					retryAfterAttr(err))
+					retryAfterAttr(err),
+					cause)
 				pr.err = err
 				if IsRateLimitError(err) && aimdRateLimitErr == nil {
 					aimdRateLimitErr = err
@@ -102,12 +107,14 @@ func FetchProviderResult(
 			if errors.As(err, &notFound) {
 				logger.Debug("provider has no images for artist",
 					slog.String("provider", string(name)),
-					slog.String("id", imgID))
+					slog.String("id", imgID),
+					cause)
 			} else {
 				logger.Warn("provider GetImages failed, preserving existing image data",
 					slog.String("provider", string(name)),
 					slog.String("error", ScrubError(err)),
-					retryAfterAttr(err))
+					retryAfterAttr(err),
+					cause)
 				pr.imageErr = err
 				if IsRateLimitError(err) && aimdRateLimitErr == nil {
 					aimdRateLimitErr = err
@@ -134,6 +141,7 @@ func fetchArtist(
 	id, mbid, artistName string,
 	usedProviderID bool,
 	logger *slog.Logger,
+	cause slog.Attr,
 ) (meta *ArtistMetadata, queryID string, err error) {
 	queryID = id
 	meta, err = p.GetArtist(ctx, id)
@@ -143,7 +151,8 @@ func fetchArtist(
 			if nlp, ok := p.(NameLookupProvider); ok && nlp.SupportsNameLookup() {
 				logger.Debug("retrying with artist name after MBID not-found",
 					slog.String("provider", string(name)),
-					slog.String("name", artistName))
+					slog.String("name", artistName),
+					cause)
 				queryID = artistName
 				meta, err = p.GetArtist(ctx, artistName)
 			}
