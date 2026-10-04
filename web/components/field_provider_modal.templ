@@ -47,23 +47,44 @@ templ FieldProviderModal() {
 			// take focus, so the opener's menu trigger is captured at OPEN time
 			// as the fallback (closest() cannot be used later on a node that is
 			// hidden or detached).
+			// Safari/WebKit does not focus a <button> on click, so
+			// document.activeElement is <body> there and the focused-element
+			// capture finds nothing (same hazard OpenBottomSheet documents in
+			// bottom_sheet.templ, which resolves the trigger from the control
+			// instead). Remember the last clicked control in the CAPTURE phase,
+			// i.e. before any onclick hides its menu, and use it when
+			// activeElement is <body>. Registered once: this script is
+			// re-evaluated on a layout swap, so the old listener is removed.
+			if (window._swOpenerClickRec) document.removeEventListener('click', window._swOpenerClickRec, true);
+			window._swOpenerClickRec = function(e) {
+				var t = e.target && e.target.closest ? e.target.closest('button, a, [role=menuitem]') : null;
+				window._swLastClick = t ? { el: t, at: Date.now() } : null;
+			};
+			document.addEventListener('click', window._swOpenerClickRec, true);
+
 			window.swCaptureOpener = function() {
 				var el = document.activeElement;
-				if (!el || el === document.body) return null;
+				if (!el || el === document.body) {
+					var lc = window._swLastClick;
+					el = (lc && lc.el.isConnected && Date.now() - lc.at < 1500) ? lc.el : null;
+					if (!el) return null;
+				}
 				var menu = el.closest ? el.closest('[data-context-menu]') : null;
 				return { el: el, trigger: menu ? menu.querySelector('[aria-haspopup]') : null };
 			};
+			// A node can pass any layout check (it has boxes) and still refuse
+			// focus: a closed bottom sheet is visibility:hidden + inert but keeps
+			// its layout boxes. So try focus() and CHECK that it took, falling
+			// back to the menu trigger, rather than predicting from geometry.
 			window.swRestoreOpener = function(op) {
 				if (!op) return;
-				var usable = function(n) {
-					return !!n && n.isConnected && typeof n.focus === 'function' && n.getClientRects().length > 0;
+				var tryFocus = function(n) {
+					if (!n || !n.isConnected || typeof n.focus !== 'function') return false;
+					n.focus();
+					return document.activeElement === n;
 				};
-				var target = usable(op.el) ? op.el : (usable(op.trigger) ? op.trigger : null);
-				if (!target) {
-					console.error('dialog opener and its menu trigger are both hidden or detached; focus not restored');
-					return;
-				}
-				target.focus();
+				if (tryFocus(op.el) || tryFocus(op.trigger)) return;
+				console.error('dialog opener and its menu trigger could not take focus; focus not restored');
 			};
 
 			// #2511: the body arrives via an HTMX swap, where `autofocus`

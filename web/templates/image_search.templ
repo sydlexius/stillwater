@@ -403,12 +403,16 @@ templ ArtworkManageEditor(data ImageSearchData) {
 		// #2511: Escape inside the crop dialog takes the same discard-guarded
 		// path as Cancel. Scoped to key events inside the dialog so the
 		// confirm dialog it may raise keeps its own Escape.
-		document.addEventListener('keydown', function(e) {
+		// Registered once per page: this fragment is re-evaluated on every HTMX
+		// swap (artwork modal kind switch), so drop the previous handler first.
+		if (window._swCropEscape) document.removeEventListener('keydown', window._swCropEscape);
+		window._swCropEscape = function(e) {
 			if (e.key !== 'Escape' || !e.target || !e.target.closest || !e.target.closest('#crop-modal')) return;
 			var modal = document.getElementById('crop-modal');
-			if (modal.classList.contains('hidden')) return;
+			if (!modal || modal.classList.contains('hidden')) return;
 			guardedCloseCropModal();
-		});
+		};
+		document.addEventListener('keydown', window._swCropEscape);
 		function setCropRatio(ratio) {
 			_currentRatio = ratio;
 			var lockCb = document.getElementById('crop-lock-ratio');
@@ -1288,11 +1292,15 @@ templ imageSearchContextualized(data ImageSearchData) {
 				// (clears the slot target, restores focus). Only reacts when the
 				// key was pressed inside the dialog, so a confirm dialog layered
 				// above it keeps its own Escape.
-				document.addEventListener('keydown', function(e) {
+				// Same once-per-page rule as the crop handler above.
+				if (window._swFetchUrlEscape) document.removeEventListener('keydown', window._swFetchUrlEscape);
+				window._swFetchUrlEscape = function(e) {
 					if (e.key !== 'Escape' || !e.target || !e.target.closest || !e.target.closest('#fetch-url-modal')) return;
-					if (document.getElementById('fetch-url-modal').classList.contains('hidden')) return;
+					var m = document.getElementById('fetch-url-modal');
+					if (!m || m.classList.contains('hidden')) return;
 					window.swCloseFetchUrlModal();
-				});
+				};
+				document.addEventListener('keydown', window._swFetchUrlEscape);
 				window.swOpenFetchUrlForSlot = function(slot) {
 					swCloseAnyOpenContextMenu();
 					_fetchUrlSlot = slot;
