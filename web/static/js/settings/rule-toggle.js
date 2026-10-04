@@ -249,6 +249,10 @@
   function handleRuleConfigSubmit(event) {
     event.preventDefault();
     var form = event.target;
+    // One-shot: set only by the stored-option re-check below, which re-enters
+    // synchronously. Consumed here, before any early return, so it never survives.
+    var rechecked = form.dataset.pruneRechecked === '1';
+    delete form.dataset.pruneRechecked;
     // One save per form at a time, so a late response from an older save
     // cannot repaint the switch from state captured before the wait.
     if (form.dataset.inflight === '1') {
@@ -359,12 +363,42 @@
         delete form.dataset.inflight;
       });
     }
-    // Every save with the switch on needs consent, whatever the stored value
-    // was at page load (it may have changed since). Each refusal below sends
-    // NOTHING and leaves the panel open. A refused tolerance cannot be saved
-    // on; turning the switch OFF never reaches this code and always saves.
+    // Only a save that turns server deletion ON (stored off, switch on) needs
+    // consent; a stored-on option is first confirmed against the server below.
+    // Each refusal after that sends NOTHING and leaves the panel open. A refused
+    // tolerance cannot be saved on; turning the switch OFF always saves.
     if (!pruneOn) {
       save();
+      return;
+    }
+    if (pruneSw.dataset.initial === 'true') {
+      if (rechecked) { save(); return; } // the server just confirmed on
+      // "Stored on" is a page-load snapshot; the option may have been turned
+      // off elsewhere since. Ask the server: if it says off, correct the
+      // baseline and submit again, which takes the consent path below. An
+      // unreadable answer saves nothing.
+      form.dataset.inflight = '1';
+      fetch(bp + '/api/v1/rules', {credentials: 'same-origin', cache: 'no-store'}).then(function(r) {
+        if (!r.ok) throw new Error('status ' + r.status);
+        return r.json();
+      }).then(function(data) {
+        var cur = (data.rules || []).filter(function(x) { return x.id === ruleID; })[0];
+        var c = cur && cur.config;
+        if (!c || typeof c !== 'object' || Array.isArray(c)) throw new Error('rule missing or malformed in the response');
+        if ('prune_platform_copies' in c && typeof c.prune_platform_copies !== 'boolean') throw new Error('malformed prune_platform_copies');
+        return c.prune_platform_copies === true;
+      }).then(function(storedOn) {
+        delete form.dataset.inflight;
+        // Re-enter so cfg is rebuilt from the form as it is now (other fields
+        // stay editable during the read); the marker skips this check once.
+        if (storedOn) form.dataset.pruneRechecked = '1';
+        else pruneSw.dataset.initial = 'false';
+        handleRuleConfigSubmit(event);
+      }, function(err) {
+        delete form.dataset.inflight;
+        console.error('rule-toggle: could not confirm the stored option; not saving:', err);
+        failToast();
+      });
       return;
     }
     if (pruneSw.hasAttribute('data-prune-blocked')) {
