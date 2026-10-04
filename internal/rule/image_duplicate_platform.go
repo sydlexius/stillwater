@@ -136,8 +136,12 @@ func (f *ImageDuplicateFixer) runPlatformPhase(ctx context.Context, a *artist.Ar
 		w.onPrune()
 	}
 	// complete: every connection was read and every planned delete landed. A
-	// failure, a skipped copy or an unhealthy connection leaves duplicates behind.
-	complete := err == nil && len(res.Failures)+len(res.Unhealthy)+res.SkippedChanged == 0
+	// failure, policy skip, skipped copy or unhealthy connection leaves duplicates
+	// behind, so the fix is NOT Fixed even if the local phase removed files.
+	complete := err == nil && len(res.Failures)+len(res.Unhealthy)+len(res.Skipped)+res.SkippedChanged == 0
+	if !complete {
+		fr.Fixed = false
+	}
 	localRemains := false
 	if res.BackdropsRemoved > 0 {
 		fr.Irreversible = true
@@ -324,7 +328,18 @@ func (e *Engine) platformDupDetail(ctx context.Context, a *artist.Artist, cfg Ru
 		return ""
 	}
 	entry := cache.Lookup(a.ID, tol)
-	if entry.State != publish.PlatformDupFound {
+	if entry.State != publish.PlatformDupFound || e.db == nil {
+		return ""
+	}
+	// The cache is not invalidated when fanart becomes locked or user-set, or a
+	// mapping or connection is removed or disabled. The prune refuses or skips
+	// those, so re-check them (database reads only). Doubt = no finding.
+	live := func(query string, args ...any) bool {
+		n := 0
+		return e.db.QueryRowContext(ctx, query, args...).Scan(&n) == nil && n > 0
+	}
+	if !live(`SELECT COUNT(*) = 0 FROM artist_images WHERE artist_id = ? AND image_type = 'fanart' AND (locked = 1 OR source = ?)`,
+		a.ID, artist.ImageSourceUser) {
 		return ""
 	}
 	// Fail closed like the fixer's SharedFSCheck: unknown counts as shared.
@@ -333,6 +348,10 @@ func (e *Engine) platformDupDetail(ctx context.Context, a *artist.Artist, cfg Ru
 	}
 	parts := make([]string, 0, len(entry.Findings))
 	for _, f := range entry.Findings {
+		if !live(`SELECT COUNT(*) FROM artist_platform_ids m JOIN connections c ON c.id = m.connection_id
+			WHERE m.artist_id = ? AND m.connection_id = ? AND c.enabled = 1 AND c.feature_image_write = 1`, a.ID, f.ConnectionID) {
+			continue
+		}
 		parts = append(parts, fmt.Sprintf("%s has %d redundant of %d backdrops", f.Connection, f.Redundant, f.Backdrops))
 	}
 	return strings.Join(parts, "; ")

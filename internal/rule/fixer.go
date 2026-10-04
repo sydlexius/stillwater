@@ -1964,6 +1964,10 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 		}
 	}
 
+	if err := p.persistIncompleteFix(ctx, a, rv.RuleID, fr); err != nil {
+		return nil, err
+	}
+
 	if fr.Fixed {
 		// #3037: attribute this single-rule fix's history rows to rv.RuleID.
 		// Reassigning ctx carries the tag into the rescore persist below too,
@@ -2027,6 +2031,21 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 	}
 
 	return fr, nil
+}
+
+// persistIncompleteFix covers a fix that deleted local files but did not
+// finish (#3138: an incomplete platform phase). It is not Fixed and its row
+// stays open, but the files are gone: persist the artist and retire their
+// registry rows, as FixViolation's Fixed branch does.
+func (p *Pipeline) persistIncompleteFix(ctx context.Context, a *artist.Artist, ruleID string, fr *FixResult) error {
+	if fr.Fixed || !fr.RemovedFiles {
+		return nil
+	}
+	if _, err := p.artistService.UpdateReportingLocks(withRuleHistorySource(ctx, ruleHistorySource(ruleID)), a); err != nil {
+		return fmt.Errorf("updating artist after an incomplete fix: %w", err)
+	}
+	p.reconcileAfterFix(ctx, a, true)
+	return nil
 }
 
 // retractSkippedResults withdraws every stored verdict -- the rule_results row

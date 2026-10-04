@@ -93,6 +93,7 @@ type platHarness struct {
 	engine           *Engine
 	control          *Engine // same rules and database, no platform cache wired
 	pipeline         *Pipeline
+	fixer            *ImageDuplicateFixer
 	pic, same, same2 []byte // one picture, three encodings: near-duplicates, not byte-identical
 	other            []byte // a different picture
 	failReload       bool   // the publisher's artist reload fails
@@ -181,10 +182,10 @@ func newPlatHarness(t *testing.T) *platHarness {
 	h.engine.SetPlatformDupCache(h.sweep.Cache())
 	h.control = NewEngine(h.rules, db, nil, h.libs, logger)
 	h.control.SetImageHashRecorder(h.artists)
-	fixer := NewImageDuplicateFixer(db, nil, NewSharedFSCheck(h.libs, logger), h.artists, logger)
-	fixer.SetPlatformPruner(h.pub, func() {})
-	fixer.SetPlatformDupCache(h.sweep.Cache())
-	h.pipeline = NewPipeline(h.engine, h.artists, h.rules, []Fixer{fixer}, nil, logger)
+	h.fixer = NewImageDuplicateFixer(db, nil, NewSharedFSCheck(h.libs, logger), h.artists, logger)
+	h.fixer.SetPlatformPruner(h.pub, func() {})
+	h.fixer.SetPlatformDupCache(h.sweep.Cache())
+	h.pipeline = NewPipeline(h.engine, h.artists, h.rules, []Fixer{h.fixer}, nil, logger)
 	h.setRule(t, true, 0)
 	return h
 }
@@ -408,7 +409,6 @@ func TestPlatformDupFinding_FixOutcomes(t *testing.T) {
 		"connection unhealthy at fix time":         {sql(`UPDATE connections SET status = 'error'`), found, open, 0, 0, false},
 		"platform unreadable at fix time":          {peer(func(p *dupPeer, _ *platHarness) { p.failReads["p-Dup"] = true }), found, open, 0, 0, false},
 		"artist reload fails":                      {func(h *platHarness, _ *testing.T) { h.failReload = true }, found, open, 0, 0, false},
-		"connection disabled since the sweep":      {sql(`UPDATE connections SET enabled = 0`), unknown, resolved, 100, 0, false},
 		"duplicate already gone from the platform": {peer(func(p *dupPeer, h *platHarness) { p.backdrops["p-Dup"] = [][]byte{h.pic, h.other} }), clean, resolved, 100, 0, false},
 		// The 4th read is the pre-delete re-verify: plan skipped, no failure recorded.
 		"re-verify read fails":  {peer(func(p *dupPeer, _ *platHarness) { p.failFrom["GET"] = p.n["GET"] + 4 }), found, open, 0, 0, false},
@@ -468,6 +468,84 @@ func TestPlatformDupFinding_FixOutcomes(t *testing.T) {
 					}
 				}
 			})
+		}
+	}
+}
+
+// A fixable LOCAL duplicate plus a platform finding whose delete is refused:
+// the fix must NOT be Fixed, or the row resolves with the platform finding
+// standing. The local removal is still reported and persisted, in both modes.
+func TestPlatformDupFinding_LocalFixedPlatformIncompleteStaysOpen(t *testing.T) {
+	for _, auto := range []bool{true, false} {
+		h := newPlatHarness(t)
+		if auto {
+			h.exec(t, `UPDATE rules SET automation_mode = ? WHERE id = ?`, AutomationModeAuto, RuleImageDuplicate)
+			h.setRule(t, true, 0)
+		}
+		dup := h.addArtist(t, "Dup", h.pic, h.other, h.same)
+		must(t, os.WriteFile(filepath.Join(dup.Path, "fanart3.jpg"), h.same2, 0o600)) // a local near-duplicate
+		dup.FanartExists, dup.FanartCount = true, 3
+		must(t, h.artists.Update(h.ctx, dup))
+		h.runSweep(t)
+		h.peer.failFrom["DELETE"] = 1
+		res := h.run(t, RunScopeAll)
+		row, _ := h.row(t, dup)
+		fixed, msg := res.FixesSucceeded > 0, fmt.Sprint(res.Results)
+		if !auto {
+			fr, err := h.pipeline.FixViolation(h.ctx, row.ID)
+			must(t, err)
+			fixed, msg = fr.Fixed, fr.Message
+		}
+		row, _ = h.row(t, dup)
+		got, err := h.artists.GetByID(h.ctx, dup.ID)
+		must(t, err)
+		rows := 0
+		must(t, h.db.QueryRowContext(h.ctx, `SELECT COUNT(*) FROM artist_images WHERE artist_id = ? AND image_type = 'fanart' AND exists_flag = 1`, dup.ID).Scan(&rows))
+		if fixed || row.Status != ViolationStatusOpen || h.state(dup) != publish.PlatformDupFound || len(h.onPlatform(dup)) != 3 ||
+			!strings.Contains(msg, "removed 1 duplicate fanart file(s)") || !strings.Contains(msg, "removed 0 backdrop(s)") {
+			t.Errorf("auto=%v: fixed=%v row=%s cache=%v %q; want not fixed, open, finding kept, both phases reported", auto, fixed, row.Status, h.state(dup), msg)
+		}
+		if got.FanartCount != 2 || rows != 2 {
+			t.Errorf("auto=%v: fanart count %d, %d registry rows; want the local removal persisted (2 and 2)", auto, got.FanartCount, rows)
+		}
+	}
+}
+
+// State changed AFTER the sweep cached a finding, which the cache never hears
+// about. The checker must stop offering a fix the prune would refuse or skip;
+// a fix attempted anyway keeps the entry when the prune refused, and drops it
+// when no target is left.
+func TestPlatformDupFinding_StateChangedSinceTheSweep(t *testing.T) {
+	const found, unknown = publish.PlatformDupFound, publish.PlatformDupUnknown
+	for name, tc := range map[string]struct {
+		change  string
+		hidden  bool // the checker no longer raises the finding
+		after   publish.PlatformDupState
+		removed int // the exact tier still removes the byte-identical copy
+	}{
+		"fanart locked":   {`INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag, locked) VALUES ('x', ?1, 'fanart', 7, 1, 1)`, true, found, 1},
+		"fanart user-set": {`INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag, source) VALUES ('x', ?1, 'fanart', 7, 1, 'user')`, true, found, 1},
+		// The evaluated artist struct predates the lock; the prune reloads it.
+		"artist locked":          {`UPDATE artists SET locked = 1, locked_at = datetime('now') WHERE id = ?1`, false, found, 1},
+		"mapping removed":        {`DELETE FROM artist_platform_ids WHERE artist_id = ?1`, true, unknown, 0},
+		"connection disabled":    {`UPDATE connections SET enabled = 0 WHERE ?1 = ?1`, true, unknown, 0},
+		"image write turned off": {`UPDATE connections SET feature_image_write = 0 WHERE ?1 = ?1`, true, unknown, 0},
+	} {
+		h := newPlatHarness(t)
+		dup := h.addArtist(t, "Dup", h.pic, h.other, h.same, h.other) // a near-duplicate pair and a byte-identical twin
+		h.runSweep(t)
+		if h.finding(t, h.engine, dup) == nil {
+			t.Fatalf("%s: precondition: the finding must be raised before the change", name)
+		}
+		h.exec(t, tc.change, dup.ID)
+		if hidden := h.finding(t, h.engine, dup) == nil; hidden != tc.hidden {
+			t.Errorf("%s: checker hides the finding = %v, want %v", name, hidden, tc.hidden)
+		}
+		fr, err := h.fixer.Fix(h.ctx, dup, &Violation{RuleID: RuleImageDuplicate, Config: RuleConfig{PrunePlatformCopies: true}})
+		must(t, err)
+		if fr.Fixed || h.state(dup) != tc.after || len(h.onPlatform(dup)) != 4-tc.removed {
+			t.Errorf("%s: fix fixed=%v cache=%v platform=%d %q; want not fixed, cache %v, %d removed",
+				name, fr.Fixed, h.state(dup), len(h.onPlatform(dup)), fr.Message, tc.after, tc.removed)
 		}
 	}
 }
