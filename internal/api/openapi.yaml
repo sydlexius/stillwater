@@ -7512,6 +7512,17 @@ paths:
                   description: Automation mode for this rule. Use the enabled flag to disable a rule; "disabled" is not a valid automation_mode value.
                 config:
                   type: object
+                  description: Rule configuration. Replaces the stored config as a whole, so send every field you want kept; a field left out is reset, not preserved.
+                  properties:
+                    severity:
+                      type: string
+                      description: Severity of violations the rule raises.
+                    tolerance:
+                      type: number
+                      description: "Similarity or deviation threshold; its meaning depends on the rule. For image_duplicate it is a similarity from 0 to 1 (0 or absent means the 0.90 default). The prune_platform_copies cleanup only runs for 0 or a value from 0.85 to 1.0; any other value is stored, but the cleanup is refused."
+                    prune_platform_copies:
+                      type: boolean
+                      description: "image_duplicate only. When true, each fix for the rule also deletes near-duplicate backdrops from the artist's connected media servers, after the local cleanup. Off when omitted. Takes effect only while the rule is enabled. Deletions on a media server cannot be undone."
       responses:
         "200":
           description: Rule updated
@@ -7525,6 +7536,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          description: The caller is not an administrator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: "forbidden: administrator role required"
         "404":
           description: Rule not found
           content:
