@@ -269,7 +269,9 @@ func TestDupPlatform_ErrorFoldedIntoMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("platform error escaped as a Go error (would skip Update/reconcile): %v", err)
 	}
-	if res == nil || !res.Fixed || res.SlotsRemoved != 1 || !res.RemovedFiles {
+	// Not Fixed: the platform phase did not finish, so the row must stay open
+	// (#3138 S3b review). RemovedFiles is what makes the pipeline persist.
+	if res == nil || res.Fixed || res.SlotsRemoved != 1 || !res.RemovedFiles {
 		t.Fatalf("local result not intact: %+v", res)
 	}
 	if !strings.Contains(res.Message, "removed 1 duplicate fanart file(s)") {

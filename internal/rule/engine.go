@@ -204,6 +204,8 @@ type Engine struct {
 	// because nothing writes the result back; wiring it is what turns hashing
 	// into a once-per-file cost. Set via SetImageHashRecorder.
 	imageHashRecorder imageHashRecorder
+
+	platformDups platformDupSlot // #3138 S3b; see withPlatformDupFindings
 }
 
 // NewEngine creates a rule evaluation engine with all built-in checkers registered.
@@ -238,7 +240,7 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 	e.checkers[RuleLogoMinRes] = e.makeLogoMinResChecker()
 	e.checkers[RuleBannerMinRes] = e.makeBannerMinResChecker()
 	e.checkers[RuleExtraneousImages] = e.makeExtraneousImagesChecker()
-	e.checkers[RuleImageDuplicate] = e.makeImageDuplicateChecker()
+	e.checkers[RuleImageDuplicate] = e.withPlatformDupFindings(e.makeImageDuplicateChecker())
 	e.checkers[RuleImageDuplicateExact] = e.makeImageDuplicateExactChecker()
 	e.checkers[RuleBackdropSequencing] = e.makeBackdropSequencingChecker()
 	e.checkers[RuleBackdropMinCount] = e.makeBackdropMinCountChecker()

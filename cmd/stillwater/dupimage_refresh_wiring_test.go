@@ -99,3 +99,24 @@ func TestDupImageCacheWiringNamesOneInstance(t *testing.T) {
 		t.Errorf("no %s.Drain(...) call found in main.go; shutdown would not drain the router's cache", want)
 	}
 }
+
+// TestPlatformDupCacheWiring pins (#3138 S3b) the lines that connect the
+// sweep's cache to the rule; each package's own tests wire their own.
+func TestPlatformDupCacheWiring(t *testing.T) {
+	file, _ := parseMainGo(t)
+	calls := map[string]bool{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok {
+			calls[types.ExprString(call.Fun)] = true
+		}
+		return true
+	})
+	for _, want := range []string{"a.ruleEngine.SetPlatformDupCache", "a.imageDupFixer.SetPlatformDupCache", "dupCache.SetFindingObserver", "a.artistService.MarkDirty"} {
+		if !calls[want] {
+			t.Errorf("main.go no longer calls %s", want)
+		}
+	}
+	if !calls["time.Now().UTC().Add"] {
+		t.Error("the finding observer no longer stamps the dirty mark one second ahead")
+	}
+}
