@@ -975,6 +975,7 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, query string, re
 			r.logger.Warn("fetching release groups for disambiguation",
 				slog.String("mbid", res.MusicBrainzID),
 				slog.String("error", err.Error()),
+				provider.CauseAttr(ctx),
 			)
 			continue
 		}
