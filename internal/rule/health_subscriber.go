@@ -8,6 +8,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
+	"github.com/sydlexius/stillwater/internal/provider"
 )
 
 const (
@@ -192,6 +193,11 @@ func (h *HealthSubscriber) processPending(ctx context.Context) {
 // call performed by the pipeline, so the health subscriber must not
 // duplicate that write (it does not know the violation_id).
 func (h *HealthSubscriber) evaluateArtist(ctx context.Context, artistID string) {
+	// Replace, not enrich (#2784): the events that reach here are coalesced
+	// from many triggers, so no inherited cause would be truthful. Covers
+	// both the debounce ticker and Bootstrap.
+	ctx = provider.WithCause(ctx, provider.Cause{Class: provider.CauseClassHealth})
+
 	a, err := h.artistService.GetByID(ctx, artistID)
 	if err != nil {
 		h.logger.Warn("health subscriber: loading artist", "artist_id", artistID, "error", err)

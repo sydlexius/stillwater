@@ -527,7 +527,13 @@ func (e *Engine) EvaluateScoped(ctx context.Context, a *artist.Artist, only map[
 		result.RulesTotal++
 		result.RulesConsidered = append(result.RulesConsidered, r.ID)
 
-		v := checker(ctx, a, r.Config)
+		// Name the rule in the operation cause (#2784). The outer class (user,
+		// scheduled, ...) is kept. A CHILD context is passed, leaving ctx
+		// unchanged, so code added after this loop cannot inherit the last
+		// rule's name. Evaluation coalesces provider fetches, so one upstream
+		// call is attributed to the FIRST rule that asked, not to every rule
+		// that used the result.
+		v := checker(provider.EnrichCause(ctx, provider.CauseClassRule, r.ID), a, r.Config)
 		if v != nil {
 			// Use severity from rule config if the checker did not set it
 			if v.Severity == "" {
