@@ -492,3 +492,115 @@ func TestRestoreOOBE_CompletionLogLevel(t *testing.T) {
 		t.Errorf("clean restore: no Info completion record in %v", clean)
 	}
 }
+
+// restoreHTMX posts a sealed payload to the real restore handler as an HTMX
+// request (the first-run setup page's form) and returns the raw response.
+func restoreHTMX(t *testing.T, router *Router, p settingsio.Payload) *httptest.ResponseRecorder {
+	t.Helper()
+	const passphrase = "restore-htmx-pass"
+	body, contentType := restoreMultipart(t, sealImportPayload(t, p, passphrase), passphrase)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/setup/restore", body)
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	router.handleSetupRestore(w, req)
+	return w
+}
+
+// TestRestoreOOBE_HTMXPartialRestoreShowsNoticeInsteadOfRedirect (#3012): a
+// restore that drops rows must NOT redirect (the notice would never be seen);
+// it renders the partial-restore notice plus a manual sign-in link, and the
+// base path is honored. The live region is the swap container, so the notice
+// must not carry a nested role="status".
+func TestRestoreOOBE_HTMXPartialRestoreShowsNoticeInsteadOfRedirect(t *testing.T) {
+	t.Parallel()
+	router, _, _ := settingsIOTestDeps(t)
+	router.basePath = "/sw"
+	w := restoreHTMX(t, router, settingsio.Payload{
+		Libraries: []settingsio.LibraryExport{{Name: "", Path: "/a", Type: "regular", Source: "manual"}},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("HX-Redirect"); got != "" {
+		t.Errorf("HX-Redirect = %q, want none on a partial restore", got)
+	}
+	out := w.Body.String()
+	for _, want := range []string{
+		"Restore complete.", "Import completed with dropped rows", "Libraries skipped: 1",
+		`href="/sw/"`, `id="setup-restore-continue"`, ">Continue</a>",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("body missing %q; body: %s", want, out)
+		}
+	}
+	if strings.Contains(out, `role="status"`) {
+		t.Errorf("notice nests a live region inside the swap container: %s", out)
+	}
+	if strings.Contains(out, "Continue to sign in") {
+		t.Errorf("no user was restored, so the link must not promise sign-in: %s", out)
+	}
+}
+
+// TestRestoreOOBE_HTMXPartialRestoreWithUserSaysSignIn (#3012): when a user was
+// restored the link is labeled "Continue to sign in".
+func TestRestoreOOBE_HTMXPartialRestoreWithUserSaysSignIn(t *testing.T) {
+	t.Parallel()
+	router, _, _ := settingsIOTestDeps(t)
+	w := restoreHTMX(t, router, settingsio.Payload{
+		Users: []settingsio.UserExport{{
+			ID: "u-restored", Username: "restored", PasswordHash: "bcrypt$x", Role: "administrator",
+			AuthProvider: "local", IsActive: true, CreatedAt: "2026-01-01T00:00:00Z",
+		}},
+		Libraries: []settingsio.LibraryExport{{Name: "", Path: "/a", Type: "regular", Source: "manual"}},
+	})
+	if out := w.Body.String(); !strings.Contains(out, ">Continue to sign in</a>") {
+		t.Errorf("body missing the sign-in label; body: %s", out)
+	}
+}
+
+// TestRestoreOOBE_HTMXFailureIsSwappable (#3012): HTMX does not swap non-2xx
+// responses, so a failed restore must answer 200 with the red fragment or the
+// result container stays empty. A JSON caller keeps the real 400.
+func TestRestoreOOBE_HTMXFailureIsSwappable(t *testing.T) {
+	t.Parallel()
+	_, svc, _ := settingsIOTestDeps(t)
+	env := buildExportedEnvelope(t, svc, "right-pass")
+	target, _, _ := settingsIOTestDeps(t)
+
+	body, contentType := restoreMultipart(t, env, "wrong-pass")
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/setup/restore", body)
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("HX-Request", "true")
+	rec := httptest.NewRecorder()
+	target.handleSetupRestore(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "text-red-") {
+		t.Errorf("HTMX failure = %d %q, want 200 with the red fragment", rec.Code, rec.Body.String())
+	}
+
+	body, contentType = restoreMultipart(t, env, "wrong-pass")
+	req = httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/setup/restore", body)
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("Accept", "application/json")
+	rec = httptest.NewRecorder()
+	target.handleSetupRestore(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("JSON caller status = %d, want 400", rec.Code)
+	}
+}
+
+// TestRestoreOOBE_HTMXCleanRestoreStillRedirects (#3012): with nothing dropped
+// the behavior is unchanged: HX-Redirect to the login path, no notice, no link.
+func TestRestoreOOBE_HTMXCleanRestoreStillRedirects(t *testing.T) {
+	t.Parallel()
+	router, _, _ := settingsIOTestDeps(t)
+	router.basePath = "/sw"
+	w := restoreHTMX(t, router, settingsio.Payload{Settings: map[string]string{}})
+	if got := w.Header().Get("HX-Redirect"); got != "/sw/" {
+		t.Errorf("HX-Redirect = %q, want /sw/", got)
+	}
+	if out := w.Body.String(); strings.Contains(out, "dropped rows") || strings.Contains(out, "Continue to sign in") {
+		t.Errorf("clean restore rendered the partial notice: %s", out)
+	}
+}

@@ -40,7 +40,12 @@ export const EXPECTED_COUNTS = {
 };
 
 // buildDroppedRowsEnvelope returns the backup file contents as a JSON string.
-export function buildDroppedRowsEnvelope(passphrase = IMPORT_PASSPHRASE) {
+//
+// opts.withUser adds one restorable user. ONLY the fresh-server first-run spec
+// may use it: importing a user into the shared harness server would change
+// what other specs see. A restored user is what makes the root path serve the
+// sign-in page rather than the first-run page once the restore completes.
+export function buildDroppedRowsEnvelope(passphrase = IMPORT_PASSPHRASE, opts = {}) {
   const payload = {
     settings: {
       // 0-100 integer key given a fraction: rejected by the validator.
@@ -51,6 +56,12 @@ export function buildDroppedRowsEnvelope(passphrase = IMPORT_PASSPHRASE) {
     libraries: [{ name: '', path: '/a11y-unused', type: 'regular', source: 'manual' }],
     api_tokens: [{ name: 'a11y-blank-hash', token_hash: '' }],
   };
+  if (opts.withUser) {
+    payload.users = [{
+      id: 'a11y-restored-user', username: 'a11y-restored', password_hash: '$2a$10$a11yfixturefixturefixturefixturefixturefixturefixtur',
+      role: 'administrator', auth_provider: 'local', is_active: true, created_at: '2026-01-01T00:00:00Z',
+    }];
+  }
   const salt = randomBytes(16);
   const nonce = randomBytes(12);
   const key = pbkdf2Sync(passphrase, salt, 600000, 32, 'sha256');
