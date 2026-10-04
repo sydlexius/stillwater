@@ -128,7 +128,13 @@ func (e *Engine) lookupPreferredAlias(ctx context.Context, a *artist.Artist) (al
 		e.logger.Warn("name_language_pref: metadata fetch failed",
 			slog.String("artist", a.Name),
 			slog.String("mbid", a.MusicBrainzID),
-			slog.String("error", err.Error()))
+			slog.String("error", err.Error()),
+			// The per-provider lines inside the fetch carry the cause, but this
+			// caller-side line is what reports that the whole lookup failed,
+			// so it names the cause too. Each caller of a shared failed fetch
+			// logs this line under its own cause, so a failure shared by two
+			// rules produces one line per rule, each naming itself.
+			provider.CauseAttr(fetchCtx))
 		return "", ""
 	}
 	if fr == nil || fr.Metadata == nil {

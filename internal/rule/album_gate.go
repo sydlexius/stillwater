@@ -234,7 +234,11 @@ func (g ruleAlbumGate) candidateTitles(ctx context.Context, ruleID string, a *ar
 			slog.String("rule_id", ruleID),
 			slog.String("artist", a.Name),
 			slog.String("candidate_mbid", mbid),
-			slog.String("error", err.Error()))
+			slog.String("error", err.Error()),
+			// fetchGroups calls the release-group fetcher directly (no shared
+			// fetch point), so the cause is read here, from the context the
+			// fetch was started with: it names the fix (rule:<id>) that asked.
+			provider.CauseAttr(ctx))
 		return nil, false
 	}
 
