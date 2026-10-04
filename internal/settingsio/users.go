@@ -160,6 +160,7 @@ func (s *Service) importUsers(ctx context.Context, db dbExecutor, users []UserEx
 func (s *Service) importOneUser(ctx context.Context, db dbExecutor, u *UserExport, now string, hasProtected *bool, result *ImportResult) error {
 	if u.Username == "" {
 		slog.Warn("import: skipping user with empty username")
+		result.UsersSkipped++
 		return nil
 	}
 	// pre-id envelope versions (v1.3 and earlier) lack a UUID; synthesize

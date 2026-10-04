@@ -609,8 +609,12 @@ func TestHandleSettingsImport_HTMX_ShowsDroppedRows(t *testing.T) {
 			Name: "Lidarr A", Type: "lidarr", URL: "http://lidarr.local:8686",
 			APIKey: "key1", Enabled: true, FeatureImageWrite: true,
 		}},
-		Libraries: []settingsio.LibraryExport{{Name: "", Path: "/music", Type: "regular", Source: "manual"}},
-		APITokens: []settingsio.APITokenExport{{Name: "t", TokenHash: ""}},
+		Libraries:       []settingsio.LibraryExport{{Name: "", Path: "/music", Type: "regular", Source: "manual"}},
+		APITokens:       []settingsio.APITokenExport{{Name: "t", TokenHash: ""}},
+		Rules:           []settingsio.RuleExport{{ID: "", AutomationMode: "auto"}},
+		ScraperConfigs:  []settingsio.ScraperConfigExport{{Scope: ""}},
+		UserPreferences: []settingsio.UserPrefsExport{{Username: "ghost", Preferences: map[string]string{"a": "1"}}},
+		Users:           []settingsio.UserExport{{Username: "", Role: "operator", CreatedAt: "2026-01-01T00:00:00Z"}},
 	}
 	env := sealImportPayload(t, payload, passphrase)
 
@@ -622,7 +626,9 @@ func TestHandleSettingsImport_HTMX_ShowsDroppedRows(t *testing.T) {
 		t.Fatalf("decoding result: %v", err)
 	}
 	if res.SettingsRejected != 1 || res.SettingsRenamedDropped != 1 || res.LibrariesSkipped != 1 ||
-		res.APITokensSkipped != 1 || res.ConnectionFeaturesIgnored != 1 {
+		res.APITokensSkipped != 1 || res.ConnectionFeaturesIgnored != 1 ||
+		res.RulesSkipped != 1 || res.ScraperConfigsSkipped != 1 ||
+		res.UserPreferencesSkipped != 1 || res.UsersSkipped != 1 {
 		t.Fatalf("precondition: want one of each drop counter, got %+v", res)
 	}
 
@@ -635,6 +641,10 @@ func TestHandleSettingsImport_HTMX_ShowsDroppedRows(t *testing.T) {
 		"Libraries skipped: 1",
 		"API tokens skipped: 1",
 		"Connection feature settings ignored (not supported by that connection type): 1",
+		"Rules skipped (unknown to this version or invalid): 1",
+		"Scraper configs skipped (no scope): 1",
+		"User preferences skipped (user not found on this instance): 1",
+		"Users skipped (no username): 1",
 		"text-amber-800",
 	} {
 		if !strings.Contains(out, want) {
@@ -658,6 +668,7 @@ func TestImportDropWarning_CleanCappedEscaped(t *testing.T) {
 	distinct := importDropWarning(&settingsio.ImportResult{
 		SettingsRejected: 2, SettingsRenamedDropped: 3, LibrariesSkipped: 4,
 		APITokensSkipped: 5, ConnectionFeaturesIgnored: 6,
+		RulesSkipped: 7, ScraperConfigsSkipped: 8, UserPreferencesSkipped: 9, UsersSkipped: 10,
 	})
 	for _, want := range []string{
 		"Settings rejected as invalid: 2",
@@ -665,6 +676,10 @@ func TestImportDropWarning_CleanCappedEscaped(t *testing.T) {
 		"Libraries skipped: 4",
 		"API tokens skipped: 5",
 		"Connection feature settings ignored (not supported by that connection type): 6",
+		"Rules skipped (unknown to this version or invalid): 7",
+		"Scraper configs skipped (no scope): 8",
+		"User preferences skipped (user not found on this instance): 9",
+		"Users skipped (no username): 10",
 	} {
 		if !strings.Contains(distinct, want) {
 			t.Errorf("missing %q in: %s", want, distinct)
@@ -709,8 +724,12 @@ func TestHandleSettingsImport_JSONResponseMatchesSpec(t *testing.T) {
 			Name: "Lidarr A", Type: "lidarr", URL: "http://lidarr.local:8686",
 			APIKey: "key1", Enabled: true, FeatureImageWrite: true,
 		}},
-		Libraries: []settingsio.LibraryExport{{Name: "", Path: "/music", Type: "regular", Source: "manual"}},
-		APITokens: []settingsio.APITokenExport{{Name: "t", TokenHash: ""}},
+		Libraries:       []settingsio.LibraryExport{{Name: "", Path: "/music", Type: "regular", Source: "manual"}},
+		APITokens:       []settingsio.APITokenExport{{Name: "t", TokenHash: ""}},
+		Rules:           []settingsio.RuleExport{{ID: "", AutomationMode: "auto"}},
+		ScraperConfigs:  []settingsio.ScraperConfigExport{{Scope: ""}},
+		UserPreferences: []settingsio.UserPrefsExport{{Username: "ghost", Preferences: map[string]string{"a": "1"}}},
+		Users:           []settingsio.UserExport{{Username: "", Role: "operator", CreatedAt: "2026-01-01T00:00:00Z"}},
 	}, passphrase)
 	router, _, _ := settingsIOTestDeps(t)
 
@@ -725,7 +744,8 @@ func TestHandleSettingsImport_JSONResponseMatchesSpec(t *testing.T) {
 	}
 	// Precondition: the drop counters are really present in the response.
 	for _, k := range []string{"settings_rejected", "settings_rejected_keys", "settings_renamed_dropped",
-		"libraries_skipped", "api_tokens_skipped", "connection_features_ignored"} {
+		"libraries_skipped", "api_tokens_skipped", "connection_features_ignored",
+		"rules_skipped", "scraper_configs_skipped", "user_preferences_skipped", "users_skipped"} {
 		if _, ok := got[k]; !ok {
 			t.Fatalf("precondition: response lacks %q: %s", k, w.Body.String())
 		}

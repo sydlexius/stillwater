@@ -270,6 +270,10 @@ func importDropWarning(result *settingsio.ImportResult) string {
 	add(result.SettingsRenamedDropped, "Settings discarded because the file also carried the current name")
 	add(result.LibrariesSkipped, "Libraries skipped")
 	add(result.APITokensSkipped, "API tokens skipped")
+	add(result.RulesSkipped, "Rules skipped (unknown to this version or invalid)")
+	add(result.ScraperConfigsSkipped, "Scraper configs skipped (no scope)")
+	add(result.UserPreferencesSkipped, "User preferences skipped (user not found on this instance)")
+	add(result.UsersSkipped, "Users skipped (no username)")
 	add(result.ConnectionFeaturesIgnored, "Connection feature settings ignored (not supported by that connection type)")
 	if len(items) == 0 {
 		return ""

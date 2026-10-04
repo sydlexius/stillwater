@@ -388,7 +388,11 @@ func TestRestoreOOBE_JSONReportsDroppedRows(t *testing.T) {
 			{Name: "", Path: "/a", Type: "regular", Source: "manual"},
 			{Name: "", Path: "/b", Type: "regular", Source: "manual"},
 		},
-		APITokens: []settingsio.APITokenExport{{Name: "t", TokenHash: ""}},
+		APITokens:       []settingsio.APITokenExport{{Name: "t", TokenHash: ""}},
+		Rules:           []settingsio.RuleExport{{ID: "", AutomationMode: "auto"}},
+		ScraperConfigs:  []settingsio.ScraperConfigExport{{Scope: ""}, {Scope: ""}},
+		UserPreferences: []settingsio.UserPrefsExport{{Username: "ghost", Preferences: map[string]string{"a": "1", "b": "2", "c": "3"}}},
+		Users:           []settingsio.UserExport{{Username: "", Role: "operator", CreatedAt: "2026-01-01T00:00:00Z"}},
 	}, passphrase)
 	router, _, _ := settingsIOTestDeps(t)
 	body, contentType := restoreMultipart(t, env, passphrase)
@@ -406,10 +410,25 @@ func TestRestoreOOBE_JSONReportsDroppedRows(t *testing.T) {
 		"settings_renamed_dropped": "1",
 		"libraries_skipped":        "2",
 		"api_tokens_skipped":       "1",
+		"rules_skipped":            "1",
+		"scraper_configs_skipped":  "2",
+		"user_preferences_skipped": "3",
+		"users_skipped":            "1",
 	}
 	for k, v := range want {
 		if string(got[k]) != v {
 			t.Errorf("%s = %s, want %s", k, got[k], v)
+		}
+	}
+	// kin-openapi allows undeclared extras, so check declaration explicitly.
+	route, _, err := loadSpec(t).FindRoute(req)
+	if err != nil {
+		t.Fatalf("finding spec route: %v", err)
+	}
+	schema := route.Operation.Responses.Status(200).Value.Content.Get("application/json").Schema.Value
+	for k := range got {
+		if _, declared := schema.Properties[k]; !declared {
+			t.Errorf("response field %q is not declared in the openapi 200 schema", k)
 		}
 	}
 }
@@ -476,6 +495,43 @@ func TestRestoreOOBE_CompletionLogLevel(t *testing.T) {
 	}
 	if raw, _ := json.Marshal(recs); strings.Contains(string(raw), secretValue) {
 		t.Error("a setting value leaked into the log")
+	}
+
+	// A restore whose ONLY drops are the new counters must still be Warn and
+	// carry every new attr, with distinct values so a swapped attr fails.
+	_, onlyNew := restoreOnce(t, settingsio.Payload{
+		Rules:           []settingsio.RuleExport{{ID: "", AutomationMode: "auto"}},
+		ScraperConfigs:  []settingsio.ScraperConfigExport{{Scope: ""}, {Scope: ""}},
+		UserPreferences: []settingsio.UserPrefsExport{{Username: "ghost", Preferences: map[string]string{"a": "1", "b": "2", "c": "3"}}},
+		Users: []settingsio.UserExport{
+			{Username: "", Role: "operator", CreatedAt: "2026-01-01T00:00:00Z"},
+			{Username: "", Role: "operator", CreatedAt: "2026-01-01T00:00:00Z"},
+			{Username: "", Role: "operator", CreatedAt: "2026-01-01T00:00:00Z"},
+			{Username: "", Role: "operator", CreatedAt: "2026-01-01T00:00:00Z"},
+		},
+	})
+	var newDone map[string]any
+	for _, rec := range onlyNew {
+		if m, _ := rec["msg"].(string); strings.HasPrefix(m, "setup restore complete") {
+			newDone = rec
+		}
+	}
+	if newDone == nil {
+		t.Fatalf("no completion log record in %v", onlyNew)
+	}
+	// Precondition: nothing but the new counters dropped, so Warn is owed to them alone.
+	for _, k := range []string{"libraries_skipped", "api_tokens_skipped", "settings_rejected", "settings_renamed_dropped", "connection_features_ignored"} {
+		if newDone[k] != float64(0) {
+			t.Fatalf("precondition: %s = %v, want 0", k, newDone[k])
+		}
+	}
+	if newDone["level"] != slog.LevelWarn.String() {
+		t.Errorf("new-counters-only restore: level=%v, want WARN", newDone["level"])
+	}
+	for k, want := range map[string]float64{"rules_skipped": 1, "scraper_configs_skipped": 2, "user_preferences_skipped": 3, "users_skipped": 4} {
+		if newDone[k] != want {
+			t.Errorf("%s = %v, want %v", k, newDone[k], want)
+		}
 	}
 
 	_, clean := restoreOnce(t, settingsio.Payload{Settings: map[string]string{}})

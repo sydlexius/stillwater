@@ -73,6 +73,10 @@ If an import leaves some rows out, an amber notice headed "Import completed with
 - **Settings rejected as invalid**, followed by the setting names (up to ten, then "and N more").
 - **Settings discarded because the file also carried the current name**: a setting saved under an old name was dropped because the file also had it under the current name.
 - **Connection feature settings ignored (not supported by that connection type)**.
+- **Rules skipped (unknown to this version or invalid)**: a rule in the file that this version does not have (for example one retired since the backup was made), has no id, or carries an unrecognized automation mode.
+- **Scraper configs skipped (no scope)**.
+- **User preferences skipped (user not found on this instance)**: counted per preference, not per user.
+- **Users skipped (no username)**.
 
 A clean import shows no notice. Skipped rows do not roll the import back; the rest of the bundle is still applied.
 
