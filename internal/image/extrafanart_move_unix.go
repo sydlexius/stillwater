@@ -26,3 +26,8 @@ func isRegularAt(dirFd int, name string) (bool, error) {
 	// Untyped constants, so this compiles for uint32 (linux) and uint16 (darwin) Mode.
 	return st.Mode&unix.S_IFMT == unix.S_IFREG, nil
 }
+
+// removeDirOnly removes an EMPTY directory and nothing else. os.Remove tries
+// unlink first, so a file swapped in at this name after the emptiness check
+// would be deleted; rmdir(2) fails with ENOTDIR on a non-directory instead.
+func removeDirOnly(path string) error { return unix.Rmdir(path) }

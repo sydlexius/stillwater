@@ -238,8 +238,8 @@ func ApplyExtraFanartMigration(ctx context.Context, inv HashInvalidator, artistI
 			res.Dir, res.DirErr = DirKeptError, fmt.Errorf("%s is not a real directory; leaving it", dir)
 		} else if left, err := os.ReadDir(dir); err == nil && len(left) > 0 {
 			res.Dir = DirKeptNotEmpty // a dotfile or non-image file remains
-		} else if err := os.Remove(dir); err != nil {
-			res.Dir, res.DirErr = DirKeptError, err
+		} else if err := removeDirOnly(dir); err != nil { // must stay removeDirOnly, never os.Remove: see its comment
+			res.Dir, res.DirErr = DirKeptError, fmt.Errorf("removing emptied %s: %w", dir, err)
 		} else {
 			res.Dir = DirRemoved
 		}
