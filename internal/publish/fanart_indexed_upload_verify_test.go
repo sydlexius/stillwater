@@ -9,6 +9,7 @@ import (
 	"image/jpeg"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -732,5 +733,53 @@ func TestUploadFanartSet_NonEmbyPastNilSlotStillUploads(t *testing.T) {
 	w := p.uploadFanartSet(context.Background(), u)
 	if peer.ups != 1 || len(w) != 0 {
 		t.Fatalf("ups = %d, warnings = %v, want 1 upload and no warning", peer.ups, w)
+	}
+}
+
+// #3200 R2: a verify read that fails AFTER the cache loaded leaves the cache
+// stale (the 500'd write may have landed unseen), so a later slot past the nil
+// gap is unverifiable: not uploaded, reported "not synced". Reads: seed 0, cache
+// load 1-2, the verify read after slot 4's 500 is call 3 and fails.
+func TestUploadFanartSet_VerifyReadFailureMakesLaterSlotUnverifiable(t *testing.T) {
+	peer := newFakeEmbyPeer()
+	peer.detailErr = func(call int) error {
+		if call >= 3 {
+			return errors.New("peer unreachable")
+		}
+		return nil
+	}
+	p, u := harness(peer, connection.TypeEmby, slot{3, 0}, slot{4, 1}, slot{5, 2})
+	w := p.uploadFanartSet(context.Background(), u)
+	if peer.ups != 1 {
+		t.Fatalf("ups = %d, want 1 (slot 4 only): the stale cache let slot 5 upload", peer.ups)
+	}
+	joined := strings.Join(w, "|")
+	if len(w) != 2 || !strings.Contains(joined, "fanart 4 upload failed") || !strings.Contains(joined, "fanart 5 not synced") {
+		t.Fatalf("warnings = %v, want slot 4 upload failed and slot 5 not synced", w)
+	}
+}
+
+// #3200 R3: the "the next sync retries" promise. After a run that uploaded
+// nothing because the cache load failed, a readable peer gets the pending bytes
+// and no warning.
+func TestUploadFanartSet_NextSyncRetriesAfterCacheLoadFailure(t *testing.T) {
+	peer := newFakeEmbyPeer()
+	failing := true
+	peer.detailErr = func(call int) error {
+		if failing && call >= 1 {
+			return errors.New("peer unreachable")
+		}
+		return nil
+	}
+	p, u := harness(peer, connection.TypeEmby, nilSlot3...)
+	if w := p.uploadFanartSet(context.Background(), u); len(w) != 1 || peer.ups != 0 {
+		t.Fatalf("run 1: warnings = %v, ups = %d, want 1 warning and no upload", w, peer.ups)
+	}
+	failing = false
+	if w := p.uploadFanartSet(context.Background(), u); len(w) != 0 {
+		t.Fatalf("run 2 warnings = %v, want none", w)
+	}
+	if peer.count() != 4 || !bytes.Equal(peer.data[3], []byte{0x41}) {
+		t.Fatalf("peer = %v, want the pending bytes at index 3", peer.data)
 	}
 }

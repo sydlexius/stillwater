@@ -3,6 +3,7 @@
 package publish
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
@@ -623,5 +624,77 @@ func TestSyncAllFanartToPlatforms_UnreadablePeerPastUnreadableSlot_UploadsNothin
 	}
 	if joined := strings.Join(warnings, "|"); !strings.Contains(joined, "not synced") {
 		t.Errorf("warnings = %v, want a \"not synced\" warning", warnings)
+	}
+}
+
+// r1Fixture drives the real syncAllFanartToPlatforms with slot 0 unreadable
+// (dangling symlink), slot 1 readable, and an extrafanart/ file. Right after the
+// snapshot (fanartLockHeldHook) the operator "edits" slot 1, so a post-push
+// local repair is observable: it would restore the snapshot bytes over the edit.
+// It returns the warnings, the uploads the peer saw, the snapshot bytes of slot
+// 1 and its bytes after the sync.
+func r1Fixture(t *testing.T) (warnings []string, uploads []int, snapshotBytes, after []byte) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Symlink(filepath.Join(dir, "does-not-exist.jpg"), filepath.Join(dir, fanartPrimaryFixtureName)); err != nil {
+		t.Fatalf("planting the dangling symlink fixture: %v", err)
+	}
+	seedJPG(t, dir, "fanart1.jpg")
+	seedExtrafanart(t, dir, 1)
+	slot1 := filepath.Join(dir, "fanart1.jpg")
+	var err error
+	if snapshotBytes, err = os.ReadFile(slot1); err != nil {
+		t.Fatal(err)
+	}
+	edited := []byte("operator edit after the snapshot")
+	fanartLockHeldHook = func() {
+		if werr := os.WriteFile(slot1, edited, 0o600); werr != nil {
+			t.Errorf("simulating the operator edit: %v", werr)
+		}
+	}
+	t.Cleanup(func() { fanartLockHeldHook = nil })
+
+	up := &recordingIndexedUploader{}
+	orig := newIndexedImageUploader
+	newIndexedImageUploader = func(_ *connection.Connection, _ *slog.Logger) connection.IndexedImageUploader { return up }
+	t.Cleanup(func() { newIndexedImageUploader = orig })
+
+	warnings = syncTestPublisher().SyncAllFanartToPlatforms(context.Background(),
+		&artist.Artist{ID: "a1", Name: "R1", Path: dir})
+	if after, err = os.ReadFile(slot1); err != nil {
+		t.Fatal(err)
+	}
+	return warnings, up.got(), snapshotBytes, after
+}
+
+// #3200 R1: an Emby push that issued ZERO writes (nil slot, unreadable peer) is
+// not "attempted": no post-push local repair (it would revert the operator's
+// concurrent edit) and no extrafanart advisory.
+func TestSyncAllFanart_EmbyNoWritesIssued_NoRepairNoAdvisory(t *testing.T) {
+	warnings, uploads, snap, after := r1Fixture(t) // real reader, dead address
+	if len(uploads) != 0 {
+		t.Fatalf("precondition: uploads = %v, want none", uploads)
+	}
+	if bytes.Equal(after, snap) {
+		t.Errorf("the post-push repair ran with no write issued and reverted the operator's edit")
+	}
+	if w := findExtrafanartWarning(warnings); w != "" {
+		t.Errorf("extrafanart advisory raised though nothing was written: %q", w)
+	}
+}
+
+// Positive control: with a readable peer one upload is issued, so the repair
+// and the advisory behave as before.
+func TestSyncAllFanart_EmbyWriteIssued_RepairAndAdvisoryRun(t *testing.T) {
+	useReachableEmptyPeerReader(t)
+	warnings, uploads, snap, after := r1Fixture(t)
+	if len(uploads) != 1 {
+		t.Fatalf("precondition: uploads = %v, want exactly one", uploads)
+	}
+	if !bytes.Equal(after, snap) {
+		t.Errorf("the post-push repair did not run after a write was issued")
+	}
+	if findExtrafanartWarning(warnings) == "" {
+		t.Errorf("no extrafanart advisory after a write; warnings = %v", warnings)
 	}
 }
