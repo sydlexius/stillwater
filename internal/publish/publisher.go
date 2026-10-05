@@ -2768,7 +2768,7 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 			snapshot:    snapshot,
 			identityIdx: fanartIdentityIdx,
 			notified:    collisionNotified,
-			reader:      embyBackdropReader(conn, p.logger),
+			reader:      newBackdropReader(conn, p.logger),
 		})
 		uploadedTo = appendIfAttempted(uploadedTo, conn.Name, attempted)
 		warnings = append(warnings, peerWarnings...)
@@ -2927,6 +2927,10 @@ type fanartUpload struct {
 	reader connection.BackdropReader
 }
 
+// newBackdropReader is a test seam over embyBackdropReader, so a test can serve
+// the peer's state from a fake instead of dialing the connection's URL (#3200).
+var newBackdropReader = embyBackdropReader
+
 // embyBackdropReader returns the connection's backdrop reader, or nil when it
 // does not support one. Whether recovery is armed is uploadFanartSet's call.
 func embyBackdropReader(conn *connection.Connection, logger *slog.Logger) connection.BackdropReader {
@@ -3045,10 +3049,26 @@ var (
 // both uploaded). EXACT match only: a perceptual match could skip a distinct
 // near-duplicate and lose artwork.
 //
+// ORDERING GUARANTEE (#3200). Survivors are uploaded in local order. A nil slot
+// still spends its LOCAL index (so a peer that already holds every slot keeps
+// each image in place via an in-range replace), but it writes nothing, so on a
+// peer shorter than that index Emby appends the next survivor at its own next
+// free index: survivors end up contiguous and in local order, compacted past
+// the gap. When the peer already holds MORE entries than a survivor's local
+// index, that survivor is an in-range replace at its local index (replace by
+// position); compaction only happens on a peer shorter than the index. The
+// guard above is what makes that compaction idempotent. A slot degraded by
+// snapshotFanart's budget/degrade caps is a nil slot by another route and takes
+// the same path. A failed
+// peer read never causes MORE uploads than a clean run: past a nil slot an
+// unverifiable slot is reported, not uploaded.
+//
 // The first read error or confirmed not-landed result disarms recovery for the
 // rest of the call, so a failing peer costs one poll budget, not one per slot.
 // Disarming re-exposes the original false failure for LATER slots in the same
 // call (a landed 500 is reported); a retry then recovers it through the guard.
+// Past a nil slot those later slots are not uploaded at all once the peer cannot
+// be read (skipPastNilSlot), so the false failure cannot arise there.
 func (p *Publisher) uploadFanartSet(ctx context.Context, u fanartUpload) []string {
 	var warnings []string
 
@@ -3098,9 +3118,8 @@ func (p *Publisher) uploadFanartSet(ctx context.Context, u fanartUpload) []strin
 				trackedCount = len(cache.hashes)
 			}
 		}
-		if sawNil && cache.loaded && cache.holds(data) {
-			p.logger.Info("skipping fanart upload: the peer already holds these bytes",
-				slog.String("artist", u.artist.Name), slog.String("connection", u.conn.Name), slog.Int("index", idx))
+		if ws, skip := p.skipPastNilSlot(u, cache, sawNil, data, idx); skip {
+			warnings = append(warnings, ws...)
 			continue
 		}
 
@@ -3128,6 +3147,36 @@ func (p *Publisher) uploadFanartSet(ctx context.Context, u fanartUpload) []strin
 		p.notifyPushFailure(u.pid.ConnectionID, u.conn.Name, classifyPushErr(uploadErr), u.artist.ID, artistDisplayName(u.artist), pushOpImageUpload, uploadErr)
 	}
 	return warnings
+}
+
+// skipPastNilSlot decides whether a data slot AFTER a nil slot is left alone,
+// and returns any warning that decision owes. Past a nil slot the positional
+// index no longer matches the peer's compacted one, so the peer cache is the
+// only thing that can say whether these bytes are already there.
+//
+// DUPLICATE GUARD: the cache holds the exact bytes, so skip with no warning.
+//
+// FAIL CLOSED (#3200): the cache could not be loaded (the seed read or the load
+// failed), so the slot is unverifiable. Uploading anyway is exactly how a retry
+// appends a duplicate, making a failed read cost MORE uploads than a clean run.
+// The slot is reported as not synced instead; the next run with a readable peer
+// syncs it. Scoped to Emby with a reader, the only case the guard exists for
+// (Jellyfin appends regardless, #3145), and to the nil-gap case: with no nil
+// slot the indices align and an unreadable peer does not stop uploads.
+func (p *Publisher) skipPastNilSlot(u fanartUpload, cache *peerCache, sawNil bool, data []byte, idx int) ([]string, bool) {
+	switch {
+	case !sawNil:
+		return nil, false
+	case cache.loaded && cache.holds(data):
+		p.logger.Info("skipping fanart upload: the peer already holds these bytes",
+			slog.String("artist", u.artist.Name), slog.String("connection", u.conn.Name), slog.Int("index", idx))
+		return nil, true
+	case !cache.loaded && u.reader != nil && u.conn.Type == connection.TypeEmby:
+		p.logger.Warn("skipping fanart upload: the peer could not be read to check for a duplicate past an unreadable slot",
+			slog.String("artist", u.artist.Name), slog.String("connection", u.conn.Name), slog.Int("index", idx))
+		return []string{truncateWarning(fmt.Sprintf("%s (%s): fanart %d not synced: the platform could not be read to check for a duplicate; the next sync retries", u.conn.Name, u.conn.Type, idx))}, true
+	}
+	return nil, false
 }
 
 // recordUpload keeps the believed count and the peer cache in step after a

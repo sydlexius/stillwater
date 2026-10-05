@@ -7,6 +7,7 @@ import (
 	"fmt"
 	stdimage "image"
 	"image/jpeg"
+	"log/slog"
 	"os"
 	"sync"
 	"testing"
@@ -583,5 +584,153 @@ func TestUploadFanartSet_DifferentBytesAppendedDoNotConfirm(t *testing.T) {
 	u.uploader = appendsOther{peer}
 	if w := p.uploadFanartSet(context.Background(), u); len(w) != 1 {
 		t.Fatalf("warnings = %v, want 1: the new entry is not our bytes", w)
+	}
+}
+
+// #3200: the fake models the issue's own mechanism, so every convergence test
+// below is proving something. An upload at idx > len appends at the peer's REAL
+// next index (and 500s); a second upload at the same idx, now == len, appends
+// AGAIN. That second append is the duplicate the issue measured on a real Emby.
+func TestFakeEmbyPeer_ModelsAppendAtRealNextIndex(t *testing.T) {
+	peer := newFakeEmbyPeer() // [0 1 2]
+	ctx := context.Background()
+	if err := peer.UploadImageAtIndex(ctx, "p1", "fanart", 4, []byte{0x41}, ""); err == nil {
+		t.Fatal("idx 4 > len 3 must 500")
+	}
+	if peer.count() != 4 || !bytes.Equal(peer.data[3], []byte{0x41}) {
+		t.Fatalf("peer = %v, want the upload appended at its real index 3", peer.data)
+	}
+	if err := peer.UploadImageAtIndex(ctx, "p1", "fanart", 4, []byte{0x41}, ""); err != nil {
+		t.Fatalf("idx 4 == len 4 is a clean append, got %v", err)
+	}
+	if peer.count() != 5 {
+		t.Fatalf("count = %d, want 5: an unguarded retry appends a duplicate", peer.count())
+	}
+}
+
+// ORDERING GUARANTEE (#3200): a nil slot spends no platform position of its
+// own, so the survivors land on the peer in local order, each at the next free
+// platform index (compacted past the gap), not at its local index.
+func TestUploadFanartSet_SurvivorsLandInLocalOrderCompactedPastGaps(t *testing.T) {
+	peer := newFakeEmbyPeer() // [0 1 2]
+	p, u := harness(peer, connection.TypeEmby, slot{3, 0}, slot{4, 1}, slot{6, 0}, slot{7, 2})
+	if w := p.uploadFanartSet(context.Background(), u); len(w) != 0 {
+		t.Fatalf("warnings = %v, want none", w)
+	}
+	want := [][]byte{{0}, {1}, {2}, {0x41}, {0x42}}
+	if fmt.Sprint(peer.data) != fmt.Sprint(want) {
+		t.Fatalf("peer = %v, want %v", peer.data, want)
+	}
+}
+
+// Repeated runs over a permanently-nil slot converge: the settled count and
+// content after run 1 never change on runs 2 and 3.
+func TestUploadFanartSet_RepeatedRunsConvergeOverPermanentNilSlot(t *testing.T) {
+	peer := newFakeEmbyPeer()
+	p, u := harness(peer, connection.TypeEmby, slot{3, 0}, slot{4, 1}, slot{5, 2})
+	var first string
+	for run := 1; run <= 3; run++ {
+		if w := p.uploadFanartSet(context.Background(), u); len(w) != 0 {
+			t.Fatalf("run %d warnings = %v, want none", run, w)
+		}
+		if run == 1 {
+			first = fmt.Sprint(peer.data)
+			if peer.count() != 5 {
+				t.Fatalf("run 1 count = %d, want 5", peer.count())
+			}
+		} else if got := fmt.Sprint(peer.data); got != first {
+			t.Fatalf("run %d changed the peer: %s -> %s", run, first, got)
+		}
+	}
+}
+
+// A failed peer read must never cause MORE uploads than a clean run. Run 1 is
+// clean and lands slot 4's bytes at platform index 3. Run 2 cannot read the peer
+// (so the duplicate guard has nothing to consult); positional index 4 now equals
+// the peer's count, so an unguarded upload is a clean append of a duplicate.
+func TestUploadFanartSet_UnreadablePeerAfterNilSlotUploadsNothing(t *testing.T) {
+	peer := newFakeEmbyPeer()
+	p, u := harness(peer, connection.TypeEmby, nilSlot3...)
+	if w := p.uploadFanartSet(context.Background(), u); len(w) != 0 {
+		t.Fatalf("run 1 warnings = %v, want none", w)
+	}
+	after1, ups1 := fmt.Sprint(peer.data), peer.ups
+	peer.detailErr = func(int) error { return errors.New("peer unreachable") }
+	w := p.uploadFanartSet(context.Background(), u)
+	if peer.ups != ups1 || fmt.Sprint(peer.data) != after1 {
+		t.Fatalf("run 2 with an unreadable peer uploaded (ups %d -> %d, peer %s -> %v): a failed read caused a duplicate", ups1, peer.ups, after1, peer.data)
+	}
+	if len(w) != 1 {
+		t.Fatalf("run 2 warnings = %v, want exactly 1 (the slot was not synced)", w)
+	}
+}
+
+// The same, when the seed read works but the guard's own cache load fails.
+func TestUploadFanartSet_CacheLoadFailureAfterNilSlotUploadsNothing(t *testing.T) {
+	peer := newFakeEmbyPeer()
+	peer.detailErr = func(call int) error {
+		if call >= 1 {
+			return errors.New("peer unreachable")
+		}
+		return nil
+	}
+	p, u := harness(peer, connection.TypeEmby, nilSlot3...)
+	w := p.uploadFanartSet(context.Background(), u)
+	if peer.ups != 0 || peer.count() != 3 {
+		t.Fatalf("ups = %d, count = %d, want 0 and 3: an unverifiable slot past a nil gap must not be uploaded", peer.ups, peer.count())
+	}
+	if len(w) != 1 {
+		t.Fatalf("warnings = %v, want exactly 1", w)
+	}
+}
+
+// Without a nil slot nothing is misaligned, so an unreadable peer must NOT stop
+// uploads (the fail-closed rule is scoped to the nil-gap case).
+func TestUploadFanartSet_UnreadablePeerWithoutNilSlotStillUploads(t *testing.T) {
+	peer := newFakeEmbyPeer()
+	peer.detailErr = func(int) error { return errors.New("peer unreachable") }
+	p, u := harness(peer, connection.TypeEmby, slot{3, 1}, slot{4, 2})
+	if w := p.uploadFanartSet(context.Background(), u); len(w) != 0 {
+		t.Fatalf("warnings = %v, want none", w)
+	}
+	if peer.ups != 2 {
+		t.Fatalf("ups = %d, want 2", peer.ups)
+	}
+}
+
+// useReachableEmptyPeerReader makes the connection's peer READABLE (an empty
+// backdrop list) for a test whose subject is slot indexing, not read failure
+// (#3200). Past a nil slot an unreadable Emby peer is now fail-closed, and those
+// tests' real reader dials an address that never answers, which is not the
+// "reachable peer, unreadable local file" situation they describe.
+func useReachableEmptyPeerReader(t *testing.T) {
+	t.Helper()
+	orig := newBackdropReader
+	newBackdropReader = func(*connection.Connection, *slog.Logger) connection.BackdropReader { return &fakeEmbyPeer{} }
+	t.Cleanup(func() { newBackdropReader = orig })
+}
+
+// F1a: Emby with no reader cannot verify anything, but must not fail closed:
+// the reader != nil condition scopes the rule to a peer that CAN be read.
+func TestUploadFanartSet_NoReaderPastNilSlotStillUploads(t *testing.T) {
+	peer := newFakeEmbyPeer()
+	p, u := harness(peer, connection.TypeEmby, slot{1, 0}, slot{2, 1}) // in range: a clean replace
+	u.reader = nil
+	w := p.uploadFanartSet(context.Background(), u)
+	if peer.ups != 1 || len(w) != 0 {
+		t.Fatalf("ups = %d, warnings = %v, want 1 upload and no warning", peer.ups, w)
+	}
+}
+
+// F1b: pins the Emby scope condition of the fail-closed rule, not a reachable
+// path (production never routes Jellyfin through uploadFanartSet). A non-Emby
+// connection with a nil slot and an unloaded cache uploads without a warning.
+func TestUploadFanartSet_NonEmbyPastNilSlotStillUploads(t *testing.T) {
+	peer := newFakeEmbyPeer()
+	peer.appendAll = true
+	p, u := harness(peer, connection.TypeJellyfin, nilSlot3...)
+	w := p.uploadFanartSet(context.Background(), u)
+	if peer.ups != 1 || len(w) != 0 {
+		t.Fatalf("ups = %d, warnings = %v, want 1 upload and no warning", peer.ups, w)
 	}
 }

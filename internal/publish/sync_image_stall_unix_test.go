@@ -357,6 +357,7 @@ func TestSyncAllFanartToPlatforms_UnreadableFileSkipsAndContinues(t *testing.T) 
 	seedJPG(t, dir, "fanart1.jpg")
 	assertOnFanartReadPath(t, dir, fanartPrimaryFixtureName)
 
+	useReachableEmptyPeerReader(t)
 	up := &recordingIndexedUploader{}
 	orig := newIndexedImageUploader
 	newIndexedImageUploader = func(_ *connection.Connection, _ *slog.Logger) connection.IndexedImageUploader {
@@ -590,5 +591,37 @@ func TestSyncAllFanartToPlatforms_CancellationStopsTheSet(t *testing.T) {
 	if !strings.Contains(joined, "platform sync canceled") {
 		t.Errorf("warnings = %v, want the cancellation named; stopping silently tells the caller "+
 			"nothing about why the push is incomplete", got.warnings)
+	}
+}
+
+// TestSyncAllFanartToPlatforms_UnreadablePeerPastUnreadableSlot_UploadsNothing
+// drives the REAL wiring (newBackdropReader's default, a real Emby reader
+// pointed at a dead address that refuses at once) with slot 0 unreadable and
+// slot 1 healthy. The peer cannot be read to check for a duplicate, so slot 1
+// is NOT uploaded and the operator is told (#3200).
+func TestSyncAllFanartToPlatforms_UnreadablePeerPastUnreadableSlot_UploadsNothing(t *testing.T) {
+	dir := t.TempDir()
+	bad := filepath.Join(dir, fanartPrimaryFixtureName)
+	if err := os.Symlink(filepath.Join(dir, "does-not-exist.jpg"), bad); err != nil {
+		t.Fatalf("planting the dangling symlink fixture: %v", err)
+	}
+	seedJPG(t, dir, "fanart1.jpg")
+
+	up := &recordingIndexedUploader{}
+	orig := newIndexedImageUploader
+	newIndexedImageUploader = func(_ *connection.Connection, _ *slog.Logger) connection.IndexedImageUploader {
+		return up
+	}
+	t.Cleanup(func() { newIndexedImageUploader = orig })
+
+	p := syncTestPublisher() // URL http://127.0.0.1:1: connection refused immediately
+	warnings := p.SyncAllFanartToPlatforms(context.Background(),
+		&artist.Artist{ID: "a1", Name: "Unreadable Peer", Path: dir})
+
+	if got := up.got(); len(got) != 0 {
+		t.Fatalf("uploads = %v, want none past the nil slot while the peer is unreadable", got)
+	}
+	if joined := strings.Join(warnings, "|"); !strings.Contains(joined, "not synced") {
+		t.Errorf("warnings = %v, want a \"not synced\" warning", warnings)
 	}
 }
