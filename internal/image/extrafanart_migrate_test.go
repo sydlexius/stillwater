@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -30,7 +32,8 @@ func seedTree(t *testing.T, files map[string]string) string {
 	return dir
 }
 
-// inventory is the FULL tree: every file (content) and directory, relative.
+// inventory is the FULL tree: every file (content), symlink (target) and
+// directory, relative.
 func inventory(t *testing.T, dir string) map[string]string {
 	t.Helper()
 	inv := map[string]string{}
@@ -43,6 +46,11 @@ func inventory(t *testing.T, dir string) map[string]string {
 			inv[rel] = "<dir>"
 			return nil
 		}
+		if info.Mode()&os.ModeSymlink != 0 { // record the link itself, never its target
+			tgt, lerr := os.Readlink(p)
+			inv[rel] = "<link:" + tgt + ">"
+			return lerr
+		}
 		b, rerr := os.ReadFile(p)
 		inv[rel] = string(b)
 		return rerr
@@ -53,10 +61,41 @@ func inventory(t *testing.T, dir string) map[string]string {
 	return inv
 }
 
+// treeDiff names every path that is missing, unexpected, or changed between
+// two inventories; "" means identical.
+func treeDiff(got, want map[string]string) string {
+	var out []string
+	for p, w := range want {
+		if g, ok := got[p]; !ok {
+			out = append(out, "missing: "+p)
+		} else if g != w {
+			out = append(out, "changed: "+p+" ("+g+" != "+w+")")
+		}
+	}
+	for p := range got {
+		if _, ok := want[p]; !ok {
+			out = append(out, "unexpected: "+p)
+		}
+	}
+	sort.Strings(out)
+	return strings.Join(out, "; ")
+}
+
+// wantInv asserts the WHOLE artist directory equals want, naming differences.
 func wantInv(t *testing.T, dir string, want map[string]string) {
 	t.Helper()
-	if got := inventory(t, dir); !reflect.DeepEqual(got, want) {
-		t.Errorf("inventory mismatch\n got: %v\nwant: %v", got, want)
+	if d := treeDiff(inventory(t, dir), want); d != "" {
+		t.Errorf("artist dir differs from expected: %s", d)
+	}
+}
+
+// requireExtraFanartCount fails the test unless extrafanart/ holds exactly n
+// entries now, so a fixture that silently seeded nothing cannot pass.
+func requireExtraFanartCount(t *testing.T, dir string, n int) {
+	t.Helper()
+	ents, err := os.ReadDir(filepath.Join(dir, extraFanartDir))
+	if err != nil || len(ents) != n {
+		t.Fatalf("precondition: extrafanart/ has %d entries (err=%v), want %d", len(ents), err, n)
 	}
 }
 
@@ -175,6 +214,7 @@ func TestApplyExtraFanart_RefusesOccupiedDestinationAndReportsPartialTruthfully(
 func TestApplyExtraFanart_FullMigrationRemovesEmptyDirIsIdempotentAndInvalidates(t *testing.T) {
 	ctx := context.Background()
 	dir := seedTree(t, map[string]string{"fanart.jpg": "r", "extrafanart/a.jpg": "a", "extrafanart/b.jpg": "b"})
+	requireExtraFanartCount(t, dir, 2)
 	plan, _ := PlanExtraFanartMigration(ctx, dir, []string{"fanart.jpg"}, false)
 	inv := &fakeHashInvalidator{}
 	res, err := ApplyExtraFanartMigration(ctx, inv, "a1", plan)
@@ -189,13 +229,20 @@ func TestApplyExtraFanart_FullMigrationRemovesEmptyDirIsIdempotentAndInvalidates
 	if !reflect.DeepEqual(inv.calls, []string{"a1/fanart"}) || !reflect.DeepEqual(inv.geomCall, []string{"a1/fanart"}) {
 		t.Errorf("invalidation hashes=%v geometry=%v", inv.calls, inv.geomCall)
 	}
-	res2, err := ApplyExtraFanartMigration(ctx, inv, "a1", plan)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantInv(t, dir, after)
-	if res2.Moved != 0 || len(inv.calls) != 1 {
-		t.Errorf("second apply moved=%d invalidations=%d, want no-op", res2.Moved, len(inv.calls))
+	// Runs 2 and 3 replay the same plan: each must be a no-op and leave the
+	// FULL tree identical to the state after run 1.
+	snapshot := inventory(t, dir)
+	for run := 2; run <= 3; run++ {
+		resN, err := ApplyExtraFanartMigration(ctx, inv, "a1", plan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d := treeDiff(inventory(t, dir), snapshot); d != "" {
+			t.Errorf("run %d changed the tree: %s", run, d)
+		}
+		if resN.Moved != 0 || len(inv.calls) != 1 {
+			t.Errorf("run %d moved=%d invalidations=%d, want no-op", run, resN.Moved, len(inv.calls))
+		}
 	}
 }
 
@@ -221,10 +268,16 @@ func TestApplyExtraFanart_KeepsDirWhenAnythingRemains(t *testing.T) {
 			map[string]string{"fanart.jpg": "r", "fanart2.jpg": "b", "extrafanart": "<dir>", "extrafanart/notes.txt": "n"},
 			DirKeptNotEmpty,
 		},
+		"nested folder is kept whole": {
+			map[string]string{"fanart.jpg": "r", "extrafanart/b.jpg": "b", "extrafanart/sub/c.jpg": "c"},
+			map[string]string{"fanart.jpg": "r", "fanart2.jpg": "b", "extrafanart": "<dir>", "extrafanart/sub": "<dir>", "extrafanart/sub/c.jpg": "c"},
+			DirKeptNotEmpty,
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			dir := seedTree(t, tc.files)
+			requireExtraFanartCount(t, dir, 2) // every case seeds two top-level entries
 			plan, _ := PlanExtraFanartMigration(ctx, dir, []string{"fanart.jpg"}, false)
 			res, err := ApplyExtraFanartMigration(ctx, &fakeHashInvalidator{}, "a1", plan)
 			if err != nil {
@@ -245,6 +298,7 @@ func TestExtraFanart_UnhashableAndFailedFilesAreReportedWhileOthersMove(t *testi
 	if err := os.Symlink(filepath.Join(dir, "gone"), filepath.Join(dir, "extrafanart", "a.jpg")); err != nil {
 		t.Fatal(err)
 	}
+	requireExtraFanartCount(t, dir, 2)
 	plan, err := PlanExtraFanartMigration(ctx, dir, []string{"fanart.jpg"}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -265,6 +319,8 @@ func TestExtraFanart_UnhashableAndFailedFilesAreReportedWhileOthersMove(t *testi
 	if _, serr := os.Lstat(filepath.Join(dir, "fanart2.jpg")); serr != nil {
 		t.Errorf("the file that could move must have moved: %v", serr)
 	}
+	// The blocked symlink stays; nothing else in the artist dir changed.
+	wantInv(t, dir, map[string]string{"fanart.jpg": "r", "fanart2.jpg": "b", "extrafanart": "<dir>", "extrafanart/a.jpg": "<link:" + filepath.Join(dir, "gone") + ">"})
 }
 
 func TestPlanExtraFanart_IdenticalToNonChosenConventionIsSkipped(t *testing.T) {
@@ -281,12 +337,17 @@ func TestExtraFanart_SymlinkedSourceIsBlockedAndNothingMoves(t *testing.T) {
 	if err := os.Symlink("../elsewhere.jpg", filepath.Join(dir, "extrafanart", "a.jpg")); err != nil {
 		t.Fatal(err)
 	}
+	wantEntries := 2
+	if makeFifoHook != nil {
+		wantEntries = 3
+	}
 	// A FIFO would block HashFile's open; it must be blocked before any read.
 	if makeFifoHook != nil {
 		if err := makeFifoHook(filepath.Join(dir, "extrafanart", "c.jpg")); err != nil {
 			t.Fatal(err)
 		}
 	}
+	requireExtraFanartCount(t, dir, wantEntries)
 	pctx, pcancel := context.WithTimeout(ctx, 2*time.Second)
 	defer pcancel()
 	plan, err := PlanExtraFanartMigration(pctx, dir, []string{"fanart.jpg"}, false)
@@ -434,6 +495,7 @@ func TestApplyExtraFanart_CancelMidApplyStillInvalidatesWhatMoved(t *testing.T) 
 func TestApplyExtraFanart_SourceGoneAloneDoesNotKeepTheDir(t *testing.T) {
 	ctx := context.Background()
 	dir := seedTree(t, map[string]string{"fanart.jpg": "r", "extrafanart/b.jpg": "b"})
+	requireExtraFanartCount(t, dir, 1)
 	plan, _ := PlanExtraFanartMigration(ctx, dir, []string{"fanart.jpg"}, false)
 	plan.Entries = append(plan.Entries, MigrationEntry{Source: filepath.Join(dir, "extrafanart", "z.jpg"),
 		Dest: filepath.Join(dir, "fanart9.jpg"), Disposition: DispositionMove})
@@ -441,10 +503,12 @@ func TestApplyExtraFanart_SourceGoneAloneDoesNotKeepTheDir(t *testing.T) {
 	if res.Moved != 1 || res.Dir != DirRemoved {
 		t.Errorf("moved=%d dir=%q, want 1 and removed", res.Moved, res.Dir)
 	}
+	wantInv(t, dir, map[string]string{"fanart.jpg": "r", "fanart2.jpg": "b"})
 }
 
 func TestApplyExtraFanart_SourceSwappedForDirAfterPlanIsBlocked(t *testing.T) {
 	dir := seedTree(t, map[string]string{"fanart.jpg": "r", "extrafanart/a.jpg": "a"})
+	requireExtraFanartCount(t, dir, 1)
 	plan, _ := PlanExtraFanartMigration(context.Background(), dir, []string{"fanart.jpg"}, false)
 	a := filepath.Join(dir, "extrafanart", "a.jpg")
 	if err := os.Remove(a); err != nil {
@@ -460,10 +524,76 @@ func TestApplyExtraFanart_SourceSwappedForDirAfterPlanIsBlocked(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(dir, "fanart2.jpg")); err == nil {
 		t.Error("a directory must not be moved into the artist root")
 	}
+	wantInv(t, dir, map[string]string{"fanart.jpg": "r", "extrafanart": "<dir>", "extrafanart/a.jpg": "<dir>"})
 }
 
 func TestApplyExtraFanart_NilPlanIsRejected(t *testing.T) {
 	if res, err := ApplyExtraFanartMigration(context.Background(), &fakeHashInvalidator{}, "a1", nil); err == nil || res != nil {
 		t.Errorf("res=%v err=%v, want a nil result and an error", res, err)
 	}
+}
+
+// Proves removeDirOnly's directory-only semantics: a regular file at the path
+// survives (os.Remove would unlink it, rmdir refuses it). It does NOT guard
+// the call site in ApplyExtraFanartMigration: the window between the
+// emptiness check and the removal cannot be forced from a test, so reverting
+// that call to os.Remove would not fail anything.
+func TestRemoveDirOnly_NeverDeletesAFile(t *testing.T) {
+	dir := seedTree(t, map[string]string{"fanart.jpg": "r", "extrafanart": "operator data"})
+	if err := removeDirOnly(filepath.Join(dir, extraFanartDir)); err == nil {
+		t.Error("removing a regular file as a directory must fail")
+	}
+	wantInv(t, dir, map[string]string{"fanart.jpg": "r", "extrafanart": "operator data"})
+
+	// The intended case still works: an empty real directory is removed.
+	empty := seedTree(t, map[string]string{"fanart.jpg": "r"})
+	if err := os.Mkdir(filepath.Join(empty, extraFanartDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeDirOnly(filepath.Join(empty, extraFanartDir)); err != nil {
+		t.Fatal(err)
+	}
+	wantInv(t, empty, map[string]string{"fanart.jpg": "r"})
+}
+
+// lockDirInvalidator makes the artist dir read-only from inside the
+// invalidation step, which runs after every move and before the emptied
+// folder is removed: the moves succeed, the rmdir then fails.
+type lockDirInvalidator struct {
+	fakeHashInvalidator
+	dir string
+	t   *testing.T
+}
+
+func (l *lockDirInvalidator) InvalidateImageHashes(ctx context.Context, artistID, imageType string) error {
+	if err := os.Chmod(l.dir, 0o555); err != nil {
+		l.t.Fatal(err)
+	}
+	return l.fakeHashInvalidator.InvalidateImageHashes(ctx, artistID, imageType)
+}
+
+func TestApplyExtraFanart_EmptiedDirRemovalFailureIsReportedWithItsPath(t *testing.T) {
+	if os.Geteuid() == 0 || runtime.GOOS == "windows" {
+		t.Skip("needs directory permissions to be enforced (not root, not Windows)")
+	}
+	ctx := context.Background()
+	dir := seedTree(t, map[string]string{"fanart.jpg": "r", "extrafanart/b.jpg": "b"})
+	requireExtraFanartCount(t, dir, 1)
+	plan, _ := PlanExtraFanartMigration(ctx, dir, []string{"fanart.jpg"}, false)
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	res, err := ApplyExtraFanartMigration(ctx, &lockDirInvalidator{dir: dir, t: t}, "a1", plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(dir, extraFanartDir)
+	if res.Moved != 1 || res.Dir != DirKeptError || res.DirErr == nil {
+		t.Fatalf("moved=%d dir=%q err=%v, want 1, kept-error and an error", res.Moved, res.Dir, res.DirErr)
+	}
+	if !strings.Contains(res.DirErr.Error(), want) {
+		t.Errorf("DirErr = %v, want it to name %s", res.DirErr, want)
+	}
+	if errors.Unwrap(res.DirErr) == nil {
+		t.Errorf("DirErr = %v, want the underlying cause wrapped", res.DirErr)
+	}
+	wantInv(t, dir, map[string]string{"fanart.jpg": "r", "fanart2.jpg": "b", "extrafanart": "<dir>"})
 }
