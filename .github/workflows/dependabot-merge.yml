@@ -392,15 +392,18 @@ jobs:
             # refused, the sweep cannot merge this PR with the tokens it has:
             # say so and leave it for a manual merge instead of failing every
             # sweep (later sweeps re-check and land here again until a human
-            # merges or the PAT gains Workflows write).
+            # merges, or the refresh starts succeeding).
             # Retries are bounded: update-branch is EXPECTED to fail on an
             # already-current branch (GitHub reports no new commits on the
             # base), and regardless each refresh needs main to have moved past
             # the branch, so retries track main moving, never a self-sustaining loop.
             #
             # Granting `DEPENDABOT_UPDATE_TOKEN` Workflows: write would let the
-            # merge go through unattended, but it widens a token deliberately
-            # held to two permissions (see SETUP), so it is optional and unused.
+            # branch REFRESH succeed where it is otherwise refused. It does not
+            # authorize the merge, which still runs as GITHUB_TOKEN and is only
+            # EXPECTED to be accepted once the head is fresh (unverified). It
+            # also widens a token deliberately held to two permissions (see
+            # SETUP), so it is optional and unused.
             #
             # The `x=$(...) || rc=$?` form is used rather than `if ! x=$(...)`
             # because it preserves the real exit code for classification (`!`
@@ -415,7 +418,7 @@ jobs:
                   if [ -n "${UPDATE_TOKEN:-}" ] && update_branch_with_pat "$PR_NUMBER"; then
                     echo "::notice::PR #$PR_NUMBER was refused for touching workflow files; requested a branch refresh with the PAT. If it lands, a sweep triggered by CI on the new head will retry the merge."
                   else
-                    echo "::notice::PR #$PR_NUMBER needs a MANUAL merge: it changes workflow files that GITHUB_TOKEN may not write, and its branch could not be refreshed (already current, UPDATE_TOKEN unset, or the PAT lacks Workflows write). Later sweeps will retry, but will keep landing here until a human merges the PR or the PAT is granted Workflows write."
+                    echo "::notice::PR #$PR_NUMBER needs a MANUAL merge: it changes workflow files that GITHUB_TOKEN may not write, and its branch could not be refreshed (already current, UPDATE_TOKEN unset, or the PAT lacks Workflows write). Later sweeps will retry, but will keep landing here until a human merges the PR or the branch refresh succeeds."
                   fi
                   echo "::endgroup::"
                   continue
