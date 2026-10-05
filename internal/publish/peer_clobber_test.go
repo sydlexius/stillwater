@@ -442,6 +442,7 @@ func TestSyncAllFanart_UnreadableSlot_KeepsIndices(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: permission bits do not make a file unreadable")
 	}
+	useReachableEmptyPeerReader(t)
 	calls := 0
 	p, a, dir := clobberHarness(t, "does-not-matter.jpg", "none", &calls)
 
