@@ -176,7 +176,8 @@ type ExtraFanartApplyResult struct {
 // file appearing at the destination nor a symlink swapped in for extrafanart/
 // can cause an overwrite or a redirect. A filesystem that cannot do a
 // no-replace rename gets a failed entry, never a clobbering fallback. The only
-// other mutation is os.Remove of the emptied directory (never RemoveAll).
+// other mutation is a directory-only rmdir (removeDirOnly) of the emptied
+// directory, never os.Remove or RemoveAll.
 //
 // A failure on one file is recorded and the rest proceed. A second apply of
 // the same plan finds every source gone and does nothing.
