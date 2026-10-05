@@ -176,7 +176,8 @@ type ExtraFanartApplyResult struct {
 // file appearing at the destination nor a symlink swapped in for extrafanart/
 // can cause an overwrite or a redirect. A filesystem that cannot do a
 // no-replace rename gets a failed entry, never a clobbering fallback. The only
-// other mutation is os.Remove of the emptied directory (never RemoveAll).
+// other mutation is a directory-only rmdir (removeDirOnly) of the emptied
+// directory, never os.Remove or RemoveAll.
 //
 // A failure on one file is recorded and the rest proceed. A second apply of
 // the same plan finds every source gone and does nothing.
@@ -238,8 +239,8 @@ func ApplyExtraFanartMigration(ctx context.Context, inv HashInvalidator, artistI
 			res.Dir, res.DirErr = DirKeptError, fmt.Errorf("%s is not a real directory; leaving it", dir)
 		} else if left, err := os.ReadDir(dir); err == nil && len(left) > 0 {
 			res.Dir = DirKeptNotEmpty // a dotfile or non-image file remains
-		} else if err := os.Remove(dir); err != nil {
-			res.Dir, res.DirErr = DirKeptError, err
+		} else if err := removeDirOnly(dir); err != nil { // must stay removeDirOnly, never os.Remove: see its comment
+			res.Dir, res.DirErr = DirKeptError, fmt.Errorf("removing emptied %s: %w", dir, err)
 		} else {
 			res.Dir = DirRemoved
 		}
