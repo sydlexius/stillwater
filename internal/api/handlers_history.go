@@ -394,7 +394,10 @@ func fieldRefusalReason(err error) string {
 }
 
 // performRevert applies the revert mutation for a single metadata change.
-// It injects "revert" as the history source and pre-assigns a deterministic
+// It injects "revert" as the history source, stamps the producer "restore"
+// (#3078: an Undo puts a stored value BACK and asserts no authorship -- the
+// text being restored may itself have been provider-supplied, so it must not
+// read as operator-authored), and pre-assigns a deterministic
 // change ID (returned as revertChangeID) via ContextWithHistoryID so the
 // caller can fetch the resulting history row by ID without racing against
 // concurrent writers to the same field. The returned revertChangeID is the
@@ -420,6 +423,7 @@ func fieldRefusalReason(err error) string {
 func (r *Router) performRevert(ctx context.Context, change *artist.MetadataChange) (revertChangeID string, changed bool, err error) {
 	revertChangeID = uuid.New().String()
 	ctx = artist.ContextWithSource(ctx, "revert")
+	ctx = artist.ContextWithProducer(ctx, artist.ProducerRestore)
 	ctx = artist.ContextWithHistoryID(ctx, revertChangeID)
 
 	if change.OldValue == "" {

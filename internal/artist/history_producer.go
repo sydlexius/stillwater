@@ -16,13 +16,22 @@ import (
 // other, and collapsing them into one column is exactly the design this file
 // avoids -- see migration 029's header for the full argument.
 //
-// Stamped today (PR 2, internal/api): provider refresh ("provider:<name>" per
-// field, bare "provider:" for a moved field with no credited source), platform
-// pull, and field clear ("operator"). A field EDIT records the producer the
-// client claims, an optional claim honored only when it is on the allow-list
+// Stamped today: provider refresh ("provider:<name>" per field, bare
+// "provider:" for a moved field with no credited source), platform pull, and
+// field clear ("operator"). A field EDIT records the producer the client
+// claims, an optional claim honored only when it is on the allow-list
 // (operator or provider:<known provider>), otherwise ""; a provider-modal
-// merge sends no claim, so it records "". Not stamped yet, so still "": the
-// rule engine, the scanner and the restore paths, which land in PR 3.
+// merge sends no claim, so it records "".
+//
+// Also stamped: an Undo, a blast-radius restore and the locked-field damage
+// repair ("restore"); a library re-scan, per field, for the fields its NFO
+// read supplied ("nfo" -- any other field the same write moves stays ""); and
+// identity (MusicBrainz ID) writes -- the operator's link records "operator",
+// the three automated tiers mirror their source token
+// ("provider:identify_connection" / "_album" / "_name").
+//
+// Not stamped yet, so still "": the rule engine's writes, and the whole-row
+// persists that move no tracked field today.
 //
 // THE EMPTY STRING IS THE DEFAULT, AND IT IS NOT "operator". This is the
 // single most load-bearing decision in this file. "" means "the writer did
@@ -36,11 +45,14 @@ import (
 // predicates) exists to stop.
 //
 // A consequence worth stating plainly: a metadata_changes row written AFTER
-// migration 029 with producer = "" is a BUG IN THE WRITER, not a fact about
-// the operator -- every write path is expected to stamp a producer once PR 2
-// and PR 3 land. created_at makes those findable without new machinery: any
-// row with a post-029-deploy created_at and producer = "" is a write path
-// nobody stamped yet.
+// migration 029 with producer = "" is never a fact about the operator. It is
+// either a write path nobody stamped yet (listed above), or a DELIBERATE
+// empty, where the writer cannot say what supplied the value: a provider-modal
+// merge, a field edit whose client claim is absent or off the allow-list, a
+// re-scan field that moved for a reason other than its NFO read, or an
+// identity write whose source the producer mapping does not recognize.
+// created_at makes both kinds findable without new machinery: any row with a
+// post-029-deploy created_at and producer = "".
 const (
 	// ProducerUnrecorded is the default for any write path that does not stamp
 	// a producer. "The writer did not say." Never treat it as "the operator", nor
@@ -81,6 +93,11 @@ const (
 	//                       field but no single provider's FieldSource names
 	//                       it -- see the #3078 plan's write-path inventory
 	//                       for why that case exists and cannot be avoided.
+	//                       EXCEPTION: the "provider:identify_*" tokens name
+	//                       the automated identification TIER that picked a
+	//                       MusicBrainz ID (mirroring the source token), so
+	//                       producer LIKE 'provider:%' must not be read as
+	//                       "a metadata provider wrote this".
 	//   "platform:<type>"  a connected platform (Emby, Jellyfin) supplied the
 	//                       value via a pull.
 	//   "rule:<rule_id>"   a rule engine pass supplied the value. Mirrors the

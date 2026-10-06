@@ -2044,9 +2044,17 @@ components:
             client "producer" claim says, but only if it is on the
             allow-list ("operator" or "provider:<known provider>"),
             otherwise ""; a provider-modal Merge records "" because a merged
-            list mixes sources. The rule engine, scanner and restore paths
-            ("rule:<rule_id>", "nfo", "filesystem", "restore") are not
-            stamped yet.
+            list mixes sources. An undo, a blast-radius restore and the
+            locked-field damage repair stamp "restore", which claims no
+            authorship (the value put back may itself have been
+            provider-supplied). A library re-scan stamps "nfo" on the fields
+            its NFO read supplied; any other field the same write moves is
+            "". A MusicBrainz ID chosen by the operator stamps "operator";
+            one adopted by automatic identification stamps
+            "provider:identify_connection", "provider:identify_album" or
+            "provider:identify_name". Rule engine writes ("rule:<rule_id>")
+            are not stamped yet, and "filesystem" is reserved: no write
+            records it today.
         created_at:
           type: string
           format: date-time
