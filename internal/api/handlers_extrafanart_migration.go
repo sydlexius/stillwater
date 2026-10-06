@@ -51,8 +51,36 @@ const (
 	reasonFolderGone   = "folder_unavailable"
 	reasonMoveFailed   = "move_failed"
 	reasonIndexRefresh = "index_refresh_failed" // moved, but stored hashes could not be cleared
-	reasonRunStopped   = "run_stopped"          // the run ended before this file was attempted
+	reasonRunStopped   = "run_stopped"          // the run ended before this move was attempted
+	// reasonFolderUnreadable: the folder could not be checked (permissions, a stalled
+	// mount), which is NOT proof it vanished.
+	reasonFolderUnreadable = "folder_unreadable"
+	// reasonDirNotRemoved: the files moved but the emptied extrafanart/ folder stayed.
+	reasonDirNotRemoved = "directory_not_removed"
 )
+
+// extraFanartInvalidateTimeout bounds the post-move hash invalidation. The engine
+// runs it on a context that survives a cancel (moved files must be invalidated), so
+// without its own deadline a hung database write would hold the shutdown drain open.
+const extraFanartInvalidateTimeout = 30 * time.Second
+
+// boundedInvalidator gives every invalidation call its own deadline.
+type boundedInvalidator struct {
+	inner   img.HashInvalidator
+	timeout time.Duration
+}
+
+func (b boundedInvalidator) InvalidateImageHashes(ctx context.Context, artistID, imageType string) error {
+	ctx, cancel := context.WithTimeout(ctx, b.timeout)
+	defer cancel()
+	return b.inner.InvalidateImageHashes(ctx, artistID, imageType)
+}
+
+func (b boundedInvalidator) InvalidateImageGeometry(ctx context.Context, artistID, imageType string) error {
+	ctx, cancel := context.WithTimeout(ctx, b.timeout)
+	defer cancel()
+	return b.inner.InvalidateImageGeometry(ctx, artistID, imageType)
+}
 
 // extraFanartFileResult is one extrafanart/ file in a run. File and Destination
 // are base names; the artist entry above them says where they live.
@@ -319,30 +347,28 @@ func (r *Router) applyOneArtist(ctx context.Context, a *artist.Artist, plan *img
 	if r.extraFanartBeforeApply != nil {
 		r.extraFanartBeforeApply(a.ID) // test seam; nil in production
 	}
-	ar, aerr := img.ApplyExtraFanartMigration(ctx, r.fanartInvalidator, a.ID, plan)
+	timeout := r.extraFanartInvalidateTimeout
+	if timeout <= 0 {
+		timeout = extraFanartInvalidateTimeout
+	}
+	// A nil invalidator stays nil so the engine refuses it, as before.
+	var inv img.HashInvalidator
+	if r.fanartInvalidator != nil {
+		inv = boundedInvalidator{inner: r.fanartInvalidator, timeout: timeout}
+	}
+	ar, aerr := img.ApplyExtraFanartMigration(ctx, inv, a.ID, plan)
 	if ar == nil { // refused outright (no invalidator or plan): nothing moved
 		r.logger.Error("extrafanart migration: apply refused", slog.String("artist_id", a.ID), slog.String("error", aerr.Error()))
-		res.Failed += len(plan.Entries)
-		res.Problems++
 		out.Error = reasonMoveFailed
-		out.Files = append(out.Files, r.unattempted(plan.Entries, reasonMoveFailed)...)
+		out.Files = append(out.Files, r.unattempted(plan.Entries, reasonMoveFailed, res)...)
+		res.Problems++
 		res.Artists = append(res.Artists, out)
 		return
 	}
 	// ONE bounded stat decides whether "source gone" means "already migrated" or
 	// "the folder itself is gone". Bounded by a context that outlives a cancel so
 	// a run stopped mid-artist still classifies what it did reach.
-	folderGone := false
-	for _, mr := range ar.Results {
-		if mr.Outcome != img.OutcomeGone {
-			continue
-		}
-		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-		_, serr := img.StatBounded(sctx, a.Path)
-		cancel()
-		folderGone = serr != nil
-		break
-	}
+	folderGone, folderUnreadable := classifyApplyFolder(ctx, a.Path, ar.Results)
 	for _, mr := range ar.Results {
 		f := extraFanartFileResult{File: filepath.Base(mr.Entry.Source)}
 		switch mr.Outcome {
@@ -353,9 +379,12 @@ func (r *Router) applyOneArtist(ctx context.Context, a *artist.Artist, plan *img
 			f.Outcome, f.Reason = "skipped", reasonIdenticalCopy
 			res.SkippedIdentical++
 		case img.OutcomeGone:
-			if folderGone {
+			if folderGone || folderUnreadable {
 				f.Outcome, f.Reason = "failed", reasonFolderGone
-				out.Error = reasonFolderGone
+				if folderUnreadable {
+					f.Reason = reasonFolderUnreadable
+				}
+				out.Error = f.Reason
 				res.Failed++
 			} else {
 				f.Outcome = "source_gone" // no longer at its old path: a repeat run, or something else removed it; never counted as moved
@@ -378,15 +407,13 @@ func (r *Router) applyOneArtist(ctx context.Context, a *artist.Artist, plan *img
 		}
 		out.Files = append(out.Files, f)
 	}
-	if folderGone {
+	if folderGone || folderUnreadable {
 		res.Problems++
-		r.logger.Warn("extrafanart migration: artist folder vanished between plan and apply",
-			slog.String("artist_id", a.ID), slog.String("artist", a.Name))
+		r.logger.Warn("extrafanart migration: artist folder gone or unreadable after planning",
+			slog.String("artist_id", a.ID), slog.String("artist", a.Name), slog.Bool("unreadable", folderUnreadable))
 	}
 	if len(ar.Results) < len(plan.Entries) { // the run was stopped partway through this artist
-		rest := r.unattempted(plan.Entries[len(ar.Results):], reasonRunStopped)
-		res.Failed += len(rest)
-		out.Files = append(out.Files, rest...)
+		out.Files = append(out.Files, r.unattempted(plan.Entries[len(ar.Results):], reasonRunStopped, res)...)
 	}
 	if ar.InvalidErr != nil || ar.DirErr != nil {
 		r.logger.Error("extrafanart migration: follow-up after moving failed", slog.String("artist_id", a.ID),
@@ -395,15 +422,59 @@ func (r *Router) applyOneArtist(ctx context.Context, a *artist.Artist, plan *img
 	if ar.InvalidErr != nil { // stored hashes may now describe different files: say so
 		out.Error = reasonIndexRefresh
 		res.Problems++
+	} else if ar.DirErr != nil && out.Error == "" { // moved, but the emptied folder stayed
+		out.Error = reasonDirNotRemoved
+		res.Problems++
 	}
 	res.Artists = append(res.Artists, out)
 }
 
-// unattempted lists plan entries that were never applied, each with a fixed reason.
-func (r *Router) unattempted(entries []img.MigrationEntry, reason string) []extraFanartFileResult {
+// classifyApplyFolder decides what "source gone" means once an apply has run. Only
+// fs.ErrNotExist (or a path that is no longer a directory) proves the folder
+// vanished. Any other stat error (permissions, a timeout) proves nothing, so it is
+// reported as unreadable rather than guessed to be a drop. The single bounded stat
+// runs on a context that outlives a cancel, so a stopped run still classifies what
+// it reached, and runs only when some entry was source-gone.
+func classifyApplyFolder(ctx context.Context, artistPath string, results []img.MigrationResult) (gone, unreadable bool) {
+	for _, mr := range results {
+		if mr.Outcome != img.OutcomeGone {
+			continue
+		}
+		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		fi, err := img.StatBounded(sctx, artistPath)
+		cancel()
+		switch {
+		case errors.Is(err, fs.ErrNotExist), err == nil && !fi.IsDir():
+			return true, false
+		case err != nil:
+			return false, true
+		}
+		return false, false
+	}
+	return false, false
+}
+
+// unattempted reports plan entries the engine never applied, keeping each one's
+// disposition: identical files stay skipped, blocked files stay blocked (and count
+// as problems), and only MOVE entries become failures with the given reason.
+func (r *Router) unattempted(entries []img.MigrationEntry, reason string, res *extraFanartRunResult) []extraFanartFileResult {
 	out := make([]extraFanartFileResult, 0, len(entries))
 	for _, e := range entries {
-		out = append(out, extraFanartFileResult{File: filepath.Base(e.Source), Outcome: "failed", Reason: reason})
+		f := extraFanartFileResult{File: filepath.Base(e.Source)}
+		switch e.Disposition {
+		case img.DispositionSkipIdentical:
+			f.Outcome, f.Reason = "skipped", reasonIdenticalCopy
+			res.SkippedIdentical++
+		case img.DispositionMove:
+			f.Outcome, f.Reason = "failed", reason
+			res.Planned++
+			res.Failed++
+		default:
+			f.Outcome, f.Reason = "blocked", reasonNotMovedSafe
+			res.Failed++
+			res.Problems++
+		}
+		out = append(out, f)
 	}
 	return out
 }

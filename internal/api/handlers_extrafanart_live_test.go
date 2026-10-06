@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // rootHashes returns the content hashes of the regular files directly in dir
@@ -255,13 +256,17 @@ func TestExtraFanartMigration_LiveMoveFailureIsCounted(t *testing.T) {
 	}
 }
 
-// failingInvalidator models a hash store that cannot be cleared.
-type failingInvalidator struct{}
-
-func (failingInvalidator) InvalidateImageHashes(context.Context, string, string) error {
-	return errors.New("hash store unavailable")
+// hookInvalidator models the hash store: fn runs where the engine invalidates,
+// which is AFTER the files moved and BEFORE the emptied folder is removed, so a
+// test can break the filesystem or block at exactly that point.
+type hookInvalidator struct {
+	fn func(ctx context.Context) error
 }
-func (failingInvalidator) InvalidateImageGeometry(context.Context, string, string) error { return nil }
+
+func (h hookInvalidator) InvalidateImageHashes(ctx context.Context, _, _ string) error {
+	return h.fn(ctx)
+}
+func (hookInvalidator) InvalidateImageGeometry(context.Context, string, string) error { return nil }
 
 // Files that moved but whose stored hashes could not be cleared are reported:
 // the artist carries index_refresh_failed and the run is partial, not migrated.
@@ -269,7 +274,7 @@ func TestExtraFanartMigration_LiveIndexRefreshFailureIsReported(t *testing.T) {
 	t.Parallel()
 	r, svc := testRouterForBackdrops(t)
 	seedExtraFanartArtist(t, svc, "Alpha", 2)
-	r.fanartInvalidator = failingInvalidator{}
+	r.fanartInvalidator = hookInvalidator{fn: func(context.Context) error { return errors.New("hash store unavailable") }}
 	res := decodeRun(t, postExtraFanart(r, adminContext(), `{"dry_run": false}`, "application/json"))
 	if res.Status != "partial" || res.Moved != 2 || res.Problems != 1 || res.Artists[0].Error != reasonIndexRefresh {
 		t.Fatalf("want partial, 2 moved, 1 problem, %s; got %+v", reasonIndexRefresh, res)
@@ -372,5 +377,122 @@ func TestExtraFanartRunResult_FinishLive(t *testing.T) {
 		if res.Status != tc.want {
 			t.Errorf("%s: want %s, got %s", tc.name, tc.want, res.Status)
 		}
+	}
+}
+
+// lockParent makes the artist's parent folder unsearchable (so a stat of the artist
+// folder fails with permission denied) or read-only, restoring it at cleanup.
+func lockParent(t *testing.T, a efArtist, mode os.FileMode) {
+	t.Helper()
+	parent := filepath.Dir(a.dir)
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+	if err := os.Chmod(parent, mode); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+}
+
+// A stat that fails for a reason other than "not found" is NOT proof the folder
+// vanished: the artist is reported folder_unreadable, not folder_unavailable.
+func TestExtraFanartMigration_LiveUnreadableFolderIsNotReportedAsGone(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("permission bits do not bind root")
+	}
+	r, svc := testRouterForBackdrops(t)
+	a := seedExtraFanartArtist(t, svc, "Alpha", 2)
+	// img1 is removed after planning (source_gone); after img0 moves, the parent
+	// becomes unsearchable, so the folder check gets EACCES, not ENOENT.
+	r.extraFanartBeforeApply = func(string) {
+		if err := os.Remove(filepath.Join(a.dir, "extrafanart", "img1.jpg")); err != nil {
+			t.Errorf("removing source: %v", err)
+		}
+	}
+	r.fanartInvalidator = hookInvalidator{fn: func(context.Context) error { lockParent(t, a, 0o000); return nil }}
+	res := decodeRun(t, postExtraFanart(r, adminContext(), `{"dry_run": false}`, "application/json"))
+	if res.Moved != 1 || len(res.Artists) != 1 || res.Artists[0].Error != reasonFolderUnreadable {
+		t.Fatalf("want 1 moved and error %s; got %+v", reasonFolderUnreadable, res)
+	}
+	if res.Problems != 1 || res.Status != "partial" {
+		t.Errorf("want 1 problem and partial, got %+v", res)
+	}
+}
+
+// Files moved but the emptied extrafanart/ folder could not be removed: the artist
+// carries directory_not_removed and the run is partial, never migrated.
+func TestExtraFanartMigration_LiveDirNotRemovedIsReported(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("permission bits do not bind root")
+	}
+	r, svc := testRouterForBackdrops(t)
+	a := seedExtraFanartArtist(t, svc, "Alpha", 2)
+	t.Cleanup(func() { _ = os.Chmod(a.dir, 0o755) })
+	r.fanartInvalidator = hookInvalidator{fn: func(context.Context) error {
+		return os.Chmod(a.dir, 0o555) // files have moved; removing the emptied dir now fails
+	}}
+	res := decodeRun(t, postExtraFanart(r, adminContext(), `{"dry_run": false}`, "application/json"))
+	if res.Moved != 2 || res.Status != "partial" || res.Problems != 1 || res.Artists[0].Error != reasonDirNotRemoved {
+		t.Fatalf("want partial, 2 moved, 1 problem, %s; got %+v", reasonDirNotRemoved, res)
+	}
+}
+
+// A hung invalidation cannot hold the run (and so the shutdown drain) open: it is
+// bounded, and surfaces as index_refresh_failed.
+func TestExtraFanartMigration_LiveHungInvalidationIsBounded(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForBackdrops(t)
+	seedExtraFanartArtist(t, svc, "Alpha", 1)
+	r.extraFanartInvalidateTimeout = 50 * time.Millisecond
+	r.fanartInvalidator = hookInvalidator{fn: func(ctx context.Context) error {
+		<-ctx.Done() // blocks until the bound fires; a missing bound hangs the test
+		return ctx.Err()
+	}}
+	start := time.Now()
+	done := make(chan extraFanartRunResult, 1)
+	go func() {
+		done <- decodeRun(t, postExtraFanart(r, adminContext(), `{"dry_run": false}`, "application/json"))
+	}()
+	select {
+	case res := <-done:
+		if res.Status != "partial" || res.Artists[0].Error != reasonIndexRefresh {
+			t.Errorf("want partial with %s, got %+v", reasonIndexRefresh, res)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("the run did not return; the invalidation is unbounded (waited %s)", time.Since(start))
+	}
+}
+
+// A stop keeps each unattempted entry's disposition: identical stays skipped,
+// blocked stays blocked, and only the MOVE becomes run_stopped.
+func TestExtraFanartMigration_LiveStopKeepsEntryDispositions(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForBackdrops(t)
+	a := seedExtraFanartArtist(t, svc, "Alpha", 1) // img0.jpg: a move
+	// Identical to the root backdrop: skipped. A symlink: blocked.
+	if err := os.WriteFile(filepath.Join(a.dir, "extrafanart", "img1.jpg"), []byte("root-Alpha"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(a.dir, "backdrop.jpg"), filepath.Join(a.dir, "extrafanart", "img2.jpg")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	pre := decodeRun(t, postExtraFanart(r, adminContext(), `{"dry_run": true}`, "application/json"))
+	if pre.Planned != 1 || pre.SkippedIdentical != 1 || pre.Problems != 1 {
+		t.Fatalf("precondition: want 1 move, 1 identical, 1 blocked; got %+v", pre)
+	}
+	r.extraFanartBeforeApply = func(string) { r.webhookShutdownCancel() } // stop before any entry is applied
+
+	res := decodeRun(t, postExtraFanart(r, adminContext(), `{"dry_run": false}`, "application/json"))
+	got := map[string]string{}
+	for _, f := range res.Artists[0].Files {
+		got[f.File] = f.Outcome + "/" + f.Reason
+	}
+	want := map[string]string{"img0.jpg": "failed/" + reasonRunStopped, "img1.jpg": "skipped/" + reasonIdenticalCopy, "img2.jpg": "blocked/" + reasonNotMovedSafe}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s: want %s, got %s", k, v, got[k])
+		}
+	}
+	if res.Moved != 0 || res.Failed != 2 || res.SkippedIdentical != 1 || res.Problems != 1 {
+		t.Errorf("want 0 moved, 2 failed, 1 identical, 1 problem; got %+v", res)
 	}
 }

@@ -259,6 +259,9 @@ type Router struct {
 	// extraFanartBeforeApply is a test seam called between planning and applying
 	// one artist; nil in production.
 	extraFanartBeforeApply func(artistID string)
+	// extraFanartInvalidateTimeout overrides extraFanartInvalidateTimeout in tests;
+	// zero in production.
+	extraFanartInvalidateTimeout time.Duration
 	// platformDupReportMu guards the cached platform backdrop-duplicate report
 	// backing GET /reports/platform-backdrop-duplicates (#3092). The page used
 	// to run ScanPlatformBackdropDuplicates synchronously on every render -- a
