@@ -140,6 +140,7 @@ func TestExtraFanartMigration_DryRunWritesNothing(t *testing.T) {
 		{"json explicit", `{"dry_run": true}`, "application/json"},
 		{"empty body defaults to dry", ``, "application/json"},
 		{"form", `dry_run=true`, "application/x-www-form-urlencoded"},
+		{"empty object defaults to dry", `{}`, "application/json"},
 	} {
 		w := postExtraFanart(r, adminContext(), tc.body, tc.ct)
 		if w.Code != http.StatusOK {
@@ -255,6 +256,24 @@ func TestExtraFanartMigration_CanceledDryRunStops(t *testing.T) {
 	}
 }
 
+// A cancel that lands while the LAST artist is being planned must not read as a
+// finished preview: the check after each artist catches it before the loop ends.
+func TestExtraFanartMigration_CancelDuringLastArtistStops(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForBackdrops(t)
+	only := &artist.Artist{Name: "Only", SortName: "Only", Path: filepath.Join(t.TempDir(), "gone")}
+	if err := svc.Create(context.Background(), only); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(adminContext())
+	defer cancel()
+	r.logger = slog.New(cancelOnWarn{Handler: slog.NewTextHandler(io.Discard, nil), cancel: cancel})
+	w := postExtraFanart(r, ctx, `{"dry_run": true}`, "application/json")
+	if res := decodeRun(t, w); w.Code != http.StatusInternalServerError || res.Status != "failed" {
+		t.Errorf("a cancel during the last artist must answer 500 failed, got %d %+v", w.Code, res)
+	}
+}
+
 // Only administrators can run or even preview it, and a refused request moves
 // nothing. A malformed dry_run is a 400, never a silent live run.
 func TestExtraFanartMigration_AdminGateAndStrictFlag(t *testing.T) {
@@ -272,6 +291,8 @@ func TestExtraFanartMigration_AdminGateAndStrictFlag(t *testing.T) {
 		{`dry_run=maybe`, "application/x-www-form-urlencoded"},
 		{`dry_run=`, "application/x-www-form-urlencoded"},
 		{`{"dry_run": "no"}`, "application/json"},
+		{`{"dry_run": null}`, "application/json"},
+		{`null`, "application/json"},
 		{`{"dry_run": false, "all_artists": true}`, "application/json"},
 	} {
 		if w := postExtraFanart(r, adminContext(), tc.body, tc.ct); w.Code != http.StatusBadRequest {
@@ -300,8 +321,8 @@ func TestExtraFanartMigration_LiveRequestIsRefused(t *testing.T) {
 	} {
 		w := postExtraFanart(r, adminContext(), tc.body, tc.ct)
 		res := decodeRun(t, w)
-		if w.Code != http.StatusServiceUnavailable || res.DryRun || res.Status != "failed" || res.Error == "" {
-			t.Errorf("%q: want 503 failed with dry_run=false and a message, got %d %+v", tc.body, w.Code, res)
+		if w.Code != http.StatusNotImplemented || res.DryRun || res.Status != "failed" || res.Error == "" {
+			t.Errorf("%q: want 501 failed with dry_run=false and a message, got %d %+v", tc.body, w.Code, res)
 		}
 		if strings.Contains(w.Body.String(), a.dir) {
 			t.Errorf("%q: the refusal leaked a path", tc.body)

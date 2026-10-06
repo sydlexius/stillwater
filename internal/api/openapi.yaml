@@ -4365,7 +4365,7 @@ paths:
         Previews the extrafanart/ migration (#3179): reports where each file in
         an artist's extrafanart folder would move to. Nothing is written. Moving
         the files is not available in this version, so dry_run=false is refused
-        with 503. dry_run defaults to true; a malformed value is a 400. Only one
+        with 501. dry_run defaults to true; a malformed value (including null) is a 400. Only one
         preview runs at a time (409). Admin-only.
       operationId: runExtraFanartMigration
       requestBody:
@@ -4415,7 +4415,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExtraFanartMigrationResult'
-        "503":
+        "501":
           description: dry_run=false was requested. Not available in this version; nothing was read or changed.
           content:
             application/json:

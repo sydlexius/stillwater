@@ -13,6 +13,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -150,13 +151,16 @@ func (r *Router) runExtraFanartMigration(ctx context.Context, dryRun bool) (*ext
 			if artists[i].Path == "" {
 				continue
 			}
+			res.ArtistsScanned++
+			r.migrateOneArtist(ctx, &artists[i], names, kodi, dryRun, res)
+			// Checked AFTER the artist, not before: a cancel or timeout that lands
+			// while an artist is planned (including the last one) makes that plan
+			// fail, and the run must then report itself stopped, never complete.
 			if cerr := ctx.Err(); cerr != nil {
 				res.aborted = true
 				res.finish()
 				return res, cerr
 			}
-			res.ArtistsScanned++
-			r.migrateOneArtist(ctx, &artists[i], names, kodi, dryRun, res)
 		}
 		if len(artists) < pageSize {
 			break
@@ -228,7 +232,9 @@ func (r *Router) migrateOneArtist(ctx context.Context, a *artist.Artist, names [
 // extraFanartRequest is the POST body. DryRun defaults to TRUE when absent: a
 // request that forgot the flag gets a rehearsal, never an irreversible move.
 type extraFanartRequest struct {
-	DryRun *bool `json:"dry_run"`
+	// DryRun is raw so an omitted field (nil, the default) can be told apart from
+	// an explicit null, which is malformed.
+	DryRun json.RawMessage `json:"dry_run"`
 }
 
 // decodeExtraFanartRequest reads dry_run from JSON (API) or a form body (a
@@ -236,7 +242,8 @@ type extraFanartRequest struct {
 // typo must not turn a rehearsal into a real run. Nothing has run on a 400, so
 // those bodies carry no dry_run field.
 func decodeExtraFanartRequest(w http.ResponseWriter, req *http.Request) (dryRun, ok bool) {
-	var body extraFanartRequest
+	var dry *bool
+	body := &extraFanartRequest{}
 	if mt, _, err := mime.ParseMediaType(req.Header.Get("Content-Type")); err == nil && mt == "application/x-www-form-urlencoded" {
 		req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
 		if err := req.ParseForm(); err != nil {
@@ -249,12 +256,22 @@ func decodeExtraFanartRequest(w http.ResponseWriter, req *http.Request) (dryRun,
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid boolean for dry_run"})
 				return false, false
 			}
-			body.DryRun = &v
+			dry = &v
 		}
 	} else if !decodePHashBody(w, req, &body) {
 		return false, false
+	} else if body == nil { // a top-level JSON null body
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return false, false
+	} else if body.DryRun != nil {
+		var v bool
+		if string(body.DryRun) == "null" || json.Unmarshal(body.DryRun, &v) != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid boolean for dry_run"})
+			return false, false
+		}
+		dry = &v
 	}
-	return body.DryRun == nil || *body.DryRun, true
+	return dry == nil || *dry, true
 }
 
 // handleExtraFanartMigrationRun runs the migration. POST
@@ -270,7 +287,7 @@ func (r *Router) handleExtraFanartMigrationRun(w http.ResponseWriter, req *http.
 	// Only the preview exists in this version. A live request is refused BEFORE
 	// any work: no singleton, no filesystem access. dry_run is echoed truthfully.
 	if !dryRun {
-		writeJSON(w, http.StatusServiceUnavailable, extraFanartRunResult{
+		writeJSON(w, http.StatusNotImplemented, extraFanartRunResult{
 			DryRun: false, Status: "failed", Artists: []extraFanartArtistResult{},
 			Error: "running the extrafanart migration is not available in this version; use dry_run=true to preview",
 		})

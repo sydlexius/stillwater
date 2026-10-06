@@ -22,7 +22,7 @@ body:json {
 
 docs {
   Preview of the extrafanart/ migration (#3179); writes nothing. dry_run is sent
-  explicitly although true is the default. dry_run=false is refused with 503 and
+  explicitly although true is the default. dry_run=false is refused with 501 and
   is deliberately not requested here. Admin-gated in-handler; the CI session is
   the bootstrap admin. Empty-CI-DB expectation: no artist has a filesystem path,
   so the status is nothing_to_do with every count zero.
