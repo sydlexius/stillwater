@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -225,6 +226,10 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 	// of provider iteration order (Go map iteration is non-deterministic).
 	if result.Metadata.Type != "" && !artist.IsIndividualType(result.Metadata.Type) {
 		result.Metadata.Gender = ""
+		// Drop the gender provenance too: no provider supplied the (now empty) value.
+		result.Sources = slices.DeleteFunc(result.Sources, func(s provider.FieldSource) bool {
+			return s.Field == "gender"
+		})
 	}
 	mu.Unlock()
 

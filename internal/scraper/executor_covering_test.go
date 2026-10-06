@@ -157,11 +157,11 @@ func TestScrapeAll_RecordsFallbackProviderAsFieldSource(t *testing.T) {
 // gender before type puts "Female" on the result and then a group type, and
 // only the final clear in ScrapeAll can remove the gender. (Merging via the
 // per-provider classification pass would instead depend on Go map iteration.)
-// A person type is the control: gender must survive, proving it really was
-// merged. This covers the executor's Metadata.Gender clear only: the executor
-// records no gender FieldSource, and the legacy
-// TestApplyFieldGenderClearedOnNonIndividualType still pins the source removal
-// until the loop is deleted (#3292).
+// The individual types (person, solo, character: the artist.IsIndividualType
+// vocabulary) are the controls: gender and its FieldSource must survive,
+// proving they really were merged. For a non-individual type the gender
+// FieldSource must be dropped with the value, or provenance would claim a
+// provider for an empty gender (#3292).
 func TestScrapeAll_ClearsGenderForNonIndividualType(t *testing.T) {
 	cases := []struct {
 		typ        string
@@ -169,6 +169,8 @@ func TestScrapeAll_ClearsGenderForNonIndividualType(t *testing.T) {
 	}{
 		{"group", ""},
 		{"person", "Female"},
+		{"solo", "Female"},
+		{"character", "Female"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.typ, func(t *testing.T) {
@@ -207,6 +209,17 @@ func TestScrapeAll_ClearsGenderForNonIndividualType(t *testing.T) {
 			}
 			if result.Metadata.Gender != tc.wantGender {
 				t.Errorf("type %q: Gender = %q, want %q", tc.typ, result.Metadata.Gender, tc.wantGender)
+			}
+			wantSrc := provider.ProviderName("")
+			if tc.wantGender != "" {
+				wantSrc = provider.NameWikipedia
+			}
+			if got := sourceFor(result, "gender"); got != wantSrc {
+				t.Errorf("type %q: gender source = %q, want %q", tc.typ, got, wantSrc)
+			}
+			// The clear must not touch the type source (precondition: it exists).
+			if got := sourceFor(result, "type"); got != provider.NameAudioDB {
+				t.Errorf("type %q: type source = %q, want %q", tc.typ, got, provider.NameAudioDB)
 			}
 		})
 	}
