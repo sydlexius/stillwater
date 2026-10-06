@@ -43,8 +43,7 @@ func newTypeRepairExecutor(t *testing.T, artistSvc *artist.Service, result *prov
 	t.Helper()
 
 	stub := &stubScrapeAll{result: result}
-	orch := provider.NewOrchestrator(nil, nil, testLogger(), nil)
-	orch.SetExecutor(stub)
+	orch := provider.NewOrchestrator(nil, nil, testLogger(), nil, stub)
 
 	return &BulkExecutor{
 		artistService: artistSvc,
