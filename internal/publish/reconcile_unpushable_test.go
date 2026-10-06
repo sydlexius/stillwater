@@ -16,8 +16,9 @@ import (
 // it as a deficit on every pass and re-push forever; these tests drive the real
 // reconciler loop against a peer that models its backdrop list.
 
-// unreadableFanart makes path unreadable and PROVES it, so a test never claims
-// to cover an unreadable file on a machine where chmod does not bite.
+// unreadableFanart makes path unreadable and PROVES it; where chmod does not bite
+// (root) the test SKIPS, like the other permission-based tests, so it never claims
+// to cover an unreadable file.
 func unreadableFanart(t *testing.T, path string) {
 	t.Helper()
 	if err := os.Chmod(path, 0); err != nil {
@@ -25,7 +26,7 @@ func unreadableFanart(t *testing.T, path string) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
 	if _, err := os.ReadFile(path); err == nil {
-		t.Fatalf("precondition: %s is still readable after chmod 0 (running as root?)", path)
+		t.Skipf("chmod 0 does not block reads on this runner (running as root?); the unreadable-file case cannot be exercised: %s", filepath.Base(path))
 	}
 }
 
