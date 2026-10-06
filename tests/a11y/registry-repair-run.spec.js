@@ -158,7 +158,21 @@ test('running: button disabled and aria-busy until the job completes, then succe
   await shot(page, 'success', 'dark');
   // The banner endpoint now says clean: the banner hides itself.
   await expect(page.locator(BANNER)).toBeHidden();
+  // Focus must not be stranded in the hidden banner (the modal returned it to the run button).
+  expect(await page.evaluate(() => document.activeElement && document.activeElement.id), 'focus after the banner hides').toBe('sw-main');
   expect(errors).toEqual([]);
+  await context.close();
+});
+
+test('a null status body ends the run with the generic failure and re-enables the button', async ({ browser }) => {
+  const { context, page, errors } = await openBanner(browser);
+  await page.route(`**${REMEDIATE_API}`, (route) => route.fulfill({ status: 202, json: { running: true, status: 'running' } }));
+  await page.route(`**${STATUS_API}`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: 'null' }));
+  await confirmRun(page);
+  await expect(page.locator(TOASTS)).toContainText(GENERIC_FAILURE);
+  await expect(page.locator(RUN)).toBeEnabled();
+  await expect(page.locator(RUN)).toHaveText('Repair now');
+  expect(errors.some((e) => e.includes('registry repair banner: status HTTP 200'))).toBe(true);
   await context.close();
 });
 

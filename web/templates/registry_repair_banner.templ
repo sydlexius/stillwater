@@ -131,6 +131,15 @@ templ RegistryRepairBanner() {
 						}
 						if (d.needs_repair !== true || !(d.count > 0)) {
 							// Clean (e.g. right after a repair): hide and clear the live region.
+							// The shared confirm modal returns focus to the run button, and the
+							// disabled running button then drops it to <body>; hiding the banner
+							// would strand focus in a hidden subtree or lose it. Move it to the
+							// skip-link target when it is inside the banner or already lost.
+							var ae = document.activeElement;
+							if (!ae || ae === document.body || el.contains(ae)) {
+								var main = document.getElementById('sw-main');
+								if (main) main.focus(); else console.error('registry repair banner: #sw-main missing; focus left in hidden banner');
+							}
 							el.classList.add('hidden');
 							document.getElementById('sw-registry-repair-live').textContent = '';
 							return;

@@ -54,7 +54,15 @@ function pollAsyncStatus(url, callbacks, options) {
         });
       })
       .then(function (data) {
-        if (stopped || !data) return;
+        if (stopped) return;
+        if (!data) {
+          // A 200 whose JSON body parsed to null/false: no data can ever arrive
+          // from this endpoint, so end the poll through the error path instead of
+          // leaving the caller waiting forever (all callers reset their UI there).
+          stop();
+          if (callbacks.onHTTPError) callbacks.onHTTPError(200);
+          return;
+        }
         if (callbacks.onData && callbacks.onData(data)) {
           stop();
           return;
