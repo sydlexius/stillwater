@@ -51,9 +51,16 @@ templ ActivityBody(data ActivityPageData) {
 		<div class="sw-card rounded-lg px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 			<div>
 				<h1 class="text-2xl font-bold">{ t(ctx, "activity.title") }</h1>
-				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
 					{ t(ctx, "activity.subtitle") }
+					@components.ContextHelp(
+						"help-activity-value-source",
+						t(ctx, "history.help.value_source.label"),
+						t(ctx, "history.help.value_source"),
+						"how-to/activity-feed#where-a-value-came-from",
+					)
 				</p>
+				@components.ContextHelpScript()
 			</div>
 			<button
 				id="activity-filter-trigger"
@@ -261,7 +268,7 @@ templ ActivityContent(data ActivityPageData) {
 			@activityLoadMoreButton(data)
 		}
 		if data.Total > 0 {
-			<p id="activity-showing-counter" class="text-xs text-gray-400 dark:text-gray-500 text-right mt-2">
+			<p id="activity-showing-counter" class="sw-card rounded-md px-2 py-1 w-fit ml-auto text-xs text-gray-600 dark:text-gray-300 text-right mt-2">
 				{ tf(ctx, "common.showing_of", min(data.Offset+len(data.Changes), data.Total), data.Total) }
 			</p>
 		}
@@ -302,7 +309,7 @@ templ ActivityMoreRows(data ActivityPageData) {
 		}
 	</div>
 	if data.Total > 0 {
-		<p id="activity-showing-counter" hx-swap-oob="true" class="text-xs text-gray-400 dark:text-gray-500 text-right mt-2">
+		<p id="activity-showing-counter" hx-swap-oob="true" class="sw-card rounded-md px-2 py-1 w-fit ml-auto text-xs text-gray-600 dark:text-gray-300 text-right mt-2">
 			{ tf(ctx, "common.showing_of", min(data.Offset+len(data.Changes), data.Total), data.Total) }
 		</p>
 	}
@@ -330,7 +337,7 @@ templ ActivityRevertFragment(revertedID string, newChange artist.MetadataChangeW
 		@activityRow(newChange, basePath)
 	</div>
 	if total > 0 {
-		<p id="activity-showing-counter" hx-swap-oob="true" class="text-xs text-gray-400 dark:text-gray-500 text-right mt-2">
+		<p id="activity-showing-counter" hx-swap-oob="true" class="sw-card rounded-md px-2 py-1 w-fit ml-auto text-xs text-gray-600 dark:text-gray-300 text-right mt-2">
 			{ tf(ctx, "common.showing_of", showing, total) }
 		</p>
 	}
@@ -350,6 +357,11 @@ templ activityRow(c artist.MetadataChangeWithArtist, basePath string) {
 				<span class={ "inline-block px-2 py-0.5 rounded-full text-xs", historySourceBadgeClass(c.Source) }>
 					{ historySourceLabel(ctx, c.Source) }
 				</span>
+				if historyProducerShown(c.MetadataChange) {
+					<span class={ historyProducerChipClass(c.Producer) }>
+						{ historyProducerLabel(ctx, c.Producer) }
+					</span>
+				}
 				<time
 					datetime={ c.CreatedAt.Format(time.RFC3339) }
 					title={ c.CreatedAt.Format("2006-01-02 15:04:05 UTC") }
@@ -367,7 +379,7 @@ templ activityRow(c artist.MetadataChangeWithArtist, basePath string) {
 					hx-disabled-elt="this"
 					hx-confirm={ tf(ctx, "history.undo_confirm", historyFieldLabel(ctx, c.Field)) }
 					hx-vals={ `js:{"showing": document.querySelectorAll("#activity-entries > [id^='activity-change-']").length}` }
-					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					title={ t(ctx, "history.undo_title") }
 				>
 					{ t(ctx, "history.undo") }
@@ -379,11 +391,11 @@ templ activityRow(c artist.MetadataChangeWithArtist, basePath string) {
 				<span class="font-medium">{ historyFieldLabel(ctx, c.Field) }</span>
 				<span class="mx-1 text-gray-400">--</span>
 				if c.OldValue == "" && c.NewValue != "" {
-					<span class="text-green-600 dark:text-green-400">{ tf(ctx, "history.set_to", historyTruncate(c.NewValue, 80)) }</span>
+					<span class="text-green-800 dark:text-green-400">{ tf(ctx, "history.set_to", historyTruncate(c.NewValue, 80)) }</span>
 				} else if c.OldValue != "" && c.NewValue == "" {
 					<span class="text-red-600 dark:text-red-400">{ t(ctx, "history.cleared") }</span>
 				} else if c.OldValue != "" && c.NewValue != "" {
-					<span class="text-gray-500 dark:text-gray-400">{ t(ctx, "history.changed") }</span>
+					<span class="text-gray-700 dark:text-gray-400">{ t(ctx, "history.changed") }</span>
 				} else {
 					<span class="text-gray-400 italic">{ t(ctx, "history.no_value") }</span>
 				}
@@ -403,7 +415,7 @@ templ activityRow(c artist.MetadataChangeWithArtist, basePath string) {
 				if c.NewValue != "" {
 					<div>
 						<span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "history.current") }</span>
-						<p class="text-green-600 dark:text-green-400 break-words whitespace-pre-wrap">{ c.NewValue }</p>
+						<p class="text-green-800 dark:text-green-400 break-words whitespace-pre-wrap">{ c.NewValue }</p>
 					</div>
 				}
 			</div>

@@ -232,6 +232,7 @@ how-to/activity-feed#pagination
 how-to/activity-feed#read-an-entry
 how-to/activity-feed#see-also
 how-to/activity-feed#undo-a-change
+how-to/activity-feed#where-a-value-came-from
 how-to/configure-provider-priorities#configure-provider-priorities
 how-to/configure-provider-priorities#disable-a-provider-entirely
 how-to/configure-provider-priorities#for-images
