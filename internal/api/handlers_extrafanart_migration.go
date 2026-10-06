@@ -529,6 +529,12 @@ func decodeExtraFanartRequest(w http.ResponseWriter, req *http.Request) (dryRun,
 // hash invalidations (each bounded by extraFanartInvalidateTimeout, on a context
 // that survives a cancel), a 10s folder check, and unbounded final directory
 // work. The margin covers those bounds plus a minute of slack.
+//
+// Limit, stated honestly: the deadline covers the run's bounded budget plus the
+// bounded post-timeout invalidations. A hard-stalled mount blocks the migration
+// itself (the raw Lstat, ReadDir and Rmdir calls take no deadline), and no write
+// deadline can deliver a receipt for a run that never returns. That is a
+// pre-existing property of those filesystem calls and out of scope here.
 func extraFanartWriteDeadline(now time.Time) time.Time {
 	return now.Add(extraFanartRunTimeout + 2*extraFanartInvalidateTimeout + 10*time.Second + time.Minute)
 }

@@ -4451,13 +4451,13 @@ paths:
                   default: true
       responses:
         "200":
-          description: A preview finished, or a live run moved every file due or had nothing to do.
+          description: A preview finished, or a live run moved every file due or had nothing to do. A live run with status `nothing_checked` also answers 200 (some artist folders were missing, so it was not verified empty; check artists_skipped_missing).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExtraFanartMigrationResult'
         "207":
-          description: A live run finished but some files did not move (status `partial` or `failed`). Per-item outcomes are in the body, which has the same shape as a 200.
+          description: A live run finished with a non-clean outcome (status `partial` or `failed`). This covers files that did not move and also runs where every file moved but a follow-up step failed (artist error `index_refresh_failed` or `directory_not_removed`). Per-item outcomes are in the body, which has the same shape as a 200.
           content:
             application/json:
               schema:

@@ -28,7 +28,7 @@ The HTTP code summarizes the outcome, and the body has the same shape for every 
 | Code | Meaning |
 | --- | --- |
 | 200 | A preview finished, or a live run moved every file that was due (or had nothing to do). A live `nothing_checked` run also answers 200: check `artists_skipped_missing`. |
-| 207 | A live run finished, but some files did not move (`partial` or `failed`). Read the per-file outcomes. |
+| 207 | A live run finished with a non-clean outcome (`partial` or `failed`): a file did not move, or every file moved but a follow-up step failed (`index_refresh_failed`, `directory_not_removed`). Read the per-artist and per-file outcomes. |
 | 500 | The run stopped early. Files already moved stay moved; run again. |
 | 409 | Another run is already in progress. |
 
