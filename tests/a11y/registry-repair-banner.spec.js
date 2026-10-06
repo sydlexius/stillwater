@@ -129,8 +129,10 @@ test('banner shows for an admin when the detector reports rows needing repair', 
   await expect(banner).toContainText(fixtureBody.count === 1 ? '1 registry row may' : `${fixtureBody.count} registry rows may`);
   await expect(banner.locator('#sw-registry-repair-checked')).toContainText('Last checked');
   await expect(banner.getByRole('link', { name: 'Learn more' })).toHaveAttribute('href', /how-to\/repair-image-registry\/#background-check/);
-  // Slice 1 is read-only: the dismiss control is the only button.
-  await expect(banner.getByRole('button')).toHaveCount(1);
+  // Two controls: the run button (slice 2) and the dismiss button, by name.
+  await expect(banner.getByRole('button', { name: 'Repair now' })).toHaveCount(1);
+  await expect(banner.getByRole('button', { name: 'Dismiss image registry notice' })).toHaveCount(1);
+  await expect(banner.getByRole('button')).toHaveCount(2);
   await context.close();
 });
 

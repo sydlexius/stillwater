@@ -15,8 +15,13 @@ package templates
 // conflict banner's clean bar: a sessionStorage flag, no server state, so a new
 // browser session shows the banner again while the registry still needs repair.
 //
-// SLICE 2 EXTENSION POINT: the run/preview flow adds its button inside the
-// "actions" container below. Slice 1 deliberately renders no repair control.
+// RUN (#2678, slice 2): the "Repair now" button confirms through the shared
+// showConfirmDialog, POSTs {commit:true} to .../registry-repair/remediate (202
+// starts the async job, 409 means one is already running and is followed), then
+// polls .../registry-repair/status with the shared pollAsyncStatus. Completion
+// is a toast (success, warning for incomplete writes, or a fixed generic failure
+// message; the full error stays in the server log), after which the banner
+// endpoint is re-read so the banner hides itself when nothing needs repair.
 templ RegistryRepairBanner() {
 	// Always-exposed (visually hidden, never display:none) live region. It starts
 	// empty and is filled when the banner appears, so assistive tech announces the
@@ -31,6 +36,13 @@ templ RegistryRepairBanner() {
 		data-count-one={ t(ctx, "banner.registry_repair.body.one") }
 		data-count-other={ t(ctx, "banner.registry_repair.body.other") }
 		data-checked-template={ t(ctx, "banner.registry_repair.checked") }
+		data-confirm={ t(ctx, "banner.registry_repair.confirm") }
+		data-running-label={ t(ctx, "banner.registry_repair.running") }
+		data-toast-started={ t(ctx, "banner.registry_repair.toast.started") }
+		data-toast-already-running={ t(ctx, "banner.registry_repair.toast.already_running") }
+		data-toast-done={ t(ctx, "banner.registry_repair.toast.done") }
+		data-toast-incomplete={ t(ctx, "banner.registry_repair.toast.incomplete") }
+		data-toast-failed={ t(ctx, "banner.registry_repair.toast.failed") }
 	>
 		<div class="max-w-6xl mx-auto flex flex-wrap items-center gap-4">
 			<div class="flex items-center gap-3 min-w-0 flex-1">
@@ -50,6 +62,11 @@ templ RegistryRepairBanner() {
 				</div>
 			</div>
 			<div id="sw-registry-repair-actions" class="flex items-center gap-3 shrink-0">
+				<button
+					id="sw-registry-repair-run"
+					type="button"
+					class="px-2.5 py-1 min-h-[24px] rounded-md bg-amber-400/90 text-amber-950 text-xs font-medium hover:bg-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-100 disabled:opacity-70 disabled:cursor-not-allowed"
+				>{ t(ctx, "banner.registry_repair.run") }</button>
 				<button
 					id="sw-registry-repair-dismiss"
 					type="button"
@@ -83,6 +100,8 @@ templ RegistryRepairBanner() {
 
 				var meta = document.querySelector('meta[name="htmx-base-path"]');
 				var base = meta ? meta.content : '';
+				var runBtn = document.getElementById('sw-registry-repair-run');
+				var runLabel = runBtn.textContent;
 				// Unusable answers (detector has not finished its first check, or the
 				// call failed) are retried a bounded number of times while the page
 				// stays open: 5s, 15s, 45s after the previous attempt, then give up.
@@ -110,7 +129,21 @@ templ RegistryRepairBanner() {
 							retryLater();
 							return;
 						}
-						if (d.needs_repair !== true || !(d.count > 0)) return;
+						if (d.needs_repair !== true || !(d.count > 0)) {
+							// Clean (e.g. right after a repair): hide and clear the live region.
+							// The shared confirm modal returns focus to the run button, and the
+							// disabled running button then drops it to <body>; hiding the banner
+							// would strand focus in a hidden subtree or lose it. Move it to the
+							// skip-link target when it is inside the banner or already lost.
+							var ae = document.activeElement;
+							if (!ae || ae === document.body || el.contains(ae)) {
+								var main = document.getElementById('sw-main');
+								if (main) main.focus(); else console.error('registry repair banner: #sw-main missing; focus left in hidden banner');
+							}
+							el.classList.add('hidden');
+							document.getElementById('sw-registry-repair-live').textContent = '';
+							return;
+						}
 						var tpl = d.count === 1 ? el.dataset.countOne : el.dataset.countOther;
 						document.getElementById('sw-registry-repair-count').textContent = '-- ' + tpl.replace('{count}', String(d.count));
 						var when = new Date(d.checked_at);
@@ -129,6 +162,113 @@ templ RegistryRepairBanner() {
 					});
 				}
 				check();
+
+				// ---- Run flow (#2678 slice 2) ----
+				var stickyToast = null;
+				function toast(kind, msg) {
+					var fn = window[kind];
+					if (typeof fn !== 'function') { console.error('registry repair banner: window.' + kind + ' is unavailable; message not shown:', msg); return null; }
+					return fn(msg);
+				}
+				function csrf() {
+					if (typeof window.swCsrfToken !== 'function') { console.error('registry repair banner: swCsrfToken unavailable; the POST will 403'); return ''; }
+					return window.swCsrfToken();
+				}
+				function setRunning(on) {
+					runBtn.disabled = on;
+					runBtn.setAttribute('aria-busy', on ? 'true' : 'false');
+					runBtn.textContent = on ? el.dataset.runningLabel : runLabel;
+				}
+				function finish(kind, msg) {
+					setRunning(false);
+					stickyToast = toast(kind, msg);
+					attempt = 0;
+					check(); // re-read the cached state so a clean registry hides the banner
+				}
+				function follow() {
+					if (typeof pollAsyncStatus !== 'function') {
+						console.error('registry repair banner: pollAsyncStatus unavailable');
+						finish('showToast', el.dataset.toastFailed);
+						return;
+					}
+					pollAsyncStatus(base + '/api/v1/reports/registry-repair/status', {
+						onData: function (s) {
+							if (s.status === 'running') return false;
+							if (s.status === 'completed' && s.report) {
+								var r = s.report;
+								if (r.write_failures > 0) {
+									finish('showWarningToast', el.dataset.toastIncomplete.replace('{failures}', String(r.write_failures)));
+								} else {
+									finish('showStickyToast', el.dataset.toastDone.replace('{rebuilt}', String(r.rebuilt)).replace('{restored}', String(r.restored)));
+								}
+							} else {
+								// failed, or idle (cut off by a restart): fixed message, detail is in the server log.
+								console.error('registry repair banner: run ended with status', s.status, s.error_code || '');
+								finish('showToast', el.dataset.toastFailed);
+							}
+							return true;
+						},
+						onHTTPError: function (code) { console.error('registry repair banner: status HTTP ' + code); finish('showToast', el.dataset.toastFailed); },
+						onNetworkError: function (err) { console.error('registry repair banner: status poll failed', err); finish('showToast', el.dataset.toastFailed); }
+					});
+				}
+				// A 409 has three causes: a COMMITTED repair is running (follow it), a
+				// PREVIEW is running (not ours: report nothing as done), or the background
+				// detector scan holds the claim (nothing is running: retry the POST a few
+				// times, then fail). The status endpoint tells them apart.
+				var CONFLICT_RETRIES = 5, CONFLICT_RETRY_MS = 1000;
+				function onConflict(triesLeft) {
+					fetch(base + '/api/v1/reports/registry-repair/status', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+						.then(function (r) { if (!r.ok) throw new Error('status HTTP ' + r.status); return r.json(); })
+						.then(function (s) {
+							if (s && s.status === 'running' && s.commit === true) {
+								toast('showToast', el.dataset.toastAlreadyRunning); follow(); return;
+							}
+							if (s && s.status === 'running') {
+								console.info('registry repair banner: a preview run holds the repair slot; not following it');
+								setRunning(false);
+								toast('showToast', el.dataset.toastAlreadyRunning);
+								return;
+							}
+							if (triesLeft > 0) { setTimeout(function () { post(triesLeft - 1); }, CONFLICT_RETRY_MS); return; }
+							console.error('registry repair banner: still refused (409) with no run in progress; the background check may be busy');
+							finish('showToast', el.dataset.toastFailed);
+						}).catch(function (err) {
+							console.error('registry repair banner: cannot classify the 409', err);
+							finish('showToast', el.dataset.toastFailed);
+						});
+				}
+				function start() {
+					setRunning(true);
+					if (stickyToast && typeof stickyToast.dismiss === 'function') { stickyToast.dismiss(); }
+					stickyToast = null;
+					post(CONFLICT_RETRIES);
+				}
+				function post(triesLeft) {
+					fetch(base + '/api/v1/reports/registry-repair/remediate', {
+						method: 'POST',
+						credentials: 'same-origin',
+						headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() },
+						body: JSON.stringify({ commit: true })
+					}).then(function (resp) {
+						if (resp.status === 202) { toast('showSuccessToast', el.dataset.toastStarted); follow(); return; }
+						if (resp.status === 409) { onConflict(triesLeft); return; }
+						console.error('registry repair banner: start refused, HTTP ' + resp.status);
+						finish('showToast', el.dataset.toastFailed);
+					}).catch(function (err) {
+						console.error('registry repair banner: start failed', err);
+						finish('showToast', el.dataset.toastFailed);
+					});
+				}
+				runBtn.addEventListener('click', function () {
+					if (typeof window.showConfirmDialog !== 'function') {
+						console.error('registry repair banner: showConfirmDialog unavailable');
+						return;
+					}
+					window.showConfirmDialog(el.dataset.confirm, null, start, {
+						acceptClass: 'px-4 py-2 rounded-md bg-amber-500 text-amber-950 text-sm font-medium hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-300'
+					});
+				});
 			})();
 		</script>
 	</div>

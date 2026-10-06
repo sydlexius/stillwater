@@ -31,9 +31,9 @@ func TestLayout_RegistryRepairBannerIsAdminOnly(t *testing.T) {
 	}
 }
 
-// Slice 1 is read-only: the banner starts hidden, links to the docs, offers a
-// dismissal, and renders NO run/repair control (slice 2 owns that).
-func TestRegistryRepairBanner_ReadOnlyAndHiddenByDefault(t *testing.T) {
+// The banner starts hidden, links to the docs, offers a dismissal, and (slice 2)
+// carries the run control and the endpoints it drives.
+func TestRegistryRepairBanner_RunControlAndHiddenByDefault(t *testing.T) {
 	var buf bytes.Buffer
 	if err := RegistryRepairBanner().Render(testCtx(t), &buf); err != nil {
 		t.Fatalf("render: %v", err)
@@ -42,15 +42,14 @@ func TestRegistryRepairBanner_ReadOnlyAndHiddenByDefault(t *testing.T) {
 	for _, want := range []string{
 		`class="hidden `, `id="sw-registry-repair-live" role="status" class="sr-only"`, `how-to/repair-image-registry/#background-check`,
 		`id="sw-registry-repair-dismiss"`, `data-count-other="{count} registry rows`,
+		`id="sw-registry-repair-run"`, `>Repair now</button>`, `data-toast-failed="Image registry repair failed. See the server log for details."`,
+		`/api/v1/reports/registry-repair/remediate`, `/api/v1/reports/registry-repair/status`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("banner markup missing %q", want)
 		}
 	}
-	if n := strings.Count(html, "<button"); n != 1 {
-		t.Errorf("banner renders %d buttons, want only the dismiss button", n)
-	}
-	if strings.Contains(html, "remediate") {
-		t.Error("slice 1 banner must not reference the remediate endpoint")
+	if n := strings.Count(html, "<button"); n != 2 {
+		t.Errorf("banner renders %d buttons, want run + dismiss", n)
 	}
 }
