@@ -929,15 +929,13 @@ func (a *Application) wireProviders(ctx context.Context) error {
 	a.newAIBlocklist()
 	a.webSearchRegistry.Register(duckduckgo.New(a.rateLimiters, logger))
 
-	a.orchestrator = provider.NewOrchestrator(a.providerRegistry, a.providerSettings, logger, aimdCtrl)
-
 	// --- Scraper ---
 	a.scraperService = scraper.NewService(db, logger)
 	if err := a.scraperService.SeedDefaults(ctx); err != nil {
 		return fmt.Errorf("seeding default scraper config: %w", err)
 	}
 	scraperExecutor := scraper.NewExecutor(a.scraperService, a.providerRegistry, a.providerSettings, logger, aimdCtrl)
-	a.orchestrator.SetExecutor(scraperExecutor)
+	a.orchestrator = provider.NewOrchestrator(a.providerRegistry, a.providerSettings, logger, aimdCtrl, scraperExecutor)
 
 	return nil
 }

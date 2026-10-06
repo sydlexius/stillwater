@@ -188,13 +188,24 @@ type Orchestrator struct {
 // NewOrchestrator creates a new Orchestrator. aimd may be nil; when nil, the
 // adaptive rate-limiting hook sites are skipped and the orchestrator behaves
 // exactly as before.
-func NewOrchestrator(registry *Registry, settings *SettingsService, logger *slog.Logger, aimd *AIMDController) *Orchestrator {
-	return &Orchestrator{
+//
+// exec is a transitional variadic (#3292): at most one ScraperExecutor may be
+// supplied, and a nil element counts as none. It becomes a required argument
+// once every caller has migrated off SetExecutor.
+func NewOrchestrator(registry *Registry, settings *SettingsService, logger *slog.Logger, aimd *AIMDController, exec ...ScraperExecutor) *Orchestrator {
+	if len(exec) > 1 {
+		panic("provider.NewOrchestrator: at most one ScraperExecutor may be supplied")
+	}
+	o := &Orchestrator{
 		registry: registry,
 		settings: settings,
 		aimd:     aimd,
 		logger:   logging.WithComponent(logger, "orchestrator"),
 	}
+	if len(exec) == 1 && exec[0] != nil {
+		o.executor = exec[0]
+	}
+	return o
 }
 
 // SetExecutor configures the scraper executor for FetchMetadata delegation.
