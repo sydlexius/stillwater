@@ -74,7 +74,7 @@ const (
 // restore with the transaction rolled back, rather than leaving the artist
 // row restored with no record it happened. See the comment above the insert
 // for why this verb's contract differs from UpdateField's. The source is
-// carried by ctx.
+// carried by ctx; the producer is always "restore" (#3078).
 func (s *Service) RestoreLockedFieldGuarded(ctx context.Context, id, field, damagedValue, restoreValue string) (LockedFieldRestoreOutcome, error) {
 	if err := ValidateFieldUpdate(field, restoreValue); err != nil {
 		return 0, err
@@ -189,7 +189,14 @@ func (s *Service) RestoreLockedFieldGuarded(ctx context.Context, id, field, dama
 	// inserts directly on tx -- so a guard on s.history here gated nothing
 	// about what actually ran; it only produced a restore with no audit row
 	// on a Service built without SetHistoryService (#3088 fix round, N3).
-	if err := recordHistoryTx(ctx, tx, id, field, stored, restoreValue, sourceFromContext(ctx)); err != nil {
+	//
+	// The producer is stamped HERE, in the verb, rather than by its caller
+	// (#3078): this function only ever puts a previously stored value back, so
+	// "restore" is true of every call and no future caller can forget it.
+	// "restore" claims no authorship -- the value being put back may itself
+	// have been provider-supplied. The source still comes from the caller.
+	histCtx := ContextWithProducer(ctx, ProducerRestore)
+	if err := recordHistoryTx(histCtx, tx, id, field, stored, restoreValue, sourceFromContext(ctx)); err != nil {
 		return 0, fmt.Errorf("guarded restore: recording history: %w", err)
 	}
 
@@ -272,11 +279,11 @@ func recordHistoryTx(ctx context.Context, tx *sql.Tx, artistID, field, oldValue,
 		id = uuid.New().String()
 	}
 	// producer is read off ctx the same way Record does (producerForField),
-	// keyed on field like every other producer resolution in this PR. Nothing
-	// in this PR (#3078 PR 1) puts a producer on the context ahead of this
-	// call, so this writes ProducerUnrecorded ("") exactly like every other
-	// path -- see history_producer.go's doc block. This is the ONLY change to
-	// this function; the no-op-skip asymmetry documented above is untouched.
+	// keyed on field like every other producer resolution (#3078). The one
+	// caller, RestoreLockedFieldGuarded, puts ProducerRestore on the context
+	// it passes here; a caller that stamps nothing would still record
+	// ProducerUnrecorded ("") -- see history_producer.go's doc block. The
+	// no-op-skip asymmetry documented above is untouched.
 	producer := producerForField(ctx, field)
 	const q = `
 		INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, producer, created_at)

@@ -805,8 +805,15 @@ func (s *Service) processExistingArtist(ctx context.Context, dirPath, libraryID 
 	// (per-artist UI toggle) || (per-library NFOLockData setting) ||
 	// (scheduled platform pull). The NFO file is downstream of those, not
 	// upstream, so the scanner ignores its lockdata bit on re-scan.
+	//
+	// nfoProducers names the tracked fields the NFO merge actually supplied,
+	// for the history producer stamp below (#3078). It stays nil when the NFO
+	// was not read.
+	var nfoProducers map[string]string
 	if detected.NFOExists && !existing.Locked {
+		before := trackedFieldValues(existing)
 		s.populateFromNFO(dirPath, existing)
+		nfoProducers = nfoSuppliedFields(before, existing)
 	}
 
 	now := time.Now().UTC()
@@ -821,7 +828,15 @@ func (s *Service) processExistingArtist(ctx context.Context, dirPath, libraryID 
 	// Activity and artist History views render and filter on this column, so
 	// an operator filtering for "manual" to isolate human edits will see
 	// scan-driven rows move out of that bucket.
-	if err := s.artistService.Update(scanCtx, existing); err != nil {
+	//
+	// The producer is a PER-FIELD overlay, not one value for the whole row
+	// (#3078). Update diffs `existing` against the row stored right now, and
+	// `existing` was usually loaded at the start of the library pass, so a
+	// field can differ because the stored row moved since, not because of
+	// this NFO read. Only fields the NFO merge supplied are stamped "nfo";
+	// any other field this write moves records "" rather than a guess.
+	updateCtx := artist.ContextWithFieldProducers(scanCtx, nfoProducers)
+	if err := s.artistService.Update(updateCtx, existing); err != nil {
 		return fmt.Errorf("updating artist: %w", err)
 	}
 
@@ -918,6 +933,37 @@ func (s *Service) publishArtistUpdated(artistID string) {
 			Data: map[string]any{"artist_id": artistID},
 		})
 	}
+}
+
+// trackedFieldValues snapshots the history-tracked fields of a, keyed by
+// field name, so nfoSuppliedFields can tell which ones the NFO merge moved.
+func trackedFieldValues(a *artist.Artist) map[string]string {
+	fields := artist.TrackableFields()
+	out := make(map[string]string, len(fields))
+	for _, field := range fields {
+		out[field] = artist.FieldValueFromArtist(a, field)
+	}
+	return out
+}
+
+// nfoSuppliedFields returns the history producer overlay for a re-scan: every
+// tracked field whose value the NFO merge changed, mapped to
+// artist.ProducerNFO. before is the trackedFieldValues snapshot taken just
+// ahead of populateFromNFO.
+//
+// A field that ended up EMPTY is left out on purpose. The NFO merge never
+// empties a field (it runs without the clobber entitlement); the only thing
+// that can blank one during that call is the type-consistency repair, which
+// clears a gender that does not apply to the artist's type. That blank was
+// not read out of the NFO, so it is not stamped "nfo".
+func nfoSuppliedFields(before map[string]string, a *artist.Artist) map[string]string {
+	out := make(map[string]string)
+	for field, old := range before {
+		if now := artist.FieldValueFromArtist(a, field); now != old && now != "" {
+			out[field] = artist.ProducerNFO
+		}
+	}
+	return out
 }
 
 // populateFromNFO parses the artist.nfo file and merges metadata into the artist.

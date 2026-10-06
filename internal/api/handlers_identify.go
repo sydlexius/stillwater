@@ -1179,16 +1179,47 @@ func (r *Router) applyIdentity(ctx context.Context, a *artist.Artist, w identity
 // blank-fill-only, so nothing in the tree could tell an operator what an
 // automated pass destroyed. HistoryService.Record already suppresses a row when
 // oldValue is non-empty and equal to newValue, so a pure corroboration (Tier 1
-// agreeing with the stored ID) writes nothing -- do NOT add a second guard for
-// that here, it is already handled one layer down.
+// agreeing with the stored ID) writes nothing.
+//
+// That does NOT cover a blank that stayed blank (Record only skips equal
+// NON-EMPTY values): with the MusicBrainz ID field-locked while empty, the
+// persist chokepoint puts the blank back and applyIdentity still returns nil.
+// The check below stops that recording a write that never happened (#3078).
+//
+// The producer (#3078) is stamped on a context used for THIS Record call only.
+// It is deliberately not put on the context applyIdentity hands to
+// autoLinkAndRefresh: the refresh that follows writes other fields, supplied
+// by other producers, and stamps those itself.
 func (r *Router) recordIdentityHistory(ctx context.Context, a *artist.Artist, oldMBID, source string) {
 	if r.historyService == nil || source == "" {
 		return
 	}
+	if oldMBID == a.MusicBrainzID {
+		return
+	}
+	ctx = artist.ContextWithProducer(ctx, identityProducer(source))
 	if err := r.historyService.Record(ctx, a.ID, artist.SourceKeyMusicBrainzID,
 		oldMBID, a.MusicBrainzID, source); err != nil {
 		r.logger.Warn("identify: recording MusicBrainz ID history",
 			"artist_id", a.ID, "source", source, "error", err)
+	}
+}
+
+// identityProducer maps an identity write's history source onto the producer
+// recorded beside it (#3078): what SUPPLIED the MusicBrainz ID. The operator
+// link is the one identity write where a human chose the value, so it records
+// "operator". The three automated tiers mirror their source token, which
+// names the tier that picked the ID. It is a closed list on purpose: an
+// unrecognized source records ProducerUnrecorded ("") rather than a guess, so
+// an unknown writer is never laundered into "operator".
+func identityProducer(source string) string {
+	switch source {
+	case artist.IdentifySourceOperator:
+		return artist.ProducerOperator
+	case artist.IdentifySourceConnection, artist.IdentifySourceAlbum, artist.IdentifySourceName:
+		return source
+	default:
+		return artist.ProducerUnrecorded
 	}
 }
 
