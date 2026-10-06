@@ -190,8 +190,11 @@ type Orchestrator struct {
 // exactly as before.
 //
 // exec is a transitional variadic (#3292): at most one ScraperExecutor may be
-// supplied, and a nil element counts as none. It becomes a required argument
-// once every caller has migrated off SetExecutor.
+// supplied (more than one panics). An absent or untyped-nil argument leaves the
+// executor unset, so FetchMetadata returns ErrNoScraperExecutor. A typed-nil
+// pointer is a non-nil interface and is the caller's bug, exactly as with
+// SetExecutor. It becomes a required argument once every caller has migrated
+// off SetExecutor.
 func NewOrchestrator(registry *Registry, settings *SettingsService, logger *slog.Logger, aimd *AIMDController, exec ...ScraperExecutor) *Orchestrator {
 	if len(exec) > 1 {
 		panic("provider.NewOrchestrator: at most one ScraperExecutor may be supplied")
@@ -202,7 +205,7 @@ func NewOrchestrator(registry *Registry, settings *SettingsService, logger *slog
 		aimd:     aimd,
 		logger:   logging.WithComponent(logger, "orchestrator"),
 	}
-	if len(exec) == 1 && exec[0] != nil {
+	if len(exec) == 1 {
 		o.executor = exec[0]
 	}
 	return o

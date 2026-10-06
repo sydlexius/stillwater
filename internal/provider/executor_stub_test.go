@@ -116,7 +116,7 @@ func TestFetchMetadata_NoExecutorReturnsError(t *testing.T) {
 }
 
 // TestNewOrchestrator_ExecutorArg verifies the constructor-supplied executor is
-// the one FetchMetadata uses, a nil element counts as none, and two panic.
+// the one FetchMetadata uses, an untyped-nil element leaves it unset, and two panic.
 func TestNewOrchestrator_ExecutorArg(t *testing.T) {
 	registry, settings := setupOrchestratorTest(t)
 	logger := slog.New(slog.DiscardHandler)
