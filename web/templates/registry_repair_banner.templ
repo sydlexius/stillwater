@@ -212,10 +212,39 @@ templ RegistryRepairBanner() {
 						onNetworkError: function (err) { console.error('registry repair banner: status poll failed', err); finish('showToast', el.dataset.toastFailed); }
 					});
 				}
+				// A 409 has three causes: a COMMITTED repair is running (follow it), a
+				// PREVIEW is running (not ours: report nothing as done), or the background
+				// detector scan holds the claim (nothing is running: retry the POST a few
+				// times, then fail). The status endpoint tells them apart.
+				var CONFLICT_RETRIES = 5, CONFLICT_RETRY_MS = 1000;
+				function onConflict(triesLeft) {
+					fetch(base + '/api/v1/reports/registry-repair/status', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+						.then(function (r) { if (!r.ok) throw new Error('status HTTP ' + r.status); return r.json(); })
+						.then(function (s) {
+							if (s && s.status === 'running' && s.commit === true) {
+								toast('showToast', el.dataset.toastAlreadyRunning); follow(); return;
+							}
+							if (s && s.status === 'running') {
+								console.info('registry repair banner: a preview run holds the repair slot; not following it');
+								setRunning(false);
+								toast('showToast', el.dataset.toastAlreadyRunning);
+								return;
+							}
+							if (triesLeft > 0) { setTimeout(function () { post(triesLeft - 1); }, CONFLICT_RETRY_MS); return; }
+							console.error('registry repair banner: still refused (409) with no run in progress; the background check may be busy');
+							finish('showToast', el.dataset.toastFailed);
+						}).catch(function (err) {
+							console.error('registry repair banner: cannot classify the 409', err);
+							finish('showToast', el.dataset.toastFailed);
+						});
+				}
 				function start() {
 					setRunning(true);
 					if (stickyToast && typeof stickyToast.dismiss === 'function') { stickyToast.dismiss(); }
 					stickyToast = null;
+					post(CONFLICT_RETRIES);
+				}
+				function post(triesLeft) {
 					fetch(base + '/api/v1/reports/registry-repair/remediate', {
 						method: 'POST',
 						credentials: 'same-origin',
@@ -223,7 +252,7 @@ templ RegistryRepairBanner() {
 						body: JSON.stringify({ commit: true })
 					}).then(function (resp) {
 						if (resp.status === 202) { toast('showSuccessToast', el.dataset.toastStarted); follow(); return; }
-						if (resp.status === 409) { toast('showToast', el.dataset.toastAlreadyRunning); follow(); return; }
+						if (resp.status === 409) { onConflict(triesLeft); return; }
 						console.error('registry repair banner: start refused, HTTP ' + resp.status);
 						finish('showToast', el.dataset.toastFailed);
 					}).catch(function (err) {

@@ -229,15 +229,62 @@ test('showConfirmDialog unavailable: console.error and no POST', async ({ browse
   await context.close();
 });
 
-test('already running (409): says so and follows the running job to its result', async ({ browser }) => {
+const CONFLICT = { status: 409, json: { status: 'running', message: 'an image registry repair is already in progress' } };
+
+test('already running (409, committed repair): says so and follows it to its result', async ({ browser }) => {
   const { context, page } = await openBanner(browser);
-  await page.route(`**${REMEDIATE_API}`, (route) => route.fulfill({ status: 409, json: { status: 'running', message: 'an image registry repair is already in progress' } }));
-  await page.route(`**${STATUS_API}`, (route) => route.fulfill({ json: DONE_REPORT }));
+  let polls = 0;
+  await page.route(`**${REMEDIATE_API}`, (route) => route.fulfill(CONFLICT));
+  // First read classifies the conflict (a committed run in flight); later reads are the poll.
+  await page.route(`**${STATUS_API}`, (route) => route.fulfill({
+    json: ++polls === 1 ? { running: true, status: 'running', commit: true, dry_run: false } : DONE_REPORT,
+  }));
   await confirmRun(page);
   await expect(page.locator(TOASTS)).toContainText('An image registry repair is already running.');
   await shot(page, 'already-running', 'dark');
   await expect(page.locator(TOASTS)).toContainText('Image registry repaired: 3 rebuilt, 2 restored.');
   await expect(page.locator(RUN)).toBeEnabled();
+  await context.close();
+});
+
+test('409 while a PREVIEW runs: says so, never reports success, button recovers', async ({ browser }) => {
+  const { context, page } = await openBanner(browser);
+  await page.route(`**${REMEDIATE_API}`, (route) => route.fulfill(CONFLICT));
+  await page.route(`**${STATUS_API}`, (route) => route.fulfill({ json: { running: true, status: 'running', commit: false, dry_run: true } }));
+  await confirmRun(page);
+  await expect(page.locator(TOASTS)).toContainText('An image registry repair is already running.');
+  await expect(page.locator(RUN)).toBeEnabled();
+  await expect(page.locator(RUN)).toHaveText('Repair now');
+  await page.waitForTimeout(500);
+  await expect(page.locator(TOASTS)).not.toContainText('Image registry repaired');
+  await context.close();
+});
+
+test('409 from detector contention: retries the POST, then runs the repair', async ({ browser }) => {
+  const { context, page } = await openBanner(browser);
+  let posts = 0;
+  await page.route(`**${REMEDIATE_API}`, (route) => (++posts < 3
+    ? route.fulfill(CONFLICT)
+    : route.fulfill({ status: 202, json: { running: true, status: 'running' } })));
+  // Nothing is running while the detector holds the claim: an idle status.
+  let polls = 0;
+  await page.route(`**${STATUS_API}`, (route) => route.fulfill({ json: posts < 3 ? { status: 'idle', dry_run: true } : (++polls, DONE_REPORT) }));
+  await confirmRun(page);
+  await expect(page.locator(TOASTS)).toContainText('Image registry repaired: 3 rebuilt, 2 restored.', { timeout: 15_000 });
+  expect(posts, 'the POST must have been retried past the conflicts').toBe(3);
+  await context.close();
+});
+
+test('409 that never clears (detector contention): bounded retries, then the generic failure and a console.error', async ({ browser }) => {
+  const { context, page, errors } = await openBanner(browser);
+  let posts = 0;
+  await page.route(`**${REMEDIATE_API}`, (route) => { posts += 1; return route.fulfill(CONFLICT); });
+  await page.route(`**${STATUS_API}`, (route) => route.fulfill({ json: { status: 'idle', dry_run: true } }));
+  await confirmRun(page);
+  await expect(page.locator(TOASTS)).toContainText(GENERIC_FAILURE, { timeout: 15_000 });
+  expect(posts, 'retries are bounded (1 + 5)').toBe(6);
+  await expect(page.locator(RUN)).toBeEnabled();
+  expect(errors.some((e) => e.includes('still refused (409)'))).toBe(true);
   await context.close();
 });
 
