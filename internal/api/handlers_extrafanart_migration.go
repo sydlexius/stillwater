@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -70,9 +71,17 @@ type extraFanartArtistResult struct {
 // defect PR #3169 shipped, issue #3179 trap 2).
 type extraFanartRunResult struct {
 	DryRun bool `json:"dry_run"`
-	// Status: nothing_to_do | planned | blocked | failed (the run stopped early) | running.
-	Status           string                    `json:"status"`
-	ArtistsScanned   int                       `json:"artists_scanned"`
+	// Status: nothing_to_do | nothing_checked (nothing to do, but some artists were
+	// skipped as missing, so not everything was examined) | planned | blocked |
+	// failed (the run stopped early) | running.
+	Status         string `json:"status"`
+	ArtistsScanned int    `json:"artists_scanned"`
+	// ArtistsSkippedMissing counts artists whose folder was not found (an
+	// unmounted share, a stale row). Not a problem, but never invisible: the
+	// response reports it, so an unreachable library cannot read as migrated.
+	ArtistsSkippedMissing int `json:"artists_skipped_missing"`
+	// ArtistsWithFiles counts artists with files in extrafanart/, plus artists whose
+	// plan failed (their files could not be listed, so they are counted too).
 	ArtistsWithFiles int                       `json:"artists_with_files"`
 	Planned          int                       `json:"planned"` // files a dry run would move
 	SkippedIdentical int                       `json:"skipped_identical"`
@@ -97,6 +106,10 @@ func (res *extraFanartRunResult) finish() {
 		res.Status = "planned"
 	case res.DryRun && res.Problems > 0:
 		res.Status = "blocked"
+	case res.DryRun && res.ArtistsSkippedMissing > 0:
+		// Nothing to do among the artists that WERE examined, but some were not:
+		// an unmounted library must not read as a verified-empty one.
+		res.Status = "nothing_checked"
 	case moves == 0:
 		res.Status = "nothing_to_do"
 	}
@@ -187,11 +200,38 @@ func (r *Router) extraFanartConvention(ctx context.Context) (names []string, kod
 	return names, kodi, err
 }
 
+// artistFolderMissing reports whether a planning error just means the artist's
+// own folder is gone (an unmounted share, a stale row). Such an artist has
+// nothing to migrate, and counting it would make every run report a problem
+// forever and never reach "nothing to do". The Stat is what separates that from
+// an unreadable extrafanart/ inside a folder that EXISTS, which stays a real
+// problem, as do permission errors and everything else. os.Stat follows
+// symlinks, so an artist path that is a dangling link counts as missing.
+//
+// The stat is BOUNDED by ctx (img.StatBounded): on a hard-mounted share that has
+// stopped answering, a raw os.Stat would hang past the run timeout and the
+// request context. A context error from it is not ErrNotExist, so a canceled or
+// timed-out check is never counted as "missing": the artist falls through to the
+// plan-failure path, and the ctx check after each artist ends the run 500 failed.
+func artistFolderMissing(ctx context.Context, planErr error, artistPath string) bool {
+	if !errors.Is(planErr, fs.ErrNotExist) {
+		return false
+	}
+	_, err := img.StatBounded(ctx, artistPath)
+	return errors.Is(err, fs.ErrNotExist)
+}
+
 // migrateOneArtist plans one artist, folding the outcome into res. Only the
 // preview path exists in this version; dryRun is kept for the live run. A failure is recorded and the run continues.
 func (r *Router) migrateOneArtist(ctx context.Context, a *artist.Artist, names []string, kodi, dryRun bool, res *extraFanartRunResult) {
 	plan, err := img.PlanExtraFanartMigration(ctx, a.Path, names, kodi)
 	if err != nil {
+		if artistFolderMissing(ctx, err, a.Path) {
+			r.logger.Info("extrafanart migration: artist folder does not exist; skipping",
+				slog.String("artist_id", a.ID), slog.String("artist", a.Name))
+			res.ArtistsSkippedMissing++
+			return
+		}
 		r.logger.Warn("extrafanart migration: planning failed", slog.String("artist_id", a.ID),
 			slog.String("artist", a.Name), slog.String("error", err.Error()))
 		res.ArtistsWithFiles++
