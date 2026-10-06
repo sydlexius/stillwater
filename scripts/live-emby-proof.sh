@@ -33,6 +33,22 @@ fi
 case "$REF" in
 -*) echo "live-emby-proof: --without must be a ref, not an option: $REF" >&2; exit 2 ;;
 esac
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel)"
+IFS=',' read -r -a FILE_LIST <<<"$FILES"
+EXPECTED=()
+for f in "${FILE_LIST[@]}"; do
+	if [ ! -f "$ROOT/$f" ]; then
+		echo "live-emby-proof: --files entry is not a regular file: $f" >&2
+		exit 2
+	fi
+	while IFS= read -r name; do
+		[ -n "$name" ] && EXPECTED+=("$name")
+	done < <(sed -n 's/^func \(Test[A-Za-z0-9_]*\)(.*/\1/p' "$ROOT/$f" | grep -E -- "$TEST" || true)
+done
+if [ ${#EXPECTED[@]} -eq 0 ]; then
+	echo "live-emby-proof: no Test function in --files matches --test: $TEST" >&2
+	exit 2
+fi
 for v in SW_LIVE_EMBY_URL SW_LIVE_EMBY_API_KEY SW_LIVE_EMBY_USER_ID SW_LIVE_EMBY_ITEM_ID; do
 	if [ -z "${!v:-}" ]; then
 		echo "NOT PROVEN: $v is not set; export SW_LIVE_EMBY_* in the environment (not as arguments)" >&2
@@ -40,7 +56,6 @@ for v in SW_LIVE_EMBY_URL SW_LIVE_EMBY_API_KEY SW_LIVE_EMBY_USER_ID SW_LIVE_EMBY
 	fi
 done
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel)"
 if ! git -C "$ROOT" rev-parse --verify --quiet "$REF^{commit}" >/dev/null; then
 	echo "live-emby-proof: --without is not a commit: $REF" >&2
 	exit 2
@@ -70,7 +85,6 @@ HEAD_SHA="$(git -C "$ROOT" rev-parse --short HEAD)"
 EXTRACT="$(mktemp -d)"
 trap 'rm -rf "$EXTRACT"' EXIT
 git -C "$ROOT" archive "$REF" | tar -x -C "$EXTRACT"
-IFS=',' read -r -a FILE_LIST <<<"$FILES"
 for f in "${FILE_LIST[@]}"; do
 	cp "$ROOT/$f" "$EXTRACT/$f"
 done
@@ -84,16 +98,21 @@ BEFORE_LOG="$(run_in "$EXTRACT" "$LABEL-$BASE_SHA-without-fix")"
 AFTER_LOG="$(run_in "$ROOT" "$LABEL-$HEAD_SHA-with-fix")"
 
 VERDICT=0
-if grep -q -- '--- FAIL' "$BEFORE_LOG" && grep -q 'LIVE-PROOF-DEFECT:' "$BEFORE_LOG"; then
+if grep -q -- '--- FAIL' "$BEFORE_LOG" && grep -q 'LIVE-PROOF-DEFECT:' "$BEFORE_LOG" &&
+	! grep -qE -- '--- SKIP|build failed|^panic:|test timed out' "$BEFORE_LOG"; then
 	BEFORE_V="PROVEN (first defect: $(grep -m1 -o 'LIVE-PROOF-DEFECT:.*' "$BEFORE_LOG"))"
 else
 	BEFORE_V="NOT PROVEN (need --- FAIL and LIVE-PROOF-DEFECT)"
 	VERDICT=3
 fi
-if grep -q -- '--- PASS' "$AFTER_LOG" && grep -q '^ok' "$AFTER_LOG" && ! grep -qE -- '--- SKIP|build failed|--- FAIL|LIVE-PROOF-DEFECT:|^FAIL|^panic:' "$AFTER_LOG"; then
+MISSING=""
+for name in "${EXPECTED[@]}"; do
+	grep -q -- "--- PASS: $name " "$AFTER_LOG" || MISSING="$MISSING $name"
+done
+if [ -z "$MISSING" ] && grep -q '^ok' "$AFTER_LOG" && ! grep -qE -- '--- SKIP|build failed|--- FAIL|LIVE-PROOF-DEFECT:|^FAIL|^panic:' "$AFTER_LOG"; then
 	AFTER_V="PROVEN (passed, no skip)"
 else
-	AFTER_V="NOT PROVEN (need --- PASS with no skip, build failure, or defect)"
+	AFTER_V="NOT PROVEN (need --- PASS for every expected test with no skip, build failure, or defect; missing PASS:${MISSING:- none})"
 	VERDICT=3
 fi
 
