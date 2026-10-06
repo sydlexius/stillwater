@@ -3,6 +3,7 @@ package templates
 import (
 	"strconv"
 
+	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/web/components"
 )
 
@@ -361,7 +362,20 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 					// str.replace('%s', value) or str.replace('%d', value).
 					var _i18nEl = document.getElementById('layout-i18n');
 					var i18n = {};
-					try { if (_i18nEl && _i18nEl.dataset.i18n) i18n = JSON.parse(_i18nEl.dataset.i18n); } catch (e) {}
+					var _i18nLang = _i18nEl ? _i18nEl.lang : '';
+					try { if (_i18nEl && _i18nEl.dataset.i18n) i18n = JSON.parse(_i18nEl.dataset.i18n); } catch (e) {
+						// The English fallbacks below replace the blob, so tagging them
+						// with the page locale would mislabel them: drop the lang.
+						console.error('layout-i18n: malformed i18n blob; falling back to English, chrome will not be language-tagged', e);
+						_i18nLang = '';
+					}
+					// The locale the blob above was rendered in (#2678). <html lang> is
+					// hardcoded "en", so chrome built here carries its own lang or a
+					// screen reader reads fr/ja aria-labels with the English voice.
+					if (!_i18nLang) console.error('layout-i18n: missing lang; toast chrome will not be language-tagged');
+					function tagChromeLang(el) {
+						if (_i18nLang) el.setAttribute('lang', _i18nLang);
+					}
 					// English fallbacks guard against a missing/malformed blob so the
 					// UI does not go completely silent when the parse fails.
 					i18n.grouped_aria    = i18n.grouped_aria    || 'Grouped notification count';
@@ -410,6 +424,7 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 							entry.countEl = document.createElement('span');
 							entry.countEl.className = 'inline-flex items-center justify-center ml-1.5 min-w-[20px] h-5 rounded-full px-1.5 text-xs font-semibold tabular-nums bg-white/20 text-current';
 							entry.countEl.setAttribute('aria-label', i18n.grouped_aria);
+							tagChromeLang(entry.countEl);
 							// Insert count badge after the message span.
 							var msgSpan = entry.el.querySelector('span');
 							if (msgSpan && msgSpan.nextSibling) {
@@ -483,23 +498,26 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 						}
 					}
 
-					function createToastElement(type, msg) {
+					function createToastElement(type, msg, lang) {
 						var toast = document.createElement('div');
 						toast.className = 'bg-white dark:bg-gray-800 flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg transition-opacity duration-300 ' + colorClasses(type);
 						var span = document.createElement('span');
 						span.className = 'flex-1';
 						span.textContent = msg;
+						// Caller-declared language of msg; untagged when not given.
+						if (lang) span.setAttribute('lang', lang);
 						var btn = document.createElement('button');
 						btn.type = 'button';
 						btn.className = 'ml-2 font-bold opacity-70 hover:opacity-100 shrink-0';
 						btn.textContent = '\u00d7';
 						btn.setAttribute('aria-label', i18n.dismiss_aria);
+						tagChromeLang(btn);
 						toast.appendChild(span);
 						toast.appendChild(btn);
 						return toast;
 					}
 
-					function enqueueToast(type, msg, autoDismissMs) {
+					function enqueueToast(type, msg, autoDismissMs, lang) {
 						// Check for groupable existing toast.
 						var existing = findGroupable(type, msg);
 						if (existing) {
@@ -514,7 +532,7 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 							return existing;
 						}
 
-						var el = createToastElement(type, msg);
+						var el = createToastElement(type, msg, lang);
 						var entry = {
 							el: el,
 							type: type,
@@ -540,11 +558,11 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 					}
 
 					// -- Public API (backwards compatible) --
-					window.showToast = function(msg) {
-						enqueueToast('error', msg, 5000);
+					window.showToast = function(msg, lang) {
+						enqueueToast('error', msg, 5000, lang);
 					};
-					window.showSuccessToast = function(msg) {
-						enqueueToast('success', msg, 5000);
+					window.showSuccessToast = function(msg, lang) {
+						enqueueToast('success', msg, 5000, lang);
 					};
 					window.showWarningToast = function(msg) {
 						enqueueToast('warning', msg, 8000);
@@ -599,8 +617,8 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 					// previous entry's 5s -- so the "persistent" summary would
 					// disappear immediately. colorClasses() maps sticky-success to
 					// the same emerald styling as success.
-					window.showStickyToast = function(msg) {
-						var entry = enqueueToast('sticky-success', msg, 0);
+					window.showStickyToast = function(msg, lang) {
+						var entry = enqueueToast('sticky-success', msg, 0, lang);
 						return {
 							dismiss: function() { dismissToast(entry); }
 						};
@@ -634,6 +652,7 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 						closeBtn.className = 'font-bold opacity-70 hover:opacity-100 shrink-0';
 						closeBtn.textContent = '\u00d7';
 						closeBtn.setAttribute('aria-label', i18n.close_aria);
+						tagChromeLang(closeBtn);
 
 						toast.appendChild(msgSpan);
 						toast.appendChild(countSpan);
@@ -761,6 +780,7 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 						closeBtn.className = 'font-bold opacity-70 hover:opacity-100 shrink-0';
 						closeBtn.textContent = '×';
 						closeBtn.setAttribute('aria-label', i18n.close_aria);
+						tagChromeLang(closeBtn);
 
 						toast.appendChild(msgSpan);
 						toast.appendChild(reauthBtn);
@@ -811,6 +831,9 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 					// listeners, confirm modal) can reuse the same translations
 					// without re-parsing the JSON blob.
 					window.swI18n = i18n;
+					// Shared with the confirm-modal script (a separate IIFE): the locale
+					// the blob was rendered in, or '' when it must not be tagged.
+					window.swI18nLang = _i18nLang;
 				})();
 			</script>
 	<script>
@@ -1087,6 +1110,14 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 					function showModal(message, confirmKey, opts) {
 						var m = getModal();
 						_modalOpener = document.activeElement;
+						// Caller-supplied text carries the CALLER's language (opts.lang);
+						// untagged text inherits <html lang>. Never the page locale.
+						var callerLang = (opts && opts.lang) || '';
+						function setLang(node, lang) {
+							if (!node) return;
+							if (lang) node.setAttribute('lang', lang); else node.removeAttribute('lang');
+						}
+						setLang(m.message, callerLang);
 						if (opts && opts.html) {
 							// opts.html is only set by trusted internal callers; the message
 							// is always application-generated, never from user input.
@@ -1097,9 +1128,11 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 						// Apply optional title and accept-button overrides.
 						if (opts && opts.title && m.title) {
 							m.title.textContent = opts.title;
+							setLang(m.title, callerLang);
 						}
 						if (opts && opts.acceptText && m.accept) {
 							m.accept.textContent = opts.acceptText;
+							setLang(m.accept, callerLang);
 						}
 						if (m.accept) {
 							// Apply an override when given, otherwise restore the default
@@ -1147,6 +1180,17 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 							m.accept.textContent = _confirm;
 							// Single source of truth: the pristine class captured in getModal.
 							m.accept.className = m.defaultAcceptClass;
+						}
+						// Restore the page locale on the translated chrome. Failure here
+						// must be loud but must never stop focus returning below.
+						try {
+							var _pageLang = window.swI18nLang;
+							[m.title, m.accept].forEach(function(n) {
+								if (!n) return;
+								if (_pageLang) n.setAttribute('lang', _pageLang); else n.removeAttribute('lang');
+							});
+						} catch (err) {
+							console.error('confirm modal: restoring chrome lang failed', err);
 						}
 						// Return focus to the element that triggered the dialog.
 						if (_modalOpener && typeof _modalOpener.focus === 'function') {
@@ -1215,6 +1259,13 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 						hideModal();
 					}
 
+					// hx-confirm text is written in the language of the nearest lang
+					// ancestor of the trigger (<html> unless a component declares one).
+					function triggerLangOpts(trigger) {
+						var holder = trigger && trigger.closest ? trigger.closest('[lang]') : null;
+						return { lang: holder ? holder.getAttribute('lang') : '' };
+					}
+
 					document.body.addEventListener('htmx:confirm', function(evt) {
 						var trigger = evt.detail.elt;
 						var question = evt.detail.question;
@@ -1232,11 +1283,11 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 									return;
 								}
 								pendingEvent = evt;
-								showModal(question, confirmKey);
+								showModal(question, confirmKey, triggerLangOpts(trigger));
 							});
 						} else {
 							pendingEvent = evt;
-							showModal(question, null);
+							showModal(question, null, triggerLangOpts(trigger));
 						}
 					});
 
@@ -1324,7 +1375,7 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 // Placed immediately before the toast manager script so the blob is
 // available when that IIFE runs.
 templ layoutI18nBlob() {
-	<div id="layout-i18n" hidden data-i18n={ layoutI18nJSON(ctx) }></div>
+	<div id="layout-i18n" hidden lang={ i18n.TFromCtx(ctx).Locale() } data-i18n={ layoutI18nJSON(ctx) }></div>
 }
 
 // tourI18nJSON renders a hidden element with translated tour step strings.

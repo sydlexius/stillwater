@@ -190,7 +190,7 @@ templ RegistryRepairBanner() {
 				function toast(kind, msg) {
 					var fn = window[kind];
 					if (typeof fn !== 'function') { console.error('registry repair banner: window.' + kind + ' is unavailable; message not shown:', msg); return null; }
-					return fn(msg);
+					return fn(msg, el.lang);
 				}
 				function csrf() {
 					if (typeof window.swCsrfToken !== 'function') { console.error('registry repair banner: swCsrfToken unavailable; the POST will 403'); return ''; }
@@ -288,6 +288,7 @@ templ RegistryRepairBanner() {
 						return;
 					}
 					window.showConfirmDialog(el.dataset.confirm, null, start, {
+						lang: el.lang,
 						acceptClass: 'px-4 py-2 rounded-md bg-amber-500 text-amber-950 text-sm font-medium hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-300'
 					});
 				});
