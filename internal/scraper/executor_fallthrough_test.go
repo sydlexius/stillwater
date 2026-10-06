@@ -33,6 +33,8 @@ func metaProvider(name provider.ProviderName, meta *provider.ArtistMetadata, err
 	return &mockProvider{name: name, getArtFn: func(context.Context, string) (*provider.ArtistMetadata, error) { return meta, err }}
 }
 
+// TestScrapeAll_JunkBiographyFallsThroughToNextProvider pins that junk biography from the
+// primary provider causes ScrapeAll to fall through to the next provider in the chain.
 func TestScrapeAll_JunkBiographyFallsThroughToNextProvider(t *testing.T) {
 	cases := []struct{ name, first, second, want string }{
 		{"junk then real", "?", longBio, longBio},
@@ -59,6 +61,8 @@ func TestScrapeAll_JunkBiographyFallsThroughToNextProvider(t *testing.T) {
 	}
 }
 
+// TestScrapeAll_WrongImageTypeDoesNotBlockLaterProvider pins that a primary provider
+// returning the wrong image type does not block ScrapeAll from attempting the next provider.
 func TestScrapeAll_WrongImageTypeDoesNotBlockLaterProvider(t *testing.T) {
 	img := func(name provider.ProviderName, typ provider.ImageType) *mockProvider {
 		m := metaProvider(name, &provider.ArtistMetadata{Name: "X"}, nil)
@@ -74,6 +78,8 @@ func TestScrapeAll_WrongImageTypeDoesNotBlockLaterProvider(t *testing.T) {
 	}
 }
 
+// TestScrapeAll_MembersAttemptedBookkeeping pins that ScrapeAll correctly tracks attempted
+// fields, the authoritative flag, and member count across various metadata states and errors.
 func TestScrapeAll_MembersAttemptedBookkeeping(t *testing.T) {
 	cases := []struct {
 		name                    string
