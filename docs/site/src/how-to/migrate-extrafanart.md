@@ -23,6 +23,15 @@ The `status` tells you how it went:
 - `failed`: nothing moved, or the run stopped early (for example a server shutdown or an unreadable setting).
 - `nothing_to_do` or `nothing_checked`: as in the preview.
 
-A `partial` or `failed` run still answers 200 when it finished, so read `status`, not just the HTTP code.
+The HTTP code summarizes the outcome, and the body has the same shape for every code:
+
+| Code | Meaning |
+| --- | --- |
+| 200 | A preview finished, or a live run moved every file that was due (or had nothing to do). A live `nothing_checked` run also answers 200: check `artists_skipped_missing`. |
+| 207 | A live run finished, but some files did not move (`partial` or `failed`). Read the per-file outcomes. |
+| 500 | The run stopped early. Files already moved stay moved; run again. |
+| 409 | Another run is already in progress. |
+
+`status` stays the authoritative detail: a `failed` run can answer 500 (it stopped early) or 207 (it finished and nothing moved).
 
 A `dry_run` value that is not true or false gets a 400, and a second run while one is in progress gets a 409.

@@ -4426,8 +4426,10 @@ paths:
         repeat run; also what you would see if something else removed it); it is
         not counted as moved. A
         malformed dry_run (including null) is a 400. Only one run at a time (409).
-        Admin-only. A run that completes answers 200 even when its status is
-        partial; read status and the counts.
+        Admin-only. A finished preview, and a live run that moved every file due
+        (or had nothing to do), answer 200. A live run that finished but left
+        files unmoved (status partial or failed) answers 207; the body is the
+        same, so read status and the counts. A run that stopped early answers 500.
       operationId: runExtraFanartMigration
       requestBody:
         required: false
@@ -4449,7 +4451,13 @@ paths:
                   default: true
       responses:
         "200":
-          description: The run finished (check status; a live run can be partial).
+          description: A preview finished, or a live run moved every file due or had nothing to do.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtraFanartMigrationResult'
+        "207":
+          description: A live run finished but some files did not move (status `partial` or `failed`). Per-item outcomes are in the body, which has the same shape as a 200.
           content:
             application/json:
               schema:
