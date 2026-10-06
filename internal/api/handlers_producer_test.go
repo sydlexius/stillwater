@@ -1,7 +1,9 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -356,5 +359,50 @@ func TestArtistDetailPage_DoneStampsOperatorOnlyForTypedValues(t *testing.T) {
 		if !strings.Contains(body, want) && !strings.Contains(body, strings.ReplaceAll(want, "&amp;", "&")) {
 			t.Errorf("rendered detail page missing %q", want)
 		}
+	}
+}
+
+// TestFieldUpdate_LogsBoundedCleanProducerClaim sends an oversized,
+// control-character-laden claim through the real handler and asserts the
+// rejection log carries a bounded, clean token (#3078).
+func TestFieldUpdate_LogsBoundedCleanProducerClaim(t *testing.T) {
+	t.Parallel()
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+	a := &artist.Artist{Name: "Claim Artist", SortName: "Claim Artist", Type: "group", Path: "/music/Claim Artist"}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	var buf bytes.Buffer
+	r.logger = slog.New(slog.NewJSONHandler(&buf, nil))
+
+	claim := "forged\nINFO fake line\x1b[31m\x00\u202e\u2028\u200b" + strings.Repeat("x", 5000)
+	w := patchField(t, r, a.ID, "biography", url.Values{"value": {"a new bio"}, "producer": {claim}})
+	if w.Code >= 400 {
+		t.Fatalf("precondition: the write itself should succeed, got %d", w.Code)
+	}
+	var logged string
+	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		var rec map[string]any
+		if json.Unmarshal([]byte(line), &rec) == nil && rec["msg"] == "rejected producer claim, recording unrecorded" {
+			logged, _ = rec["producer_claim"].(string)
+		}
+	}
+	if logged == "" {
+		t.Fatalf("precondition: no rejection log line found in %q", buf.String())
+	}
+	if n := len([]rune(logged)); n != 67 {
+		t.Errorf("logged claim is %d runes, want exactly 67 (64 plus the ellipsis)", n)
+	}
+	for _, c := range logged {
+		if unicode.IsControl(c) || unicode.Is(unicode.Cf, c) || c == 0x2028 {
+			t.Errorf("logged claim carries control character %q", c)
+		}
+	}
+	if !strings.HasPrefix(logged, "forgedINFO fake line") {
+		t.Errorf("logged claim = %q, want the printable prefix preserved", logged)
+	}
+	if row := producerRowFor(t, historySvc, a.ID, "biography", "a new bio"); row.Producer != artist.ProducerUnrecorded {
+		t.Errorf("stored producer = %q, want unrecorded", row.Producer)
 	}
 }

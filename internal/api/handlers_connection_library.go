@@ -723,7 +723,7 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 				// Backfill MusicBrainzID if the platform provides one and the local record lacks it.
 				if mbid != "" && existing.MusicBrainzID == "" {
 					existing.MusicBrainzID = mbid
-					if err := r.artistService.Update(ctx, existing); err != nil {
+					if err := r.artistService.Update(artist.ContextWithProducer(ctx, "platform:"+connection.TypeEmby), existing); err != nil {
 						r.logger.Warn("backfilling mbid from emby", "name", existing.Name, "error", err)
 					}
 				}
@@ -826,7 +826,7 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 				// Backfill MusicBrainzID if the platform provides one and the local record lacks it.
 				if mbid != "" && existing.MusicBrainzID == "" {
 					existing.MusicBrainzID = mbid
-					if err := r.artistService.Update(ctx, existing); err != nil {
+					if err := r.artistService.Update(artist.ContextWithProducer(ctx, "platform:"+connection.TypeJellyfin), existing); err != nil {
 						r.logger.Warn("backfilling mbid from jellyfin", "name", existing.Name, "error", err)
 					}
 				}

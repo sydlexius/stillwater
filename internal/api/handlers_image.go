@@ -1784,7 +1784,8 @@ func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, image
 // correct for the same reason documented at the provenance call in
 // setArtistImageFlag.
 func (r *Router) persistImageFlag(ctx context.Context, a *artist.Artist, imageType string, exists bool) error {
-	if err := r.artistService.Update(ctx, a); err != nil {
+	// #3078: image flags are observed on disk, not supplied by anyone.
+	if err := r.artistService.Update(artist.ContextWithProducer(ctx, artist.ProducerFilesystem), a); err != nil {
 		return err
 	}
 	if exists {
@@ -3027,7 +3028,7 @@ func (r *Router) updateArtistFanartCount(ctx context.Context, a *artist.Artist) 
 	a.FanartCount = count
 	a.FanartLowRes = lowRes
 
-	if err := r.artistService.Update(ctx, a); err != nil {
+	if err := r.artistService.Update(artist.ContextWithProducer(ctx, artist.ProducerFilesystem), a); err != nil {
 		a.FanartExists, a.FanartCount, a.FanartLowRes = priorExists, priorCount, priorLowRes
 		r.logger.Warn("updating fanart count",
 			slog.String("artist_id", a.ID),

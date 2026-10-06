@@ -2,6 +2,7 @@ package artist
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 )
 
@@ -37,8 +38,14 @@ import (
 // bulk MusicBrainz ID records, and the bulk fetch-metadata job (one
 // "rule:bulk_fetch_metadata" per write, not a per-field provider name).
 //
-// Not stamped yet, so still "": the whole-row persists that move no tracked
-// field today.
+// Also stamped although they move no tracked field today (so the tag is
+// already in place the day trackableFields widens): the refresh-link ID store
+// ("operator"), the Emby/Jellyfin MBID backfill ("platform:<type>") and the
+// image flag / fanart count persists ("filesystem"). Deliberately left
+// unstamped: the health-score persists (handlers_rule, notifications apply, rule
+// EvaluateAndPersistHealth), which attribute no value. A write that reaches the
+// history store with NO producer key set logs a WARN (resolveProducerForWrite),
+// and internal/api's census test fails when a call site is added unclassified.
 //
 // THE EMPTY STRING IS THE DEFAULT, AND IT IS NOT "operator". This is the
 // single most load-bearing decision in this file. "" means "the writer did
@@ -153,20 +160,39 @@ func ContextWithFieldProducers(ctx context.Context, producers map[string]string)
 // producerForField resolves the producer for a single field write: the
 // per-field overlay (ContextWithFieldProducers) takes precedence when it
 // names this field, then the scalar (ContextWithProducer), then
-// ProducerUnrecorded when neither is set.
+// ProducerUnrecorded when neither is set. The bool reports whether ANY
+// producer key was set, because "" means two different things: a writer that
+// explicitly said "unrecorded" (ContextWithProducer(ctx, "") -- a
+// provider-modal merge, an off-allow-list client claim), and a writer that
+// never said anything at all, which is an unstamped write path.
 //
-// A write path that puts neither value on its context resolves to
-// ProducerUnrecorded; the stamped paths are listed in the file doc block.
-func producerForField(ctx context.Context, field string) string {
+// The stamped paths are listed in the file doc block.
+func producerForField(ctx context.Context, field string) (string, bool) {
 	if overlay, ok := ctx.Value(fieldProducersKey).(map[string]string); ok {
 		if p, ok := overlay[field]; ok {
-			return p
+			return p, true
 		}
 	}
 	if p, ok := ctx.Value(producerKey).(string); ok {
-		return p
+		return p, true
 	}
-	return ProducerUnrecorded
+	return ProducerUnrecorded, false
+}
+
+// resolveProducerForWrite returns the producer to store on a history row and
+// logs a WARN when the write path set no producer key at all (#3078). The
+// census test in internal/api names every call site that reaches this; this
+// log is the runtime half, catching a path the census cannot see. Fields are
+// artist_id, field and source ONLY -- never a value.
+func resolveProducerForWrite(ctx context.Context, artistID, field, source string) string {
+	p, set := producerForField(ctx, field)
+	if !set {
+		slog.Warn("history: row written with no producer set",
+			slog.String("artist_id", artistID),
+			slog.String("field", field),
+			slog.String("source", source))
+	}
+	return p
 }
 
 // validHistoryProducer reports whether producer is one of the recognized

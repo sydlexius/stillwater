@@ -284,7 +284,7 @@ func recordHistoryTx(ctx context.Context, tx *sql.Tx, artistID, field, oldValue,
 	// it passes here; a caller that stamps nothing would still record
 	// ProducerUnrecorded ("") -- see history_producer.go's doc block. The
 	// no-op-skip asymmetry documented above is untouched.
-	producer := producerForField(ctx, field)
+	producer := resolveProducerForWrite(ctx, artistID, field, source)
 	const q = `
 		INSERT INTO metadata_changes (id, artist_id, field, old_value, new_value, source, producer, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
