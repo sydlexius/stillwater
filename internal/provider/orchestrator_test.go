@@ -196,83 +196,6 @@ func TestFetchMetadata_MBNameAuthoritative(t *testing.T) {
 	}
 }
 
-// TestFetchMetadata_MBNameAuthoritative_EmptyDoesNotClobber verifies the
-// override respects empty values: when MusicBrainz returns an empty Name
-// (error, not-found, or just no data), a Name already set by another
-// provider survives. Without this guard the override would erase a perfectly
-// good name on any refresh where MB is unreachable.
-func TestFetchMetadata_MBNameAuthoritative_EmptyDoesNotClobber(t *testing.T) {
-	registry, settings := setupOrchestratorTest(t)
-
-	registry.Register(&mockProvider{
-		name: NameWikipedia,
-		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
-			return &ArtistMetadata{
-				Name:      "Wikipedia Name",
-				Biography: "About the artist.",
-			}, nil
-		},
-	})
-	// MusicBrainz returns nothing (empty struct), simulating a provider that
-	// was queried successfully but had no data to contribute for Name.
-	registry.Register(&mockProvider{
-		name: NameMusicBrainz,
-		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
-			return &ArtistMetadata{Genres: []string{"rock"}}, nil
-		},
-	})
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
-
-	result, err := orch.FetchMetadata(context.Background(), "test-mbid", "Whatever", nil)
-	if err != nil {
-		t.Fatalf("FetchMetadata: %v", err)
-	}
-
-	if result.Metadata.Name != "Wikipedia Name" {
-		t.Errorf("expected wikipedia Name preserved when MB has none, got %q", result.Metadata.Name)
-	}
-}
-
-// TestFetchMetadata_MBNameAuthoritative_MBErrorDoesNotClobber verifies the
-// override respects provider errors: when MB returns an error (timeout, 5xx,
-// unreachable), its cached ProviderResult has err != nil and the override
-// must short-circuit, preserving a Name set by another provider. Without
-// this guard a transient MB outage would erase the artist's Name on every
-// affected refresh.
-func TestFetchMetadata_MBNameAuthoritative_MBErrorDoesNotClobber(t *testing.T) {
-	registry, settings := setupOrchestratorTest(t)
-
-	registry.Register(&mockProvider{
-		name: NameWikipedia,
-		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
-			return &ArtistMetadata{
-				Name:      "Wikipedia Name",
-				Biography: "About the artist.",
-			}, nil
-		},
-	})
-	registry.Register(&mockProvider{
-		name: NameMusicBrainz,
-		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
-			return nil, fmt.Errorf("musicbrainz timeout")
-		},
-	})
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
-
-	result, err := orch.FetchMetadata(context.Background(), "test-mbid", "Whatever", nil)
-	if err != nil {
-		t.Fatalf("FetchMetadata: %v", err)
-	}
-
-	if result.Metadata.Name != "Wikipedia Name" {
-		t.Errorf("expected wikipedia Name preserved on MB error, got %q", result.Metadata.Name)
-	}
-}
-
 // TestOrchestratorTagAggregation verifies that genres and moods are accumulated
 // across all providers with canonical spelling normalization and deduplication,
 // rather than stopping at the first provider with data.
@@ -341,41 +264,6 @@ func TestOrchestratorTagAggregation(t *testing.T) {
 	}
 	if result.Metadata.Moods[1] != "Chill" {
 		t.Errorf("expected Chill second, got %q", result.Metadata.Moods[1])
-	}
-}
-
-func TestOrchestratorProviderError(t *testing.T) {
-	registry, settings := setupOrchestratorTest(t)
-
-	// First provider errors, second succeeds
-	registry.Register(&mockProvider{
-		name: NameMusicBrainz,
-		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
-			return nil, &ErrProviderUnavailable{Provider: NameMusicBrainz, Cause: fmt.Errorf("timeout")}
-		},
-	})
-	registry.Register(&mockProvider{
-		name: NameAudioDB,
-		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
-			return &ArtistMetadata{
-				Name:      "Radiohead",
-				Biography: "AudioDB biography for this artist with enough content to pass quality checks.",
-				Formed:    "1985",
-			}, nil
-		},
-	})
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
-
-	result, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead", nil)
-	if err != nil {
-		t.Fatalf("FetchMetadata: %v", err)
-	}
-
-	// Should get data from AudioDB since MusicBrainz failed
-	if result.Metadata.Biography != "AudioDB biography for this artist with enough content to pass quality checks." {
-		t.Errorf("expected biography from AudioDB, got: %s", result.Metadata.Biography)
 	}
 }
 
@@ -459,94 +347,54 @@ func TestOrchestratorCustomPriority(t *testing.T) {
 	}
 }
 
-func TestOrchestratorMBIDFallbackToName(t *testing.T) {
-	registry, settings := setupOrchestratorTest(t)
-
-	// Genius requires an API key; store a dummy so it passes availability check.
-	if err := settings.SetAPIKey(context.Background(), NameGenius, "test-key"); err != nil {
-		t.Fatalf("SetAPIKey: %v", err)
-	}
-
-	// Override biography priority: Genius first, then MusicBrainz.
-	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameGenius, NameMusicBrainz}); err != nil {
-		t.Fatalf("SetPriority: %v", err)
-	}
-
-	// Genius returns ErrNotFound for MBID, then succeeds with name.
-	// Uses mockNameLookupProvider so the NameLookupProvider type assertion succeeds.
-	geniusCalls := 0
-	registry.Register(&mockNameLookupProvider{
+// TestFetchProviderResult_MBIDNotFoundRetriesWithName verifies that a
+// NameLookupProvider that reports the MBID as not-found is retried with the
+// artist name, and the name-lookup result is what comes back.
+func TestFetchProviderResult_MBIDNotFoundRetriesWithName(t *testing.T) {
+	var geniusIDs []string
+	p := &mockNameLookupProvider{
 		mockProvider: mockProvider{
 			name: NameGenius,
 			getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
-				geniusCalls++
+				geniusIDs = append(geniusIDs, id)
 				if id == "mbid-uuid-1234" {
 					return nil, &ErrNotFound{Provider: NameGenius, ID: id}
 				}
-				// Called with artist name on retry
+				// Called with the artist name on retry.
 				return &ArtistMetadata{
 					Name:      "Radiohead",
 					Biography: "Genius biography for this artist with enough content to pass the quality checks.",
 				}, nil
 			},
 		},
-	})
-	registry.Register(&mockProvider{
-		name: NameMusicBrainz,
-		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
-			return &ArtistMetadata{
-				Name:          "Radiohead",
-				MusicBrainzID: "mbid-uuid-1234",
-			}, nil
-		},
-	})
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
-
-	result, err := orch.FetchMetadata(context.Background(), "mbid-uuid-1234", "Radiohead", nil)
-	if err != nil {
-		t.Fatalf("FetchMetadata: %v", err)
 	}
 
-	// Biography should come from Genius after MBID->name retry.
-	if result.Metadata.Biography != "Genius biography for this artist with enough content to pass the quality checks." {
-		t.Errorf("expected biography from Genius, got: %s", result.Metadata.Biography)
-	}
+	pr := FetchProviderResult(context.Background(), p, NameGenius, "mbid-uuid-1234", "Radiohead", nil, testDiscardLogger(), nil)
 
-	// Genius should have been called twice: once with MBID (not-found), once with name.
-	if geniusCalls != 2 {
-		t.Errorf("expected 2 Genius GetArtist calls (MBID + name retry), got %d", geniusCalls)
+	if pr.Meta() == nil || pr.Meta().Biography != "Genius biography for this artist with enough content to pass the quality checks." {
+		t.Errorf("expected biography from the name retry, got: %+v", pr.Meta())
+	}
+	// First with the MBID (not-found), then with the artist name.
+	if len(geniusIDs) != 2 || geniusIDs[0] != "mbid-uuid-1234" || geniusIDs[1] != "Radiohead" {
+		t.Errorf("Genius GetArtist ids = %v, want [mbid-uuid-1234 Radiohead]", geniusIDs)
 	}
 }
 
-// TestOrchestratorMBIDNoRetryWithoutNameLookup verifies that the MBID-to-name
-// retry does NOT fire for providers that do not implement NameLookupProvider.
-// Uses AudioDB as the example since Discogs now implements NameLookupProvider.
-func TestOrchestratorMBIDNoRetryWithoutNameLookup(t *testing.T) {
-	registry, settings := setupOrchestratorTest(t)
-
-	// Use a plain mockProvider (no NameLookupProvider) that returns ErrNotFound.
+// TestFetchProviderResult_NoNameRetryWithoutNameLookup verifies that the
+// MBID-to-name retry does NOT fire for providers that do not implement
+// NameLookupProvider. Uses AudioDB since Discogs now implements it.
+func TestFetchProviderResult_NoNameRetryWithoutNameLookup(t *testing.T) {
 	audioDBCalls := 0
-	registry.Register(&mockProvider{
-		name:    NameAudioDB,
-		authReq: false,
+	p := &mockProvider{
+		name: NameAudioDB,
 		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
 			audioDBCalls++
 			return nil, &ErrNotFound{Provider: NameAudioDB, ID: id}
 		},
-	})
-
-	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameAudioDB}); err != nil {
-		t.Fatalf("SetPriority: %v", err)
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
+	FetchProviderResult(context.Background(), p, NameAudioDB, "mbid-uuid-1234", "Radiohead", nil, testDiscardLogger(), nil)
 
-	_, _ = orch.FetchMetadata(context.Background(), "mbid-uuid-1234", "Radiohead", nil)
-
-	// AudioDB should only be called once (MBID attempt). No name retry.
 	if audioDBCalls != 1 {
 		t.Errorf("expected 1 AudioDB GetArtist call (no name retry), got %d", audioDBCalls)
 	}
@@ -641,6 +489,10 @@ func TestExtractFieldForComparison_Origin(t *testing.T) {
 	}
 }
 
+// testDiscardLogger returns a logger that drops everything, for tests that
+// call FetchProviderResult directly.
+func testDiscardLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
+
 func findSource(sources []FieldSource, field string) *FieldSource {
 	for _, s := range sources {
 		if s.Field == field {
@@ -650,13 +502,12 @@ func findSource(sources []FieldSource, field string) *FieldSource {
 	return nil
 }
 
-func TestOrchestratorProviderIDPrecedence(t *testing.T) {
-	registry, settings := setupOrchestratorTest(t)
-
-	// AudioDB requires no key (free tier). Register it with a mock that records
-	// which ID it receives.
+// TestFetchProviderResult_ProviderIDPrecedence verifies that a provider-specific
+// ID in providerIDs beats the MBID: AudioDB must receive its own numeric ID, and
+// the metadata it returns for that ID must come back on the result.
+func TestFetchProviderResult_ProviderIDPrecedence(t *testing.T) {
 	var audioDBReceivedID string
-	registry.Register(&mockProvider{
+	p := &mockProvider{
 		name: NameAudioDB,
 		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
 			audioDBReceivedID = id
@@ -666,83 +517,56 @@ func TestOrchestratorProviderIDPrecedence(t *testing.T) {
 				Biography: "Correct biography from AudioDB with enough content to pass the quality gate checks.",
 			}, nil
 		},
-	})
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
-
-	// Pass a wrong MBID but the correct AudioDB numeric ID in providerIDs.
-	// The orchestrator should prefer the provider-specific ID.
-	providerIDs := map[ProviderName]string{
-		NameAudioDB: "111493",
-	}
-	result, err := orch.FetchMetadata(context.Background(), "wrong-mbid-123", "Adele", providerIDs)
-	if err != nil {
-		t.Fatalf("FetchMetadata: %v", err)
 	}
 
-	// AudioDB should have received its own numeric ID, not the wrong MBID
+	// A wrong MBID but the correct AudioDB numeric ID in providerIDs.
+	pr := FetchProviderResult(context.Background(), p, NameAudioDB, "wrong-mbid-123", "Adele",
+		map[ProviderName]string{NameAudioDB: "111493"}, testDiscardLogger(), nil)
+
 	if audioDBReceivedID != "111493" {
 		t.Errorf("AudioDB received ID %q, want %q", audioDBReceivedID, "111493")
 	}
-
-	if result.Metadata.Biography != "Correct biography from AudioDB with enough content to pass the quality gate checks." {
-		t.Errorf("expected biography from AudioDB, got: %s", result.Metadata.Biography)
+	if pr.Meta() == nil || pr.Meta().Biography != "Correct biography from AudioDB with enough content to pass the quality gate checks." {
+		t.Errorf("expected biography from AudioDB, got: %+v", pr.Meta())
 	}
 }
 
-func TestOrchestratorNilProviderIDsPreservesBehavior(t *testing.T) {
-	registry, settings := setupOrchestratorTest(t)
-
-	// With nil providerIDs, the orchestrator should use MBID as before.
+// TestFetchProviderResult_NilProviderIDsUsesMBID verifies that a nil
+// providerIDs map is safe and the provider is queried by MBID.
+func TestFetchProviderResult_NilProviderIDsUsesMBID(t *testing.T) {
 	var receivedID string
-	registry.Register(&mockProvider{
+	p := &mockProvider{
 		name: NameMusicBrainz,
 		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
 			receivedID = id
-			return &ArtistMetadata{
-				Name:      "Radiohead",
-				Biography: "MusicBrainz bio for this artist with enough length to pass quality checks.",
-			}, nil
+			return &ArtistMetadata{Name: "Radiohead"}, nil
 		},
-	})
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
-
-	_, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead", nil)
-	if err != nil {
-		t.Fatalf("FetchMetadata: %v", err)
 	}
 
+	pr := FetchProviderResult(context.Background(), p, NameMusicBrainz, "mbid-123", "Radiohead", nil, testDiscardLogger(), nil)
+
+	if pr.Err() != nil {
+		t.Fatalf("unexpected error: %v", pr.Err())
+	}
 	if receivedID != "mbid-123" {
 		t.Errorf("provider received ID %q, want %q (MBID)", receivedID, "mbid-123")
 	}
 }
 
-func TestOrchestratorEmptyProviderIDFallsBackToMBID(t *testing.T) {
-	registry, settings := setupOrchestratorTest(t)
-
+// TestFetchProviderResult_EmptyProviderIDFallsBackToMBID verifies that a
+// providerIDs entry that exists but is empty does not shadow the MBID.
+func TestFetchProviderResult_EmptyProviderIDFallsBackToMBID(t *testing.T) {
 	var receivedID string
-	registry.Register(&mockProvider{
+	p := &mockProvider{
 		name: NameAudioDB,
 		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
 			receivedID = id
 			return &ArtistMetadata{Name: "Test"}, nil
 		},
-	})
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
-
-	// Provider ID entry exists but is empty -- should fall back to MBID.
-	providerIDs := map[ProviderName]string{
-		NameAudioDB: "",
 	}
-	_, err := orch.FetchMetadata(context.Background(), "mbid-456", "Test", providerIDs)
-	if err != nil {
-		t.Fatalf("FetchMetadata: %v", err)
-	}
+
+	FetchProviderResult(context.Background(), p, NameAudioDB, "mbid-456", "Test",
+		map[ProviderName]string{NameAudioDB: ""}, testDiscardLogger(), nil)
 
 	if receivedID != "mbid-456" {
 		t.Errorf("provider received ID %q, want %q (MBID fallback)", receivedID, "mbid-456")
@@ -1073,83 +897,6 @@ func TestOrchestratorAllJunkBiographiesLeaveFieldEmpty(t *testing.T) {
 	bioSource := findSource(result.Sources, "biography")
 	if bioSource != nil {
 		t.Errorf("expected no biography source, got: %v", bioSource)
-	}
-}
-
-// TestOrchestratorCrossProviderIDEnrichment verifies that provider IDs
-// extracted from one provider's URL results are used when calling subsequent
-// providers. In this case, MusicBrainz returns a Discogs URL containing the
-// numeric Discogs ID, and Discogs should receive that numeric ID instead of
-// the MBID (which would always 404).
-//
-// Uses the genres field because MusicBrainz is excluded from biography
-// (it does not return biography data).
-func TestOrchestratorCrossProviderIDEnrichment(t *testing.T) {
-	registry, settings := setupOrchestratorTest(t)
-
-	// Discogs requires auth; store a dummy key.
-	if err := settings.SetAPIKey(context.Background(), NameDiscogs, "test-token"); err != nil {
-		t.Fatalf("SetAPIKey: %v", err)
-	}
-
-	// MusicBrainz returns metadata with a Discogs URL containing the numeric ID.
-	registry.Register(&mockProvider{
-		name:    NameMusicBrainz,
-		authReq: false,
-		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
-			return &ArtistMetadata{
-				Name:   "A-ha",
-				Genres: []string{"synth-pop"},
-				URLs: map[string]string{
-					"discogs": "https://www.discogs.com/artist/24941-a-ha",
-					"deezer":  "https://www.deezer.com/artist/75798",
-				},
-			}, nil
-		},
-	})
-
-	// Discogs records which ID it receives. It should get "24941" (from the
-	// URL), not the MBID.
-	var discogsReceivedID string
-	registry.Register(&mockNameLookupProvider{
-		mockProvider: mockProvider{
-			name:    NameDiscogs,
-			authReq: true,
-			getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
-				discogsReceivedID = id
-				return &ArtistMetadata{
-					Name:      "A-ha",
-					DiscogsID: "24941",
-				}, nil
-			},
-		},
-	})
-
-	// Set up priorities so MusicBrainz is queried first (for genres),
-	// then Discogs (for genres). The enrichment from MusicBrainz URL results
-	// should feed Discogs the extracted numeric ID. Discogs must be disabled
-	// for biography (which comes before genres in default order) so it is not
-	// called before MusicBrainz has provided URL enrichment.
-	if err := settings.SetDisabledProviders(context.Background(), "biography", []ProviderName{NameDiscogs}); err != nil {
-		t.Fatalf("SetDisabledProviders biography: %v", err)
-	}
-	if err := settings.SetPriority(context.Background(), "genres", []ProviderName{NameMusicBrainz, NameDiscogs}); err != nil {
-		t.Fatalf("SetPriority genres: %v", err)
-	}
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
-
-	// No stored provider IDs -- only the MBID.
-	_, err := orch.FetchMetadata(context.Background(), "cc2c9c3c-b7bc-4b8b-84d8-4fbd8779e493", "A-ha", nil)
-	if err != nil {
-		t.Fatalf("FetchMetadata: %v", err)
-	}
-
-	// Discogs should have received the numeric ID extracted from MusicBrainz's
-	// Discogs URL, not the raw MBID.
-	if discogsReceivedID != "24941" {
-		t.Errorf("expected Discogs to receive ID '24941' (from MusicBrainz URL), got %q", discogsReceivedID)
 	}
 }
 

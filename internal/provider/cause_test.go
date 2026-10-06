@@ -126,9 +126,18 @@ func TestFetchPoints_LogCauseOrUnattributedMarker(t *testing.T) {
 	}
 	searchBoom := func(context.Context, string) ([]ArtistSearchResult, error) { return nil, boom }
 
+	// FetchProviderResult is the shared per-provider fetch point the production
+	// scraper executor and the orchestrator both call; every "FetchProviderResult"
+	// row below is that function's own output, so it is driven directly rather
+	// than through FetchMetadata (which in production only delegates to the
+	// executor, and whose legacy loop is being deleted, #3292).
 	fetchMetadata := func(ctx context.Context, o *Orchestrator) error {
-		_, err := o.FetchMetadata(ctx, "mbid-1", "Some Artist", nil)
-		return err
+		p := o.registry.Get(NameAudioDB)
+		if p == nil {
+			t.Fatal("AudioDB not registered on the cause fixture")
+		}
+		FetchProviderResult(ctx, p, NameAudioDB, "mbid-1", "Some Artist", nil, o.logger, o.aimd)
+		return nil
 	}
 	fetchImages := func(ctx context.Context, o *Orchestrator) error {
 		// The empty Deezer entry is what "provider-specific ID not known" looks like.
