@@ -17,9 +17,10 @@ Stillwater's own records to match what it finds.
 This is an exceptional recovery operation, not routine maintenance. Run it when artwork you can see
 on disk is missing from Stillwater, not on a schedule.
 
-!!! note "API only in this release"
+!!! note "No repair button yet"
 
-    The repair currently has no interface control. Invoke it through the API as shown below.
+    The repair has no run control in the interface yet. Invoke it through the API as shown below. The
+    interface does show a notice when a repair may be needed; see [Background Check](#background-check).
 
 ## Preview First, Then Apply
 
@@ -110,6 +111,12 @@ succeeded. Re-run the operation; it is safe to repeat.
 Stillwater runs a preview in the background every 12 hours (the first one two minutes after startup) and
 remembers whether anything needed repair. The check never runs on demand, so the answer can be up to 12 hours old. Completing a repair of the whole library updates
 it immediately.
+
+When the last check found rows that may need repair, administrators see a notice at the top of their
+pages with the number of rows and when they were last checked. It does not appear when the registry
+looks clean, when no check has finished yet, or for users who are not administrators. Close it with the
+**X** to hide it for the rest of your browser session; it returns in a new session while a repair is
+still needed.
 
 ## What It Cannot Fix
 

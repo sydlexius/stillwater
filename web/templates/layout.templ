@@ -185,6 +185,7 @@ templ Layout(title string, assets AssetPaths) {
 				@ConflictBanner()
 				if assets.IsAdmin {
 					@SharedFilesystemBar()
+					@RegistryRepairBanner()
 				}
 				<main
 					id="sw-main"

@@ -40,3 +40,44 @@ func TestRegistryRepairCheckDrain_WaitsForLoop(t *testing.T) {
 		t.Fatalf("drain after cancel = %v, want the loop to exit", err)
 	}
 }
+
+// The cadence seam must honor a positive duration and fall back to the
+// production defaults (0) for an unset, malformed, or non-positive value, so a
+// typo can never start back-to-back library scans.
+func TestRegistryRepairCheckEvery(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cases := []struct {
+		raw  string
+		want time.Duration
+	}{
+		{"", 0},
+		{"3s", 3 * time.Second},
+		{"1s", time.Second},
+		{"2s", 2 * time.Second},
+		{"24h", 24 * time.Hour},
+		{"1ms", 0},
+		{"999ms", 0},
+		{"999999h", 0},
+		{"soon", 0},
+		{"0s", 0},
+		{"-5s", 0},
+	}
+	for _, tc := range cases {
+		if got := registryRepairCheckEvery(logger, tc.raw); got != tc.want {
+			t.Errorf("registryRepairCheckEvery(%q) = %v, want %v", tc.raw, got, tc.want)
+		}
+	}
+}
+
+// A release build must refuse the seam, exactly like SW_FORCE_PROVIDER_ERROR.
+func TestRefuseRegistryRepairSeam(t *testing.T) {
+	if err := refuseRegistryRepairSeam("2s", true); err == nil {
+		t.Error("release build with the seam set must be refused")
+	}
+	if err := refuseRegistryRepairSeam("", true); err != nil {
+		t.Errorf("release build with the seam unset = %v, want nil", err)
+	}
+	if err := refuseRegistryRepairSeam("2s", false); err != nil {
+		t.Errorf("non-release build with the seam set = %v, want nil", err)
+	}
+}
