@@ -45,7 +45,7 @@ func newCauseOrchestrator(t *testing.T, p Provider) (*Orchestrator, *logtest.Buf
 	registry, settings := setupOrchestratorTest(t)
 	registry.Register(p)
 	logger, buf := logtest.NewJSONLogger()
-	return NewOrchestrator(registry, settings, logger, nil), buf
+	return NewOrchestrator(registry, settings, logger, nil, &stubExecutor{}), buf
 }
 
 func TestCause_String(t *testing.T) {

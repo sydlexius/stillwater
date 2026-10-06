@@ -69,14 +69,12 @@ func TestFetchMetadata_DelegatesToExecutor(t *testing.T) {
 			return &ArtistMetadata{Name: "from-loop"}, nil
 		},
 	})
-	orch := NewOrchestrator(registry, settings, slog.New(slog.DiscardHandler), nil)
-
 	want := &FetchResult{
 		Metadata:        &ArtistMetadata{Name: "from-executor", URLs: map[string]string{}},
 		AttemptedFields: []string{"biography"},
 	}
 	stub := &stubExecutor{result: want}
-	orch.SetExecutor(stub)
+	orch := NewOrchestrator(registry, settings, slog.New(slog.DiscardHandler), nil, stub)
 
 	ids := map[ProviderName]string{NameAudioDB: "111493"}
 	got, err := orch.FetchMetadata(context.Background(), "mbid-1", "Artist", ids)
@@ -99,7 +97,7 @@ func TestFetchMetadata_DelegatesToExecutor(t *testing.T) {
 	}
 
 	boom := errors.New("executor failed")
-	orch.SetExecutor(&stubExecutor{err: boom})
+	orch = NewOrchestrator(registry, settings, slog.New(slog.DiscardHandler), nil, &stubExecutor{err: boom})
 	if _, err := orch.FetchMetadata(context.Background(), "mbid-1", "Artist", nil); !errors.Is(err, boom) {
 		t.Errorf("err = %v, want the executor's error", err)
 	}
@@ -115,4 +113,29 @@ func TestFetchMetadata_NoExecutorReturnsError(t *testing.T) {
 	if _, err := orch.FetchMetadata(context.Background(), "mbid-1", "Artist", nil); !errors.Is(err, ErrNoScraperExecutor) {
 		t.Errorf("err = %v, want ErrNoScraperExecutor", err)
 	}
+}
+
+// TestNewOrchestrator_ExecutorArg verifies the constructor-supplied executor is
+// the one FetchMetadata uses, an untyped-nil element leaves it unset, and two panic.
+func TestNewOrchestrator_ExecutorArg(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+	logger := slog.New(slog.DiscardHandler)
+
+	stub := &stubExecutor{result: &FetchResult{Metadata: &ArtistMetadata{Name: "ctor"}}}
+	orch := NewOrchestrator(registry, settings, logger, nil, stub)
+	if _, err := orch.FetchMetadata(context.Background(), "m", "n", nil); err != nil || len(stub.Calls()) != 1 {
+		t.Fatalf("ctor executor not used: err=%v calls=%d", err, len(stub.Calls()))
+	}
+
+	orch = NewOrchestrator(registry, settings, logger, nil, nil)
+	if _, err := orch.FetchMetadata(context.Background(), "m", "n", nil); !errors.Is(err, ErrNoScraperExecutor) {
+		t.Errorf("nil executor: err = %v, want ErrNoScraperExecutor", err)
+	}
+
+	defer func() {
+		if recover() == nil {
+			t.Error("two executors did not panic")
+		}
+	}()
+	NewOrchestrator(registry, settings, logger, nil, stub, stub)
 }
