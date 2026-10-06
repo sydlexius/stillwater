@@ -278,3 +278,65 @@ func TestScrapeAll_BackfillsProviderIDsFromURLRelations(t *testing.T) {
 		t.Errorf("WikidataID = %q, want Q175044 backfilled from the URL relation", result.Metadata.WikidataID)
 	}
 }
+
+// TestOrchestratorFallback moved here from internal/provider (#3292): it needs
+// the real Executor, and package provider cannot import scraper. Biography
+// falls back from MusicBrainz (empty) to Last.fm and the source names Last.fm.
+func TestOrchestratorFallback(t *testing.T) {
+	registry, settings, svc, logger := setupExecutorTest(t)
+	ctx := context.Background()
+
+	// Last.fm requires an API key to pass the availability check.
+	if err := settings.SetAPIKey(ctx, provider.NameLastFM, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+	var order []provider.ProviderName
+	registry.Register(&mockProvider{
+		name: provider.NameMusicBrainz,
+		getArtFn: func(context.Context, string) (*provider.ArtistMetadata, error) {
+			order = append(order, provider.NameMusicBrainz)
+			return &provider.ArtistMetadata{Name: "Radiohead", MusicBrainzID: "mbid-123", Genres: []string{"rock"}}, nil // no biography
+		},
+	})
+	registry.Register(&mockProvider{
+		name: provider.NameLastFM,
+		getArtFn: func(context.Context, string) (*provider.ArtistMetadata, error) {
+			order = append(order, provider.NameLastFM)
+			return &provider.ArtistMetadata{Name: "Radiohead", Biography: longBio, Genres: []string{"alternative"}}, nil
+		},
+	})
+	chain := []provider.ProviderName{provider.NameMusicBrainz, provider.NameLastFM}
+	// The per-field priority, not the saved chain, decides query order.
+	for _, f := range []string{"biography", "genres"} {
+		if err := settings.SetPriority(ctx, f, chain); err != nil {
+			t.Fatalf("SetPriority %s: %v", f, err)
+		}
+	}
+	saveFieldsConfig(t, svc, []FieldConfig{
+		{Field: FieldBiography, Primary: chain[0], Enabled: true, Category: CategoryMetadata},
+		{Field: FieldGenres, Primary: chain[0], Enabled: true, Category: CategoryMetadata},
+	}, []FallbackChain{{Category: CategoryMetadata, Providers: chain}})
+
+	exec := NewExecutor(svc, registry, settings, logger, nil)
+	result, err := exec.ScrapeAll(ctx, "mbid-123", "Radiohead", ScopeGlobal, nil)
+	if err != nil {
+		t.Fatalf("ScrapeAll: %v", err)
+	}
+
+	if len(order) < 2 || order[0] != provider.NameMusicBrainz || order[1] != provider.NameLastFM {
+		t.Fatalf("precondition: MusicBrainz (no biography) must be queried before Last.fm, got order %v", order)
+	}
+	if result.Metadata.Biography != longBio {
+		t.Errorf("expected biography from Last.fm, got: %s", result.Metadata.Biography)
+	}
+	// production takes tags from the first provider that has data and does not aggregate across providers
+	if g := result.Metadata.Genres; len(g) != 1 || g[0] != "Rock" {
+		t.Errorf("genres = %v, want [Rock] (MusicBrainz only, canonicalized)", g)
+	}
+	if src := sourceFor(result, "biography"); src != provider.NameLastFM {
+		t.Errorf("biography source = %q, want lastfm", src)
+	}
+	if src := sourceFor(result, "genres"); src != provider.NameMusicBrainz {
+		t.Errorf("genres source = %q, want musicbrainz", src)
+	}
+}

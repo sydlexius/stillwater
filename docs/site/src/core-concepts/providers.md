@@ -2,7 +2,7 @@
 description: How Stillwater queries metadata providers, the per-field priority chain, and how results merge.
 ---
 
-<!-- code: internal/provider/provider.go (AllProviderNames, ProviderCapabilities, ProviderName constants), internal/provider/orchestrator.go (FetchMetadata, FetchImages, EnrichProviderIDs, fieldProviderExclusions, isAggregatedField, image-attempt gating), internal/provider/registry.go -->
+<!-- code: internal/provider/provider.go (AllProviderNames, ProviderCapabilities, ProviderName constants), internal/scraper/executor.go (ScrapeAll), internal/provider/orchestrator.go (FetchMetadata delegates to the executor, FetchImages, EnrichProviderIDs, fieldProviderExclusions, image-attempt gating), internal/provider/registry.go -->
 <!-- displaced developer detail: per-fetch caching mechanism (one request per provider per fetch even when many fields ask for it), id-propagation extracting Discogs ID from MusicBrainz URL responses, image-error transient vs terminal distinction (preserves existing artwork on 5xx/timeout), fieldProviderExclusions map. These belong in godoc on internal/provider or a developer guide, not in this page. -->
 
 # Providers
@@ -20,9 +20,9 @@ The detailed capability matrix -- which fields each provider returns, rate limit
 Provider priority is set **per field**. For each field (name, biography, genres, thumb, fanart, ...) you order the providers from most-trusted to least, and Stillwater walks that list when it needs that field.
 
 - For text fields like biography, name, or born date, the **first provider with a non-empty answer wins** -- the rest aren't asked.
-- For tag fields (genres, styles, moods) and image fields (thumb, fanart, logo, banner), **every provider contributes** and Stillwater merges, preserving the priority order so the highest-trusted source's contribution is listed first.
+- For image fields (thumb, fanart, logo, banner), **every provider contributes** and Stillwater collects all candidates, with the highest-trusted source listed first.
 
-This split lets you pick "definitive" sources for some fields while pooling the diversity of others -- e.g., MusicBrainz for sort name, but genres pooled from MusicBrainz + Last.fm + AudioDB + Wikipedia. Discogs is not a genres source -- it pools into styles instead.
+This split lets you pick "definitive" sources for text and tag fields (genres, styles, moods come from the first provider in your list that has data; they are not combined) while pooling candidate images from every provider. Discogs is not a genres source -- it supplies styles instead.
 
 ## Per-library overrides
 

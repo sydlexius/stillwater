@@ -21,7 +21,7 @@ order. For each field it iterates the enabled providers, calling
 mutex-protected per-call cache so each provider is queried at most once per
 `FetchMetadata` invocation no matter how many fields list it (the coalesce).
 Text fields stop at the first provider that populates the field
-(first-match-wins); image fields and tag-slice fields (genres, styles, moods)
+(first-match-wins), as do tag fields (genres, styles, moods); image fields
 continue across all providers and aggregate candidates.
 
 ```mermaid

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
 	"sync"
 	"testing"
 )
@@ -101,5 +102,17 @@ func TestFetchMetadata_DelegatesToExecutor(t *testing.T) {
 	orch.SetExecutor(&stubExecutor{err: boom})
 	if _, err := orch.FetchMetadata(context.Background(), "mbid-1", "Artist", nil); !errors.Is(err, boom) {
 		t.Errorf("err = %v, want the executor's error", err)
+	}
+}
+
+// TestFetchMetadata_NoExecutorReturnsError verifies FetchMetadata no longer has
+// a legacy loop to fall back on: without an executor it fails with the sentinel.
+func TestFetchMetadata_NoExecutorReturnsError(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger, nil)
+
+	if _, err := orch.FetchMetadata(context.Background(), "mbid-1", "Artist", nil); !errors.Is(err, ErrNoScraperExecutor) {
+		t.Errorf("err = %v, want ErrNoScraperExecutor", err)
 	}
 }

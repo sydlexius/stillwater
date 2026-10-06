@@ -202,170 +202,20 @@ func (o *Orchestrator) SetExecutor(e ScraperExecutor) {
 	o.executor = e
 }
 
-// FetchMetadata queries all providers in priority order and merges the results.
-// It uses the artist's MBID when available, falling back to name-based search.
-// providerIDs supplies provider-specific IDs (AudioDB numeric ID, Discogs ID, etc.)
-// so that each provider receives its own stored ID instead of the MBID. A nil or
-// empty map is safe: the function allocates an internal map so that IDs discovered
-// from earlier providers' URL results (e.g., a Discogs numeric ID extracted from a
-// MusicBrainz URL) can be used when calling later providers.
-// When a ScraperExecutor is configured, delegates to it for scraper-config-driven
-// per-field fetching with fallback chains.
-//
-//nolint:gocognit // Per-field provider iteration in priority order with provider-ID enrichment carry-forward between fields; this is the legacy non-scraper path retained for callers that have no scraper config, and its semantics must match ScrapeAll's outcome on a parallel diagram.
+// ErrNoScraperExecutor is returned by FetchMetadata when no ScraperExecutor is configured.
+var ErrNoScraperExecutor = errors.New("provider: no scraper executor configured")
+
+// FetchMetadata fetches and merges artist metadata by delegating to the
+// configured ScraperExecutor (scraper.Executor.ScrapeAll), which owns the
+// per-field provider fallback chains and records AIMD signals itself.
+// providerIDs supplies provider-specific IDs (AudioDB numeric ID, Discogs ID,
+// etc.) so each provider receives its own stored ID instead of the MBID.
+// Returns ErrNoScraperExecutor when no executor has been set.
 func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, providerIDs map[ProviderName]string) (*FetchResult, error) {
-	if o.executor != nil {
-		// The ScraperExecutor (scraper.Executor.ScrapeAll) is the production
-		// refresh path. It records AIMD signals internally via its own
-		// AIMDController reference (the same instance as o.aimd), so no
-		// additional instrumentation is needed here.
-		return o.executor.ScrapeAll(ctx, mbid, name, "global", providerIDs)
+	if o.executor == nil {
+		return nil, ErrNoScraperExecutor
 	}
-
-	priorities, err := o.settings.GetPriorities(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("loading priorities: %w", err)
-	}
-
-	available, err := o.settings.AvailableProviderNames(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("loading available providers: %w", err)
-	}
-
-	result := &FetchResult{
-		Metadata: &ArtistMetadata{
-			URLs: make(map[string]string),
-		},
-		MetadataLocale:   FirstMetadataLang(ctx),
-		MetadataVocabCfg: tagdict.MetadataVocab(ctx),
-	}
-
-	// Ensure providerIDs is writable so EnrichProviderIDs can populate it
-	// with IDs extracted from earlier providers' URL results.
-	if providerIDs == nil {
-		providerIDs = make(map[ProviderName]string)
-	}
-
-	// Cache provider results to avoid duplicate calls
-	var mu sync.Mutex
-	cache := make(map[ProviderName]*ProviderResult)
-
-	for _, pri := range priorities {
-		queried := false
-		// fieldPopulated tracks whether THIS priority iteration produced any
-		// applied data, so a field that was populated in a previous iteration
-		// (in case the priority list ever lists the same field twice) is not
-		// falsely re-credited here. Reset each iteration.
-		fieldPopulated := false
-		isImageField := isImageFieldName(pri.Field)
-		isMembersField := pri.Field == "members"
-		for _, provName := range pri.EnabledProviders() {
-			if !available[provName] {
-				continue
-			}
-			if IsExcludedForField(pri.Field, provName) {
-				continue
-			}
-
-			pr := o.getProviderResult(ctx, provName, mbid, name, providerIDs, cache, &mu)
-			if pr.err != nil {
-				continue
-			}
-
-			// After each successful provider call, extract any provider IDs
-			// from the returned URLs and feed them to subsequent calls.
-			// For example, MusicBrainz returns Discogs URLs containing the
-			// numeric Discogs ID, so we extract it here before Discogs is
-			// called, avoiding a wasted MBID-based request that always 404s.
-			EnrichProviderIDs(pr.meta, providerIDs)
-
-			// For image fields, only mark as queried when GetImages was actually
-			// invoked and either succeeded or returned ErrNotFound. Skip when
-			// GetImages was never called (no MBID and no provider-specific ID)
-			// or when it returned a transient error (timeout, 5xx). Transient
-			// failures must not mark the field as attempted so that existing
-			// image data is preserved rather than cleared.
-			if isImageField && (!pr.imagesAttempted || pr.imageErr != nil) {
-				continue
-			}
-
-			// For the members field, only mark as queried when the provider
-			// actually returned members OR authoritatively asserted an empty
-			// roster. A provider that returned zero members without asserting
-			// completeness (sparse relation data) must not mark the field as
-			// attempted, so existing member rows are preserved rather than
-			// cleared. This mirrors the image-field guard above.
-			//
-			// A nil meta result (transient error, timeout, 5xx) is treated
-			// identically to the ErrNotFound path in the scraper executor:
-			// the field is NOT marked as queried so existing member rows are
-			// preserved. This mirrors membersFieldQueried in executor.go, which
-			// also returns false for nil meta.
-			if isMembersField {
-				if pr.meta == nil {
-					continue
-				}
-				if len(pr.meta.Members) == 0 && !pr.meta.MembersAuthoritative {
-					continue
-				}
-				if pr.meta.MembersAuthoritative {
-					result.MembersAuthoritative = true
-				}
-			}
-
-			queried = true
-			if applyField(result, pri.Field, pr, provName) {
-				fieldPopulated = true
-				// For image fields and aggregated tag fields (genres/styles/moods),
-				// continue collecting candidates from all providers instead of
-				// stopping at the first match. Text fields use first-match-wins
-				// since the priority order determines the preferred source.
-				if !isImageField && !isAggregatedField(pri.Field) {
-					break
-				}
-			}
-		}
-		if queried {
-			result.AttemptedFields = append(result.AttemptedFields, pri.Field)
-			if fieldPopulated {
-				result.PopulatedFields = append(result.PopulatedFields, pri.Field)
-			}
-		}
-	}
-
-	// Final backfill pass for the merged metadata (catches any IDs not yet
-	// populated from earlier per-provider enrichment).
-	ExtractProviderIDsFromURLs(result.Metadata)
-
-	// MusicBrainz is authoritative for artist Name and SortName: it owns the
-	// MBID and applies language-aware alias promotion inline on its meta.Name.
-	// The first-provider-wins merge in applyField would otherwise let an
-	// earlier-iterated provider (e.g. wikipedia during the biography field)
-	// lock in the canonical form, blocking MB's promoted value. Overwrite here
-	// so the language preference is honored. Mirrors the pattern in
-	// internal/scraper/executor.go's MB-authoritative override.
-	if mbResult, ok := cache[NameMusicBrainz]; ok && mbResult.err == nil && mbResult.meta != nil {
-		if mbResult.meta.Name != "" {
-			result.Metadata.Name = mbResult.meta.Name
-		}
-		if mbResult.meta.SortName != "" {
-			result.Metadata.SortName = mbResult.meta.SortName
-		}
-	}
-
-	// Record which providers were successfully queried so callers can update
-	// per-provider fetch timestamps on the artist record. Providers with
-	// transient errors (timeouts, 5xx) are excluded to avoid hiding outages
-	// behind misleading "attempted" markers -- consistent with the executor
-	// path which already applies this filter.
-	for provName, pr := range cache {
-		if pr.err != nil {
-			continue
-		}
-		result.AttemptedProviders = append(result.AttemptedProviders, provName)
-	}
-
-	return result, nil
+	return o.executor.ScrapeAll(ctx, mbid, name, "global", providerIDs)
 }
 
 // ImageProviderOutcome discriminates what happened to a single provider during
@@ -1500,14 +1350,6 @@ func isImageFieldName(field string) bool {
 	default:
 		return false
 	}
-}
-
-// isAggregatedField returns true for metadata fields that accumulate values
-// from all providers rather than stopping at the first match. Tag fields
-// (genres, styles, moods) are aggregated and deduplicated across providers
-// so that each provider's unique tags contribute to the final result.
-func isAggregatedField(field string) bool {
-	return field == "genres" || field == "styles" || field == "moods"
 }
 
 // hasFieldSource returns true if the Sources slice already contains an entry
