@@ -158,7 +158,10 @@ func TestScrapeAll_RecordsFallbackProviderAsFieldSource(t *testing.T) {
 // only the final clear in ScrapeAll can remove the gender. (Merging via the
 // per-provider classification pass would instead depend on Go map iteration.)
 // A person type is the control: gender must survive, proving it really was
-// merged. Covers the legacy TestApplyFieldGenderClearedOnNonIndividualType (#3292).
+// merged. This covers the executor's Metadata.Gender clear only: the executor
+// records no gender FieldSource, and the legacy
+// TestApplyFieldGenderClearedOnNonIndividualType still pins the source removal
+// until the loop is deleted (#3292).
 func TestScrapeAll_ClearsGenderForNonIndividualType(t *testing.T) {
 	cases := []struct {
 		typ        string
