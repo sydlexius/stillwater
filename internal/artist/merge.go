@@ -677,7 +677,7 @@ func FilterDatesByArtistType(a *Artist) {
 // simplification, it is a data-loss bug, and it will not fail loudly.
 //
 // The comparison is trimmed and lowercased, matching the convention of
-// provider.isIndividualTypeValue: stored type strings are known to arrive in
+// IsIndividualType in this package: stored type strings are known to arrive in
 // mixed case, so a stored "Group" is still a group. Widening the match is safe
 // in this direction because it only ever adds values to a closed collective
 // list, never to the destructive default.

@@ -135,9 +135,9 @@ func wildcardMatch(pattern, s string) bool {
 // already-normalized tags for the given field. A nil cfg returns the input
 // slice unchanged.
 //
-// This function is called from BOTH the orchestrator (applyTagSliceField in
-// orchestrator.go) and the scraper-executor (fieldAppliers in executor.go)
-// after their existing MergeAndDeduplicateLocale call. It runs AFTER
+// This function is called from the scraper-executor (fieldAppliers in
+// internal/scraper/executor.go) after its existing MergeAndDeduplicateLocale
+// call. It runs AFTER
 // deduplication so it always receives normalized, deduplicated input. Each
 // caller resolves the VocabConfig once from the request context (into the
 // FetchResult at construction time) and passes that resolved value here, so

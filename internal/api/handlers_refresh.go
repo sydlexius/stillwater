@@ -260,7 +260,7 @@ func collectFailedProviderDisplayNames(statuses []provider.ProviderSearchStatus)
 //     this is a round trip.
 //   - AudioDB is NOT. EnrichProviderIDs has no AudioDB branch. It comes back
 //     only opportunistically -- when a refresh queries AudioDB for a field it
-//     does not populate, applyField falls through to the ID merge and
+//     does not populate, the scraper executor's provider-ID merge runs and
 //     modeFillEmpty accepts it. Until that happens the ID stays cleared and
 //     AudioDB is resolved by MBID instead.
 //

@@ -154,12 +154,12 @@ type FetchResult struct {
 	// MetadataLocale is the BCP 47 primary-language subtag of the user's first
 	// preferred metadata language at the time of the fetch. It is set from the
 	// context's MetadataLanguages value and drives locale-aware tag deduplication
-	// in applyTagSliceField. An empty string means English-only dedup.
+	// in the scraper executor's tag merge. An empty string means English-only dedup.
 	MetadataLocale string `json:"-"`
 	// MetadataVocabCfg holds the user's vocab filtering configuration at the
 	// time of the fetch. It is resolved once from the context's MetadataVocab
 	// value at FetchResult construction and passed to tagdict.ApplyVocabFilter
-	// after each tag-slice merge in applyTagSliceField. A nil value means no
+	// after each tag-slice merge in the scraper executor. A nil value means no
 	// vocab filtering is applied. This mirrors the MetadataLocale field: a
 	// request-scoped value resolved from the context, not the context itself.
 	MetadataVocabCfg *tagdict.VocabConfig `json:"-"`
@@ -784,7 +784,7 @@ func yearFromDate(date string) string {
 // The vocabulary mirrors the normalized values produced by provider adapters
 // (see musicbrainz.mapArtistType): "group", "orchestra", "choir".
 //
-// This is deliberately NOT the negation of isIndividualTypeValue (below): an
+// This is deliberately NOT the negation of artist.IsIndividualType: an
 // unknown or empty type is neither group nor individual. years_active synthesis
 // routes such artists through the individual (born/died) branch via
 // !isGroupTypeValue, so the two predicates are kept separate on purpose.
@@ -1000,8 +1000,8 @@ func sortDisambiguationResults(results []ArtistSearchResult) {
 // Image fields aggregate candidates from all providers (unlike text fields
 // which use first-match-wins).
 //
-// NOTE: This list must stay in sync with the image cases in applyField and
-// fieldToImageType in this file. Only fields that appear as priority field
+// NOTE: This list must stay in sync with the image cases in the scraper executor's
+// applyFieldValue and fieldToImageType. Only fields that appear as priority field
 // names need to be listed here.
 func isImageFieldName(field string) bool {
 	switch field {
