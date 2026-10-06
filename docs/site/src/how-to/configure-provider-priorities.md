@@ -8,7 +8,7 @@ description: Set the per-field provider priority list, globally and per-library,
 
 Stillwater asks providers for metadata in **per-field priority order**. The order decides which provider's biography wins, which provider supplies the primary thumb, and how image candidates from several providers are ordered. This page covers setting that order globally and overriding it per library.
 
-For the *behavior* (first-match wins for text, every-source contributes for tags and images), see [providers in core concepts](../core-concepts/providers.md).
+For the *behavior* (text and tag fields use the first provider with data, image fields collect from every provider), see [providers in core concepts](../core-concepts/providers.md).
 
 ## Set the global priority
 
@@ -20,7 +20,7 @@ For the *behavior* (first-match wins for text, every-source contributes for tags
 
 Each field's list shows only providers that can supply that field (for example, Discogs does not appear under moods). See the [providers reference](../reference/providers.md) for the capability matrix. A provider that cannot supply a field is hidden, not deleted, so your saved settings are unchanged.
 
-The order is **most-trusted at the top**. For first-match-wins fields, only the topmost responsive provider matters. For image fields, every provider contributes candidates and the priority order decides which is listed first.
+The order is **most-trusted at the top**. For text and tag fields, the first provider in the list that actually has data for that field supplies it; a provider that answers but has nothing for the field (or whose value is rejected, such as a placeholder biography) is skipped and the next one is tried. For image fields, every provider contributes candidates and the priority order decides which is listed first.
 
 <!-- SCREENSHOT: Settings > Providers > Priorities | state: priority chips for the biography field with Last.fm at top, Wikipedia second, AudioDB third | annotation: drag handles + per-field selector -->
 
@@ -81,6 +81,6 @@ A slider under Advanced settings on the Providers tab. Lower = fuzzier matching 
 
 ## See also
 
-- [Providers concept](../core-concepts/providers.md) for the priority + aggregation model.
+- [Providers concept](../core-concepts/providers.md) for the priority and fallback model.
 - [Providers reference](../reference/providers.md) for the per-provider capability matrix.
 - [Refresh metadata](refresh-metadata.md) to see priority changes take effect.

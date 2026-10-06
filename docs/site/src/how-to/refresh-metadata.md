@@ -117,7 +117,7 @@ The corollary matters just as much: a locked field keeps its stored value even w
 For each artist:
 
 1. Stillwater walks your **per-field provider priority list** (Settings > Providers > Priorities).
-2. For each field that needs a value, it asks providers in order. First match wins: the first provider that returns a value for the field supplies it, including the tag fields (genres, styles, moods). Images are the exception -- they collect from every provider in the list.
+2. For each field that needs a value, it asks providers in order. First match wins: the first provider that has usable data for the field supplies it (a provider that fails, answers with nothing for that field, or returns a rejected value such as a placeholder biography is skipped), including the tag fields (genres, styles, moods). Images are the exception -- they collect from every provider in the list.
 3. **Locked fields are skipped** entirely. If you've pinned the biography, no provider can overwrite it on a refresh.
 4. As IDs are discovered (a Discogs URL in MusicBrainz's response, for example), Stillwater learns them and feeds them to subsequent providers in the same refresh.
 5. The artist record is updated. Source attributions appear in the "Sources" panel so you can see which provider supplied which field.

@@ -34,7 +34,7 @@ For every field Stillwater can populate (name, biography, genres, thumb, fanart,
 1. Stillwater walks the priority list from top to bottom.
 2. Providers that aren't available (no API key, disabled in settings, missing the right ID) are skipped.
 3. Providers that structurally cannot supply the field (e.g., neither MusicBrainz nor Wikidata returns biography text) are skipped.
-4. The first provider that returns a usable value populates the field -- with one important caveat below.
+4. The first provider that returns a usable value populates the field (an answer with nothing for that field, or a rejected value, does not stop the walk) -- with one important caveat below.
 
 The lists are configured under **Settings > Providers > Priorities**. You can override the global list per library, so a library of jazz recordings can prefer different sources than one containing pop or rock artists.
 
