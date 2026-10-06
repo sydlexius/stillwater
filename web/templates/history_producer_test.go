@@ -130,3 +130,19 @@ func TestActivityRow_ContrastSafeClasses(t *testing.T) {
 			"(the rendered AA check lives in tests/a11y/history-producer.spec.js)")
 	}
 }
+
+// The three identify tiers are match tiers, never a provider name, and each
+// maps to its own label.
+func TestHistorySourceLabel_IdentifyTiers(t *testing.T) {
+	t.Parallel()
+	ctx := testCtx(t)
+	for source, want := range map[string]string{
+		"provider:identify_connection": "Identify: platform match",
+		"provider:identify_album":      "Identify: album match",
+		"provider:identify_name":       "Identify: name match",
+	} {
+		if got := historySourceLabel(ctx, source); got != want {
+			t.Errorf("historySourceLabel(%q) = %q, want %q", source, got, want)
+		}
+	}
+}

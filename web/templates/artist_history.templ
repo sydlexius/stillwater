@@ -143,6 +143,11 @@ templ historyChangeRow(c artist.MetadataChange) {
 				<span class={ "inline-block px-2 py-0.5 rounded-full text-xs", historySourceBadgeClass(c.Source) }>
 					{ historySourceLabel(ctx, c.Source) }
 				</span>
+				if historyProducerShown(c) {
+					<span class={ historyProducerChipClass(c.Producer) }>
+						{ historyProducerLabel(ctx, c.Producer) }
+					</span>
+				}
 			</div>
 			if artist.IsTrackableField(c.Field) && c.Source != "revert" {
 				<button
@@ -234,6 +239,12 @@ func historySourceLabel(ctx context.Context, source string) string {
 		return t(ctx, "history.source.import")
 	case source == "revert":
 		return t(ctx, "history.source.revert")
+	case source == "provider:identify_connection":
+		return t(ctx, "history.source.identify_connection")
+	case source == "provider:identify_album":
+		return t(ctx, "history.source.identify_album")
+	case source == "provider:identify_name":
+		return t(ctx, "history.source.identify_name")
 	case strings.HasPrefix(source, "provider:"):
 		name := strings.TrimPrefix(source, "provider:")
 		if name == "" {

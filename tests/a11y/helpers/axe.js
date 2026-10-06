@@ -106,6 +106,15 @@ export async function applyTheme(expect, page, theme) {
   // the caller passed a bad argument. Failing here names the real cause.
   expect(['dark', 'light'], `unsupported theme "${theme}"`).toContain(theme);
 
+  // preferences.js load() runs at DOMContentLoaded and its applyAll(prefs)
+  // re-applies the server's SAVED theme when the fetch resolves, which can be
+  // after a theme set here. Wait for a load of our own first: it starts after
+  // the page's, so it settles after it, and the theme applied below is the last
+  // writer. A page without swPreferences (login, error pages) has no load to
+  // wait for; the applySingle check below then fails loudly.
+  await page.evaluate(() => (window.swPreferences && typeof window.swPreferences.load === 'function'
+    ? window.swPreferences.load() : undefined));
+
   const applied = await page.evaluate((t) => {
     const api = window.swPreferences;
     if (!api || typeof api.applySingle !== 'function') return false;

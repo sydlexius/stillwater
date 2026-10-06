@@ -68,6 +68,12 @@ test.beforeAll(async ({ playwright }) => {
     }
     if (!(await find('genres', 'manual'))) await put(request, id, 'genres', ['Ambient'], 'provider:lastfm');
     if (!(await find('styles', 'manual'))) await put(request, id, 'styles', ['Drone']); // no claim: the legacy-equivalent '' row
+    // A cleared value: its popover item shows the "empty" placeholder.
+    if (!(await find('moods', 'manual', ''))) {
+      await put(request, id, 'moods', ['Calm'], 'operator');
+      const clear = await apiFetch(request, 'DELETE', `/api/v1/artists/${id}/fields/moods`);
+      if (!clear.ok()) throw new Error(`seed: clear failed: ${clear.status()}`);
+    }
     if (!(await find('biography', 'revert'))) {
       const second = await find('biography', 'manual', 'Fixture biography two.');
       const undo = await apiFetch(request, 'POST', `/api/v1/history/${second.id}/revert`);
@@ -172,4 +178,94 @@ test('the value-source help opens from the keyboard and says what it means', asy
   await btn.focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('#help-activity-value-source-popover')).toContainText('Value source not recorded means');
+});
+
+// Slice 4b: the per-field prior-values popover (artist detail, edit mode) names
+// where each value came from. This is the surface where an operator restages an
+// old value, so the label sits on the line the operator reads before choosing.
+for (const theme of ['light', 'dark']) {
+  test(`the prior-values popover shows the value source (${theme})`, async ({ page }) => {
+    await page.goto(`/artists/${artistId}`);
+    await applyTheme(expect, page, theme);
+    await page.locator('body').press('e');
+    await expect(page.locator('.sw-next-artist-detail'), 'precondition: edit mode').toHaveClass(/is-editing/);
+
+    const field = async (name, want, absent) => {
+      const trigger = page.locator(`#field-${name}-${artistId} button[aria-haspopup="true"][aria-controls^="ctx-panel-fh-"]`);
+      await expect(trigger, `${name}: clock trigger must exist`).toHaveCount(1);
+      await trigger.click();
+      const panel = page.locator(`#ctx-panel-fh-${name}-${artistId}`);
+      await expect(panel).toBeVisible();
+      const label = panel.getByText(want, { exact: false });
+      await expect(label.first(), `${name}: value label`).toBeVisible();
+      if (absent) await expect(panel).not.toContainText(absent);
+      // Measured as rendered, on top of the axe scan below, so a regression
+      // names the node and the ratio instead of an axe selector.
+      expect.soft(await renderedContrast(page, label.first()), `${name} value label`).toBeGreaterThanOrEqual(4.5);
+      return panel;
+    };
+
+    // Biography: two operator edits and an undo. The undo row carries no label.
+    const bio = await field('biography', 'Value: set by a user');
+    // The Undo row's value is a restore: it must carry no value label at all.
+    const undoItem = bio.locator('button[role="menuitem"]').filter({ hasText: 'Revert' });
+    await expect(undoItem, 'precondition: the Revert item exists').toHaveCount(1);
+    await expect(undoItem).not.toContainText('Value');
+    // axe is scoped to each popover: the edit-mode page has unrelated findings
+    // of its own (definition lists, an unlabeled textarea, low-contrast text in
+    // the members section) outside this change.
+    const scan = async (name) => {
+      const r = await buildAxeBuilder(page).include(`#ctx-panel-fh-${name}-${artistId}`).analyze();
+      expect(r.violations, `${name} popover: ${formatViolations(r.violations)}`).toEqual([]);
+    };
+    await scan('biography');
+    await page.keyboard.press('Escape');
+
+    await field('genres', 'Value: from Last.fm', 'set by a user');
+    await scan('genres');
+    await page.keyboard.press('Escape');
+    await field('styles', 'Value source not recorded', 'set by a user');
+    await scan('styles');
+    await page.keyboard.press('Escape');
+
+    // The "empty" placeholder of a cleared value, measured as rendered.
+    const moods = await field('moods', 'Value: set by a user');
+    const empty = moods.locator('em', { hasText: 'empty' });
+    await expect(empty, 'precondition: the cleared value shows the empty placeholder').toHaveCount(1);
+    const emptyContrast = await renderedContrast(page, empty);
+    console.log(`CONTRAST ${theme} empty ${emptyContrast.toFixed(2)}`);
+    expect(emptyContrast, 'empty placeholder').toBeGreaterThanOrEqual(4.5);
+    await scan('moods');
+  });
+}
+
+// applyTheme must not lose to the page's own preference load: with the saved
+// preferences delayed, the page re-applies the server's theme AFTER a naive
+// apply. The theme set here must still hold once that load has settled.
+test('applyTheme holds when the preference load resolves late', async ({ page }) => {
+  await page.route('**/api/v1/preferences', async (route) => {
+    await new Promise((r) => setTimeout(r, 1200));
+    await route.continue();
+  });
+  await page.goto('/activity');
+  await applyTheme(expect, page, 'light');
+  await page.waitForTimeout(2500);
+  expect(await page.evaluate(() => document.documentElement.classList.contains('dark')), 'html is dark after the late load').toBe(false);
+});
+
+// A long unbreakable value label wraps inside the popover instead of widening
+// the panel. The DOM text stands in for a 90-character token. Desktop panel only:
+// below the breakpoint the history opens as a sheet, which is not this panel.
+test('a long value label wraps inside the popover at 1280px', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`/artists/${artistId}`);
+  await page.locator('body').press('e');
+  await expect(page.locator('.sw-next-artist-detail'), 'precondition: edit mode').toHaveClass(/is-editing/);
+  await page.locator(`#field-biography-${artistId} button[aria-controls^="ctx-panel-fh-"]`).click();
+  const panel = page.locator(`#ctx-panel-fh-biography-${artistId}`);
+  await expect(panel).toBeVisible();
+  await panel.locator('button[role="menuitem"] span.text-xs').first().evaluate((el, t) => { el.textContent = t; }, `Value: from ${'x'.repeat(90)}`);
+  const box = await panel.boundingBox();
+  expect(box.x, 'panel left edge').toBeGreaterThanOrEqual(0);
+  expect(box.width, 'panel width with a 90-character token').toBeLessThanOrEqual(260);
 });

@@ -170,13 +170,17 @@ templ fieldHistoryItem(menuID, containerSel string, c artist.MetadataChangeWithA
 	>
 		<span class="text-sm text-gray-800 dark:text-gray-200 truncate w-full max-w-[12rem]">
 			if c.NewValue == "" {
-				<em class="text-gray-400 dark:text-gray-500">{ t(ctx, "common.empty") }</em>
+				<em class="text-gray-600 dark:text-gray-300">{ t(ctx, "common.empty") }</em>
 			} else {
 				{ truncateText(c.NewValue, 60) }
 			}
 		</span>
-		<span class="text-xs text-gray-400 dark:text-gray-500">
-			{ historySourceLabel(ctx, c.Source) } - { historyTimeAgo(ctx, c.CreatedAt) }
+		<span class="text-xs text-gray-600 dark:text-gray-300 w-full max-w-[12rem] break-words">
+			{ historySourceLabel(ctx, c.Source) }
+			if historyProducerShown(c.MetadataChange) {
+				- { historyProducerLabel(ctx, c.Producer) }
+			}
+			- { historyTimeAgo(ctx, c.CreatedAt) }
 		</span>
 	</button>
 }
