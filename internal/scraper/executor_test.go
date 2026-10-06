@@ -2057,42 +2057,56 @@ func TestScrapeAll_CarriesProviderIDFromEarlierProviderURLs(t *testing.T) {
 	}
 }
 
-// TestScrapeAll_TransientProviderErrorFallsThrough verifies that a provider
-// failing transiently is skipped: the next provider supplies the field, and the
-// failed provider contributes nothing to the merged Name. Ported from the
-// legacy orchestrator-loop provider-error and MB-error-does-not-clobber tests
-// (#3292).
-func TestScrapeAll_TransientProviderErrorFallsThrough(t *testing.T) {
-	registry, settings, svc, logger := setupExecutorTest(t)
-	ctx := context.Background()
+// TestScrapeAll_ProviderErrorFallsThrough verifies that a failing provider is
+// skipped whatever the error class: the next provider supplies the field, and
+// the failed provider contributes nothing to the merged Name. Production treats
+// every non-ErrNotFound error alike (provider.FetchProviderResult sets pr.err),
+// and the two legacy loop tests this replaces used one class each: a classified
+// *ErrProviderUnavailable (TestOrchestratorProviderError) and an ordinary error
+// (TestFetchMetadata_MBNameAuthoritative_MBErrorDoesNotClobber). Ported from
+// those (#3292).
+func TestScrapeAll_ProviderErrorFallsThrough(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"classified transient", &provider.ErrProviderUnavailable{Provider: provider.NameMusicBrainz, Cause: fmt.Errorf("timeout")}},
+		{"ordinary", fmt.Errorf("musicbrainz timeout")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			registry, settings, svc, logger := setupExecutorTest(t)
+			ctx := context.Background()
 
-	registry.Register(&mockProvider{
-		name: provider.NameMusicBrainz,
-		getArtFn: func(context.Context, string) (*provider.ArtistMetadata, error) {
-			return nil, fmt.Errorf("musicbrainz timeout")
-		},
-	})
-	registry.Register(&mockProvider{
-		name: provider.NameWikipedia,
-		getArtFn: func(context.Context, string) (*provider.ArtistMetadata, error) {
-			return &provider.ArtistMetadata{Name: "Wikipedia Name", Biography: longBio}, nil
-		},
-	})
-	if err := settings.SetPriority(ctx, "biography", []provider.ProviderName{provider.NameMusicBrainz, provider.NameWikipedia}); err != nil {
-		t.Fatalf("SetPriority: %v", err)
-	}
-	saveBiographyConfig(t, svc, provider.NameMusicBrainz, provider.NameWikipedia)
+			registry.Register(&mockProvider{
+				name: provider.NameMusicBrainz,
+				getArtFn: func(context.Context, string) (*provider.ArtistMetadata, error) {
+					return nil, tc.err
+				},
+			})
+			registry.Register(&mockProvider{
+				name: provider.NameWikipedia,
+				getArtFn: func(context.Context, string) (*provider.ArtistMetadata, error) {
+					return &provider.ArtistMetadata{Name: "Wikipedia Name", Biography: longBio}, nil
+				},
+			})
+			if err := settings.SetPriority(ctx, "biography", []provider.ProviderName{provider.NameMusicBrainz, provider.NameWikipedia}); err != nil {
+				t.Fatalf("SetPriority: %v", err)
+			}
+			saveBiographyConfig(t, svc, provider.NameMusicBrainz, provider.NameWikipedia)
 
-	exec := NewExecutor(svc, registry, settings, logger, nil)
-	result, err := exec.ScrapeAll(ctx, "mbid-1", "Whatever", ScopeGlobal, nil)
-	if err != nil {
-		t.Fatalf("ScrapeAll: %v", err)
-	}
-	if result.Metadata.Biography != longBio {
-		t.Errorf("biography = %q, want Wikipedia's after MusicBrainz failed", result.Metadata.Biography)
-	}
-	if result.Metadata.Name != "Wikipedia Name" {
-		t.Errorf("Name = %q, want Wikipedia's (the failed provider must not clobber it)", result.Metadata.Name)
+			exec := NewExecutor(svc, registry, settings, logger, nil)
+			result, err := exec.ScrapeAll(ctx, "mbid-1", "Whatever", ScopeGlobal, nil)
+			if err != nil {
+				t.Fatalf("ScrapeAll: %v", err)
+			}
+			if result.Metadata.Biography != longBio {
+				t.Errorf("biography = %q, want Wikipedia's after MusicBrainz failed", result.Metadata.Biography)
+			}
+			if result.Metadata.Name != "Wikipedia Name" {
+				t.Errorf("Name = %q, want Wikipedia's (the failed provider must not clobber it)", result.Metadata.Name)
+			}
+		})
 	}
 }
 

@@ -351,12 +351,12 @@ func TestOrchestratorCustomPriority(t *testing.T) {
 // NameLookupProvider that reports the MBID as not-found is retried with the
 // artist name, and the name-lookup result is what comes back.
 func TestFetchProviderResult_MBIDNotFoundRetriesWithName(t *testing.T) {
-	geniusCalls := 0
+	var geniusIDs []string
 	p := &mockNameLookupProvider{
 		mockProvider: mockProvider{
 			name: NameGenius,
 			getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
-				geniusCalls++
+				geniusIDs = append(geniusIDs, id)
 				if id == "mbid-uuid-1234" {
 					return nil, &ErrNotFound{Provider: NameGenius, ID: id}
 				}
@@ -374,9 +374,9 @@ func TestFetchProviderResult_MBIDNotFoundRetriesWithName(t *testing.T) {
 	if pr.Meta() == nil || pr.Meta().Biography != "Genius biography for this artist with enough content to pass the quality checks." {
 		t.Errorf("expected biography from the name retry, got: %+v", pr.Meta())
 	}
-	// Once with the MBID (not-found), once with the name.
-	if geniusCalls != 2 {
-		t.Errorf("expected 2 Genius GetArtist calls (MBID + name retry), got %d", geniusCalls)
+	// First with the MBID (not-found), then with the artist name.
+	if len(geniusIDs) != 2 || geniusIDs[0] != "mbid-uuid-1234" || geniusIDs[1] != "Radiohead" {
+		t.Errorf("Genius GetArtist ids = %v, want [mbid-uuid-1234 Radiohead]", geniusIDs)
 	}
 }
 
