@@ -142,17 +142,21 @@ func TestExtraFanartMigration_DryRunWritesNothing(t *testing.T) {
 		{"form", `dry_run=true`, "application/x-www-form-urlencoded"},
 		{"empty object defaults to dry", `{}`, "application/json"},
 	} {
-		w := postExtraFanart(r, adminContext(), tc.body, tc.ct)
-		if w.Code != http.StatusOK {
-			t.Fatalf("%s: status %d, body %s", tc.name, w.Code, w.Body.String())
-		}
-		res := decodeRun(t, w)
-		if !res.DryRun || res.Status != "planned" || res.Planned != 5 {
-			t.Errorf("%s: want dry_run planned with 5 planned; got %+v", tc.name, res)
-		}
-		if d := diffInventory(before, inventory(t, a, b)); len(d) > 0 {
-			t.Errorf("%s: a dry run changed the library: %v", tc.name, d)
-		}
+		// Sequential subtests (no t.Parallel): a Fatalf in one input no longer hides
+		// the rest, and each case only reads the shared fixture and `before`.
+		t.Run(tc.name, func(t *testing.T) {
+			w := postExtraFanart(r, adminContext(), tc.body, tc.ct)
+			if w.Code != http.StatusOK {
+				t.Fatalf("status %d, body %s", w.Code, w.Body.String())
+			}
+			res := decodeRun(t, w)
+			if !res.DryRun || res.Status != "planned" || res.Planned != 5 {
+				t.Errorf("want dry_run planned with 5 planned; got %+v", res)
+			}
+			if d := diffInventory(before, inventory(t, a, b)); len(d) > 0 {
+				t.Errorf("a dry run changed the library: %v", d)
+			}
+		})
 	}
 }
 
