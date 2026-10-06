@@ -166,7 +166,7 @@ type FetchResult struct {
 }
 
 // ScraperExecutor is implemented by the scraper.Executor to avoid circular imports.
-// When set on the Orchestrator, FetchMetadata delegates to it.
+// It is required by NewOrchestrator; FetchMetadata delegates to it.
 type ScraperExecutor interface {
 	ScrapeAll(ctx context.Context, mbid, name, scope string, providerIDs map[ProviderName]string) (*FetchResult, error)
 }
@@ -189,46 +189,28 @@ type Orchestrator struct {
 // adaptive rate-limiting hook sites are skipped and the orchestrator behaves
 // exactly as before.
 //
-// exec is a transitional variadic (#3292): at most one ScraperExecutor may be
-// supplied (more than one panics). An absent or untyped-nil argument leaves the
-// executor unset, so FetchMetadata returns ErrNoScraperExecutor. A typed-nil
-// pointer is a non-nil interface and is the caller's bug, exactly as with
-// SetExecutor. It becomes a required argument once every caller has migrated
-// off SetExecutor.
-func NewOrchestrator(registry *Registry, settings *SettingsService, logger *slog.Logger, aimd *AIMDController, exec ...ScraperExecutor) *Orchestrator {
-	if len(exec) > 1 {
-		panic("provider.NewOrchestrator: at most one ScraperExecutor may be supplied")
+// exec is required (#3292): FetchMetadata delegates to it. An untyped-nil exec
+// panics at construction rather than failing on the first fetch. A typed-nil
+// pointer is a non-nil interface and is the caller's bug.
+func NewOrchestrator(registry *Registry, settings *SettingsService, logger *slog.Logger, aimd *AIMDController, exec ScraperExecutor) *Orchestrator {
+	if exec == nil {
+		panic("provider.NewOrchestrator: a ScraperExecutor is required")
 	}
-	o := &Orchestrator{
+	return &Orchestrator{
 		registry: registry,
 		settings: settings,
 		aimd:     aimd,
 		logger:   logging.WithComponent(logger, "orchestrator"),
+		executor: exec,
 	}
-	if len(exec) == 1 {
-		o.executor = exec[0]
-	}
-	return o
 }
-
-// SetExecutor configures the scraper executor for FetchMetadata delegation.
-func (o *Orchestrator) SetExecutor(e ScraperExecutor) {
-	o.executor = e
-}
-
-// ErrNoScraperExecutor is returned by FetchMetadata when no ScraperExecutor is configured.
-var ErrNoScraperExecutor = errors.New("provider: no scraper executor configured")
 
 // FetchMetadata fetches and merges artist metadata by delegating to the
 // configured ScraperExecutor (scraper.Executor.ScrapeAll), which owns the
 // per-field provider fallback chains and records AIMD signals itself.
 // providerIDs supplies provider-specific IDs (AudioDB numeric ID, Discogs ID,
 // etc.) so each provider receives its own stored ID instead of the MBID.
-// Returns ErrNoScraperExecutor when no executor has been set.
 func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, providerIDs map[ProviderName]string) (*FetchResult, error) {
-	if o.executor == nil {
-		return nil, ErrNoScraperExecutor
-	}
 	return o.executor.ScrapeAll(ctx, mbid, name, "global", providerIDs)
 }
 

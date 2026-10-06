@@ -201,7 +201,7 @@ func TestFetchImages_SaveUpdateFailure_SanitizesOperatorMessage(t *testing.T) {
 	registry := provider.NewRegistry()
 	registry.Register(&sanitizeImageProvider{name: provider.NameMusicBrainz, url: srv.URL + "/backdrop.jpg"})
 	orchLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(registry, settings, orchLogger, nil)
+	orch := provider.NewOrchestrator(registry, settings, orchLogger, nil, &stubScrapeAll{})
 
 	e, buf := sanitizeCapturingExecutor(t, artistSvc, orch)
 	// Plain client: the httptest fixture binds to 127.0.0.1, which the
@@ -407,7 +407,7 @@ func TestFetchImages_FetchFailure_SanitizesOperatorMessage(t *testing.T) {
 	}
 
 	orchLogger := slog.New(slog.NewJSONHandler(&bytes.Buffer{}, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	orch := provider.NewOrchestrator(registry, settings, orchLogger, nil)
+	orch := provider.NewOrchestrator(registry, settings, orchLogger, nil, &stubScrapeAll{})
 
 	e, buf := sanitizeCapturingExecutor(t, artistSvc, orch)
 

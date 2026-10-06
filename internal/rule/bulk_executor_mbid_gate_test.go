@@ -66,7 +66,7 @@ func newBulkGateOrchestrator(t *testing.T, results []provider.ArtistSearchResult
 	registry := provider.NewRegistry()
 	registry.Register(&mockSearchProvider{name: provider.NameMusicBrainz, results: results})
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	return provider.NewOrchestrator(registry, settings, logger, nil)
+	return provider.NewOrchestrator(registry, settings, logger, nil, &stubScrapeAll{})
 }
 
 // newBulkGateExecutor wires a BulkExecutor with a real artist.Service (SQLite)
