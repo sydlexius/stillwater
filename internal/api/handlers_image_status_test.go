@@ -59,7 +59,7 @@ func newProviderStatusRouter(t *testing.T) (*Router, *artist.Service) {
 			t.Fatalf("SetAPIKey %s: %v", name, err)
 		}
 	}
-	r.orchestrator = provider.NewOrchestrator(registry, settings, r.logger, nil)
+	r.orchestrator = provider.NewOrchestrator(registry, settings, r.logger, nil, noopScraperExecutor{})
 	r.providerSettings = settings
 	return r, svc
 }

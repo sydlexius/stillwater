@@ -74,8 +74,7 @@ func TestProducerStamps_RefreshAndOperatorEdit(t *testing.T) {
 		Sources:         []provider.FieldSource{{Field: "biography", Provider: provider.NameLastFM}},
 	}}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(nil, nil, logger, nil)
-	orch.SetExecutor(stub)
+	orch := provider.NewOrchestrator(nil, nil, logger, nil, stub)
 	r.orchestrator = orch
 	if _, err := r.executeRefreshCtx(artist.ContextWithSource(ctx, "manual"), a); err != nil {
 		t.Fatalf("executeRefreshCtx: %v", err)
