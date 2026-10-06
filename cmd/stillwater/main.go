@@ -304,6 +304,10 @@ func run() error {
 		)
 	}
 
+	if err := refuseRegistryRepairSeam(os.Getenv(registryRepairCheckEveryEnv), version.IsReleaseBuild()); err != nil {
+		return err
+	}
+
 	if err := a.loadConfig(); err != nil {
 		return err
 	}
@@ -1682,8 +1686,60 @@ func (a *Application) startRegistryRepairCheck(ctx context.Context) {
 	a.registryRepairCheckDone = done
 	go func() {
 		defer close(done)
-		a.maintenanceService.StartRegistryRepairCheck(ctx, a.registryRepairCache, a.router.TryClaimRegistryRepairCheck, 0, 0)
+		every := registryRepairCheckEvery(a.logger, os.Getenv(registryRepairCheckEveryEnv))
+		a.maintenanceService.StartRegistryRepairCheck(ctx, a.registryRepairCache, a.router.TryClaimRegistryRepairCheck, every, every)
 	}()
+}
+
+// registryRepairCheckEveryEnv is a TEST SEAM, not an operator setting (it is
+// deliberately absent from the Config struct and the env reference). It is a Go
+// duration that replaces BOTH the detector's 2-minute startup delay and its
+// 12-hour interval, so the browser harness can boot its own server and see a
+// fixture seeded after boot within seconds.
+//
+// What is guarded: a release build refuses to start with it set (see
+// refuseRegistryRepairSeam, called from run(), mirroring SW_FORCE_PROVIDER_ERROR);
+// any value outside [1s, 24h] or unparsable is logged and ignored in favor of
+// the production cadence. What is NOT guarded: a non-release build (make build,
+// IDE, harness) honors any value in range, so 1s means a full-library dry-run
+// scan every second there. Unset passes 0 for both args, the production cadence.
+const registryRepairCheckEveryEnv = "SW_REGISTRY_REPAIR_CHECK_EVERY"
+
+const (
+	registryRepairCheckEveryMin = time.Second
+	registryRepairCheckEveryMax = 24 * time.Hour
+)
+
+// refuseRegistryRepairSeam returns an error when the seam is set on a release
+// build, matching the SW_FORCE_PROVIDER_ERROR refusal in run().
+func refuseRegistryRepairSeam(value string, release bool) error {
+	if value != "" && release {
+		return fmt.Errorf(
+			"%s is set but this is a release build -- "+
+				"this env var is reserved for smoke testing only; unset it before starting",
+			registryRepairCheckEveryEnv,
+		)
+	}
+	return nil
+}
+
+// registryRepairCheckEvery parses the seam. Empty returns 0, which
+// StartRegistryRepairCheck reads as "use the defaults". A value that does not
+// parse, or lies outside [1s, 24h], is logged and ignored: below the floor it
+// would loop full-library scans back to back, above the cap it would silently
+// disable the detector.
+func registryRepairCheckEvery(logger *slog.Logger, raw string) time.Duration {
+	if raw == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d < registryRepairCheckEveryMin || d > registryRepairCheckEveryMax {
+		logger.Error("ignoring out-of-range registry repair check cadence; using defaults",
+			"env", registryRepairCheckEveryEnv, "value", raw,
+			"min", registryRepairCheckEveryMin, "max", registryRepairCheckEveryMax)
+		return 0
+	}
+	return d
 }
 
 // drainRegistryRepairCheck waits for the detector loop to exit after the
