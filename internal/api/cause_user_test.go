@@ -19,6 +19,9 @@ import (
 // argument is always present.
 type noopScraperExecutor struct{}
 
+// ScrapeAll returns an empty result and no error. It is for tests where the
+// orchestrator needs an executor but the handler never fetches metadata; a test
+// that starts reaching FetchMetadata sees an empty result, not ErrNoScraperExecutor.
 func (noopScraperExecutor) ScrapeAll(_ context.Context, _, _, _ string, _ map[provider.ProviderName]string) (*provider.FetchResult, error) {
 	return &provider.FetchResult{}, nil
 }
