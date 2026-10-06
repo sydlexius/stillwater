@@ -16,6 +16,7 @@ import (
 // server can emit. Adding a file that produces codes is a one-line change here.
 var extraFanartCodeFiles = []string{
 	"handlers_extrafanart_migration.go",
+	"handlers_extrafanart_page.go",
 }
 
 // stubImporter resolves every import to an empty package, so the scan can

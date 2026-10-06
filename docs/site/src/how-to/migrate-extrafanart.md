@@ -12,6 +12,21 @@ The migration moves the images in each artist's `extrafanart/` folder up into th
 
 An artist whose folder does not exist (for example an unmounted share) is skipped, is not counted as a problem, and is reported in `artists_skipped_missing`. If that number is not zero, mount the share and preview again: nothing under a skipped artist was checked. When nothing needed doing but some artists were skipped, the status is `nothing_checked` rather than `nothing_to_do`: check the mount, or remove the stale artists, before trusting the result.
 
+## Open the page
+
+An administrator can also preview the migration in the browser at `/reports/extrafanart-migration` (under your base path, if you set one). The page changes nothing: each time it loads it reads every artist's `extrafanart/` folder and lists what a run would do, so reloading always shows the current state.
+
+- A summary shows the status, how many artists have files, how many files would move, and how many identical copies would be left in place.
+- The table lists one row per file with its artist, the file, the name it would get in the artist folder, and its outcome. A row with a problem says why in plain words.
+- A note above the table repeats that the migration is one-way and that nothing is deleted.
+- If some artist folders were not found, a notice above the summary says how many were skipped and that nothing under them was checked.
+- If the preview stops before it finishes, an error notice appears above whatever rows it reached (or on its own if it reached none). Any rows shown are not a complete plan; reload to try again.
+- If another migration or preview is already running, a notice says so and no table is shown.
+
+The preview reads every artist's folder, so on a large library it can take a while. While it is open it holds the same lock a run does, so a run started at that moment answers "already running" (a 409); wait for the page to finish loading first.
+
+The page has no run button yet: to move the files, use the API as described below.
+
 ## Run it
 
 When the preview looks right, send the same request with `{"dry_run": false}`. The files move into the artist folder and the response reports `moved`, `failed` and `skipped_identical` counts, plus an outcome for every file. The run keeps going if your client disconnects or a proxy times out, so you can check the result afterwards by previewing again: files already moved no longer appear. A server shutdown or the 10 minute limit stops it; move files not reached are reported as `run_stopped` (identical and blocked files keep their own outcome), and running again is safe. Artists the run had not reached yet are not listed at all, so run again to process them.

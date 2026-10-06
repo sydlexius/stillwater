@@ -435,6 +435,7 @@ how-to/merge-duplicate-artists#safety-checks-that-can-block-a-merge
 how-to/merge-duplicate-artists#see-also
 how-to/merge-duplicate-artists#what-happens-on-merge
 how-to/migrate-extrafanart#migrate-extrafanart-files
+how-to/migrate-extrafanart#open-the-page
 how-to/migrate-extrafanart#run-it
 how-to/quick-actions#cycle-theme
 how-to/quick-actions#keyboard-shortcuts

@@ -1,0 +1,152 @@
+package templates
+
+import "strconv"
+
+// ExtraFanartMigrationRow is one extrafanart/ file (or one artist-level error,
+// File empty) in the migration preview.
+type ExtraFanartMigrationRow struct {
+	ArtistID string
+	Artist   string
+	File     string
+	Dest     string
+	Outcome  string // planned, skipped, blocked, failed
+	Reason   string
+}
+
+// ExtraFanartMigrationView is the view model for /reports/extrafanart-migration
+// (#3179). The page only ever shows a PREVIEW: it reads what would move and
+// changes nothing.
+type ExtraFanartMigrationView struct {
+	BasePath         string
+	Running          bool   // another run holds the singleton slot
+	Aborted          bool   // the preview stopped before finishing; rows are incomplete
+	SkippedMissing   int    // artists skipped because their folder was not found
+	Status           string // planned, blocked, nothing_to_do, nothing_checked, failed
+	ArtistsWithFiles int
+	Moves            int // files the migration would move
+	SkippedIdentical int
+	Problems         int
+	Rows             []ExtraFanartMigrationRow
+}
+
+// ExtraFanartMigrationPage renders the admin-gated extrafanart/ migration
+// preview, laid out like the platform backdrop duplicates report it is modelled
+// on (same card, heading and table markup).
+templ ExtraFanartMigrationPage(assets AssetPaths, view ExtraFanartMigrationView) {
+	@Layout(t(ctx, "extrafanart_migration.page_title"), assets) {
+		<div class="sw-extrafanart-migration space-y-6">
+			<div class="sw-card rounded-lg px-3 py-2">
+				<div class="min-w-0">
+					<h1 class="text-xs font-semibold leading-tight">{ t(ctx, "extrafanart_migration.title") }</h1>
+					<p class="mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug">
+						{ t(ctx, "extrafanart_migration.subtitle") }
+					</p>
+				</div>
+			</div>
+			@ExtraFanartMigrationBody(view)
+		</div>
+	}
+}
+
+// ExtraFanartMigrationBody is the preview content below the page header.
+templ ExtraFanartMigrationBody(view ExtraFanartMigrationView) {
+	<div id="extrafanart-migration-body" class="space-y-6">
+		if view.Running {
+			<div id="extrafanart-migration-running" class="sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber" role="alert">
+				<p class="text-xs font-semibold leading-tight text-amber-700 dark:text-amber-400">{ t(ctx, "extrafanart_migration.running_title") }</p>
+				<p class="mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug">{ t(ctx, "extrafanart_migration.running_body") }</p>
+			</div>
+		} else if view.Aborted && len(view.Rows) == 0 {
+			@extraFanartErrorCard()
+		} else {
+			if view.Aborted {
+				// Whatever rows follow are only what the preview reached before it
+				// stopped, so they are NOT a complete plan: the card says so.
+				@extraFanartErrorCard()
+			}
+			if view.SkippedMissing > 0 {
+				<div id="extrafanart-migration-skipped" class="sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber" role="alert">
+					<p class="text-xs text-gray-600 dark:text-gray-300 leading-snug">
+						{ tn(ctx, "extrafanart_migration.skipped_missing", view.SkippedMissing) }
+					</p>
+				</div>
+			}
+			<div class="sw-card rounded-lg px-3 py-2">
+				<dl class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+					<div>
+						<dt class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "extrafanart_migration.status_label") }</dt>
+						<dd class="text-lg font-semibold" id="extrafanart-migration-status">{ extraFanartLabel(ctx, "status", view.Status) }</dd>
+					</div>
+					<div>
+						<dt class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "extrafanart_migration.artists_with_files") }</dt>
+						<dd class="text-lg font-semibold" id="extrafanart-migration-artists">{ strconv.Itoa(view.ArtistsWithFiles) }</dd>
+					</div>
+					<div>
+						<dt class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "extrafanart_migration.files_to_move") }</dt>
+						<dd class="text-lg font-semibold" id="extrafanart-migration-moves">{ strconv.Itoa(view.Moves) }</dd>
+					</div>
+					<div>
+						<dt class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "extrafanart_migration.files_identical") }</dt>
+						<dd class="text-lg font-semibold" id="extrafanart-migration-identical">{ strconv.Itoa(view.SkippedIdentical) }</dd>
+					</div>
+				</dl>
+			</div>
+			if view.Problems > 0 {
+				<div id="extrafanart-migration-problems" class="sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber" role="alert">
+					<p class="text-xs font-semibold leading-tight text-amber-700 dark:text-amber-400">{ t(ctx, "extrafanart_migration.problems_title") }</p>
+					<p class="mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug">
+						{ tn(ctx, "extrafanart_migration.problems_body", view.Problems) }
+					</p>
+				</div>
+			}
+			<div class="sw-card rounded-lg px-3 py-2">
+				<p id="extrafanart-migration-warning" class="text-xs text-gray-600 dark:text-gray-400 leading-snug max-w-prose">
+					{ t(ctx, "extrafanart_migration.warning") }
+				</p>
+			</div>
+			<div id="extrafanart-migration-table" class="sw-card rounded-lg overflow-x-auto">
+				if len(view.Rows) == 0 {
+					<p id="extrafanart-migration-empty" class="px-3 py-4 text-xs text-gray-600 dark:text-gray-400">
+						{ t(ctx, "extrafanart_migration.empty") }
+					</p>
+				} else {
+					<table class="min-w-full text-xs">
+						<thead>
+							<tr class="text-left text-gray-600 dark:text-gray-400">
+								<th class="px-3 py-2 font-medium">{ t(ctx, "extrafanart_migration.column_artist") }</th>
+								<th class="px-3 py-2 font-medium">{ t(ctx, "extrafanart_migration.column_file") }</th>
+								<th class="px-3 py-2 font-medium">{ t(ctx, "extrafanart_migration.column_destination") }</th>
+								<th class="px-3 py-2 font-medium">{ t(ctx, "extrafanart_migration.column_outcome") }</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, row := range view.Rows {
+								<tr class="border-t border-gray-100 dark:border-gray-800">
+									<td class="px-3 py-2">
+										<a class="underline" href={ templ.SafeURL(view.BasePath + "/artists/" + row.ArtistID) }>{ row.Artist }</a>
+									</td>
+									<td class="px-3 py-2">{ row.File }</td>
+									<td class="px-3 py-2">{ row.Dest }</td>
+									<td class="px-3 py-2">
+										{ extraFanartLabel(ctx, "outcome", row.Outcome) }
+										if row.Reason != "" {
+											<span class="text-gray-600 dark:text-gray-400">{ " - " + extraFanartLabel(ctx, "reason", row.Reason) }</span>
+										}
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				}
+			</div>
+		}
+	</div>
+}
+
+// extraFanartErrorCard is the notice shown when the preview stopped before finishing.
+templ extraFanartErrorCard() {
+	<div id="extrafanart-migration-error" class="sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber" role="alert">
+		<p class="text-xs font-semibold leading-tight text-amber-700 dark:text-amber-400">{ t(ctx, "extrafanart_migration.error_title") }</p>
+		<p class="mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug">{ t(ctx, "extrafanart_migration.error_body") }</p>
+	</div>
+}
