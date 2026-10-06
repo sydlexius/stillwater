@@ -6,7 +6,7 @@ description: Set the per-field provider priority list, globally and per-library,
 
 # Configure provider priorities
 
-Stillwater asks providers for metadata in **per-field priority order**. The order decides which provider's biography wins, which provider supplies the primary thumb, and how aggregated fields like genres are merged. This page covers setting that order globally and overriding it per library.
+Stillwater asks providers for metadata in **per-field priority order**. The order decides which provider's biography wins, which provider supplies the primary thumb, and how image candidates from several providers are ordered. This page covers setting that order globally and overriding it per library.
 
 For the *behavior* (first-match wins for text, every-source contributes for tags and images), see [providers in core concepts](../core-concepts/providers.md).
 
@@ -20,7 +20,7 @@ For the *behavior* (first-match wins for text, every-source contributes for tags
 
 Each field's list shows only providers that can supply that field (for example, Discogs does not appear under moods). See the [providers reference](../reference/providers.md) for the capability matrix. A provider that cannot supply a field is hidden, not deleted, so your saved settings are unchanged.
 
-The order is **most-trusted at the top**. For first-match-wins fields, only the topmost responsive provider matters. For aggregated fields, every provider's contribution shows up but the priority order decides which contribution is listed first.
+The order is **most-trusted at the top**. For first-match-wins fields, only the topmost responsive provider matters. For image fields, every provider contributes candidates and the priority order decides which is listed first.
 
 <!-- SCREENSHOT: Settings > Providers > Priorities | state: priority chips for the biography field with Last.fm at top, Wikipedia second, AudioDB third | annotation: drag handles + per-field selector -->
 
@@ -45,7 +45,7 @@ A few opinionated starting points:
 - **Biography:** Last.fm (rich) > Wikipedia (factual) > AudioDB (curated). Skip MusicBrainz -- it doesn't return biography text.
 - **Sort name:** MusicBrainz > AudioDB. MusicBrainz's sort names are the closest to Kodi's expectations.
 - **Disambiguation:** MusicBrainz only -- the others don't have a comparable concept.
-- **Genres:** MusicBrainz first (curated tags) followed by Last.fm (popular tags), AudioDB, and Wikipedia. Aggregated, so all four contribute. Discogs is not a genres source -- it supplies styles instead, so put it at the top of the Styles list rather than Genres.
+- **Genres:** MusicBrainz first (curated tags) followed by Last.fm (popular tags), AudioDB, and Wikipedia. First match wins, so the first of these with data supplies the tags. Discogs is not a genres source -- it supplies styles instead, so put it at the top of the Styles list rather than Genres.
 
 ### For images
 
