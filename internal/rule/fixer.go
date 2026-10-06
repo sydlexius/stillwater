@@ -480,7 +480,7 @@ func (p *Pipeline) recordRuleFixHistory(ctx context.Context, artistID string, fr
 	// History entry (best-effort audit trail). Guarded INDEPENDENTLY of the live
 	// push below so a missing history service does not also suppress the rail row.
 	if h := p.getHistoryService(); h != nil {
-		if err := h.Record(ctx, artistID, "rule_fix", "", fr.Message, "rule:"+fr.RuleID); err != nil {
+		if err := recordRuleHistory(ctx, h, artistID, "rule_fix", "", fr.Message, ruleHistorySource(fr.RuleID)); err != nil {
 			p.logger.Warn("recording rule auto-fix history",
 				"rule_id", fr.RuleID, "artist_id", artistID, "error", err)
 		}

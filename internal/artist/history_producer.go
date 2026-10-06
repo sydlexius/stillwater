@@ -30,8 +30,15 @@ import (
 // the three automated tiers mirror their source token
 // ("provider:identify_connection" / "_album" / "_name").
 //
-// Not stamped yet, so still "": the rule engine's writes, and the whole-row
-// persists that move no tracked field today.
+// Rule engine writes mirror their source token ("rule:<rule_id>", or a
+// pseudo-source such as "rule:multiple_rules" / "rule:bulk_fetch_metadata"),
+// derived in internal/rule's withRuleHistorySource so the two cannot disagree;
+// that covers the fixer and run-path persists, the explicit "rule_fix" and
+// bulk MusicBrainz ID records, and the bulk fetch-metadata job (one
+// "rule:bulk_fetch_metadata" per write, not a per-field provider name).
+//
+// Not stamped yet, so still "": the whole-row persists that move no tracked
+// field today.
 //
 // THE EMPTY STRING IS THE DEFAULT, AND IT IS NOT "operator". This is the
 // single most load-bearing decision in this file. "" means "the writer did
