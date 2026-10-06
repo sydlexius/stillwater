@@ -252,6 +252,10 @@ func TestFetchImages_MBIDGate_AdoptsConfidentMatch(t *testing.T) {
 		if c.Source != "rule:bulk_fetch_images_mbid" {
 			t.Errorf("history source = %q, want %q", c.Source, "rule:bulk_fetch_images_mbid")
 		}
+		// #3078: the explicit self-heal record mirrors its source as producer.
+		if c.Producer != "rule:bulk_fetch_images_mbid" {
+			t.Errorf("history producer = %q, want %q", c.Producer, "rule:bulk_fetch_images_mbid")
+		}
 		if c.OldValue != "" {
 			t.Errorf("history old_value = %q, want empty (fill-only path)", c.OldValue)
 		}

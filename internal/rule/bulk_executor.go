@@ -222,7 +222,7 @@ func (e *BulkExecutor) recordBulkMBIDHistory(ctx context.Context, artistID, newV
 	if h == nil {
 		return
 	}
-	if err := h.Record(ctx, artistID, "musicbrainz_id", "", newValue, bulkMBIDSelfHealSource); err != nil {
+	if err := recordRuleHistory(ctx, h, artistID, "musicbrainz_id", "", newValue, bulkMBIDSelfHealSource); err != nil {
 		e.logger.Warn("recording bulk MBID self-heal history",
 			"artist_id", artistID, "error", err)
 	}

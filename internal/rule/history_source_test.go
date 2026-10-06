@@ -19,6 +19,8 @@ type bioOverwritingFixer struct {
 	ruleID   string
 	newBio   string
 	fixCalls int
+	// omitRuleID leaves fr.RuleID empty, as a fixer is allowed to.
+	omitRuleID bool
 }
 
 func (f *bioOverwritingFixer) CanFix(v *Violation) bool { return v.RuleID == f.ruleID }
@@ -26,6 +28,9 @@ func (f *bioOverwritingFixer) CanFix(v *Violation) bool { return v.RuleID == f.r
 func (f *bioOverwritingFixer) Fix(_ context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
 	f.fixCalls++
 	a.Biography = f.newBio
+	if f.omitRuleID {
+		return &FixResult{Fixed: true, Message: "overwrote biography"}, nil
+	}
 	return &FixResult{RuleID: v.RuleID, Fixed: true, Message: "overwrote biography"}, nil
 }
 
@@ -121,6 +126,10 @@ func TestRuleFix_StampsRuleSourceEndToEnd(t *testing.T) {
 	want := "rule:" + RuleBioExists
 	if row.Source != want {
 		t.Errorf("history source = %q, want %q; a rule-caused overwrite is unattributable", row.Source, want)
+	}
+	// #3078: the producer mirrors the source on a rule write.
+	if row.Producer != want {
+		t.Errorf("history producer = %q, want %q; a rule-supplied value reads as unrecorded", row.Producer, want)
 	}
 	// The damage shape the blast-radius report keys on. Asserted so the
 	// attribution assertion below cannot pass against a row the report would
@@ -252,9 +261,13 @@ func TestRunPath_StampsRuleSource(t *testing.T) {
 		t.Fatalf("MarkDirty: %v", err)
 	}
 
-	fixer := &bioOverwritingFixer{ruleID: RuleBioExists, newBio: "a rule wrote this longer biography"}
+	// fr.RuleID left empty: every row must still name the VIOLATION's rule,
+	// never a bare "rule:" (#3078).
+	fixer := &bioOverwritingFixer{ruleID: RuleBioExists, newBio: "a rule wrote this longer biography", omitRuleID: true}
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
+	// Wired so grantFixCredits' recordRuleFixHistory writes its "rule_fix" row.
+	pipeline.SetHistoryService(historySvc)
 
 	if _, err := pipeline.RunForArtist(ctx, a); err != nil {
 		t.Fatalf("RunForArtist: %v", err)
@@ -267,6 +280,73 @@ func TestRunPath_StampsRuleSource(t *testing.T) {
 	want := "rule:" + RuleBioExists
 	if row.Source != want {
 		t.Errorf("run-path history source = %q, want %q", row.Source, want)
+	}
+	if row.OldValue != "short" || row.NewValue != fixer.newBio {
+		t.Fatalf("history row is not the run-path overwrite: old=%q new=%q", row.OldValue, row.NewValue)
+	}
+	// #3078: the persist's producer mirrors the source.
+	if row.Producer != want {
+		t.Errorf("run-path history producer = %q, want %q", row.Producer, want)
+	}
+
+	// #3078: the explicit "rule_fix" audit row recordRuleFixHistory writes.
+	fix := ruleFixRow(t, historySvc, a.ID)
+	if fix.Source != want || fix.NewValue != "overwrote biography" {
+		t.Fatalf("rule_fix row is not this fix's: source=%q new=%q", fix.Source, fix.NewValue)
+	}
+	if fix.Producer != want {
+		t.Errorf("rule_fix history producer = %q, want %q", fix.Producer, want)
+	}
+}
+
+// ruleFixRow returns the one "rule_fix" metadata_changes row for the artist,
+// failing on any other count.
+func ruleFixRow(t *testing.T, h *artist.HistoryService, artistID string) artist.MetadataChange {
+	t.Helper()
+	changes, _, err := h.List(context.Background(), artistID, 100, 0)
+	if err != nil {
+		t.Fatalf("listing history: %v", err)
+	}
+	var rows []artist.MetadataChange
+	for _, c := range changes {
+		if c.Field == "rule_fix" {
+			rows = append(rows, c)
+		}
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rule_fix history rows, want exactly 1: %+v", len(rows), rows)
+	}
+	return rows[0]
+}
+
+// TestRuleFix_ProducerOverridesInheritedFieldOverlay pins the overlay reset in
+// withRuleHistorySource (#3078). A per-field producer overlay outranks the
+// scalar, so a rule fix run under a context that already carries one (a
+// refresh's "provider:<name>" map) would credit the provider with the rule's
+// value unless the rule tag replaces the overlay.
+func TestRuleFix_ProducerOverridesInheritedFieldOverlay(t *testing.T) {
+	artistSvc, historySvc, a, ruleSvc, ctx := attributionFixture(t, "the operator wrote this")
+	rv := &RuleViolation{
+		RuleID: RuleBioExists, ArtistID: a.ID, ArtistName: a.Name, Severity: "error",
+		Message: "biography needs work", Fixable: true, Status: ViolationStatusOpen,
+	}
+	if err := ruleSvc.UpsertViolation(ctx, rv); err != nil {
+		t.Fatalf("upserting violation: %v", err)
+	}
+	fixer := &bioOverwritingFixer{ruleID: RuleBioExists, newBio: "a rule wrote this"}
+	pipeline := NewPipeline(NewEngine(ruleSvc, nil, nil, nil, testLogger()), artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
+
+	inherited := artist.ContextWithFieldProducers(ctx, map[string]string{"biography": "provider:lastfm"})
+	if fr, err := pipeline.FixViolation(inherited, rv.ID); err != nil || !fr.Fixed {
+		t.Fatalf("FixViolation: fr=%+v err=%v; the write under test never happened", fr, err)
+	}
+
+	row := bioChangeRow(t, historySvc, a.ID)
+	if row.NewValue != "a rule wrote this" {
+		t.Fatalf("history row is not the rule overwrite: new=%q", row.NewValue)
+	}
+	if want := "rule:" + RuleBioExists; row.Producer != want {
+		t.Errorf("history producer = %q, want %q; an inherited overlay credited the wrong producer", row.Producer, want)
 	}
 }
 
@@ -305,6 +385,11 @@ func TestBulkFetchMetadata_StampsBulkSource(t *testing.T) {
 	if row.Source != ruleHistorySourceBulkFetchMetadata {
 		t.Errorf("history source = %q, want %q; a bulk overwrite is unattributable",
 			row.Source, ruleHistorySourceBulkFetchMetadata)
+	}
+	// #3078: one producer per write, mirroring the source -- not a per-field
+	// provider name (the bulk job, not an operator, chose to apply the value).
+	if row.Producer != ruleHistorySourceBulkFetchMetadata {
+		t.Errorf("history producer = %q, want %q", row.Producer, ruleHistorySourceBulkFetchMetadata)
 	}
 }
 

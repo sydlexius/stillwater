@@ -2122,9 +2122,11 @@ components:
             "". A MusicBrainz ID chosen by the operator stamps "operator";
             one adopted by automatic identification stamps
             "provider:identify_connection", "provider:identify_album" or
-            "provider:identify_name". Rule engine writes ("rule:<rule_id>")
-            are not stamped yet, and "filesystem" is reserved: no write
-            records it today.
+            "provider:identify_name". Rule engine writes mirror their source
+            ("rule:<rule_id>", or a pseudo-source such as
+            "rule:bulk_fetch_metadata" for the bulk metadata job, which
+            records that one token rather than a per-field provider).
+            "filesystem" is reserved: no write records it today.
         created_at:
           type: string
           format: date-time

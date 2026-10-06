@@ -37,8 +37,9 @@ import (
 // The inert sites are untested BY CONSTRUCTION: producing no history row, they
 // give a test nothing to assert a source against, so the green suite is not
 // evidence that their tags are correct. Only the sites that do produce a row
-// (FixViolation, the run paths, and the bulk fetch-metadata write) are guarded
-// by tests in history_source_test.go.
+// (FixViolation, the run paths, the bulk fetch-metadata write, and the explicit
+// rule_fix and bulk-MBID records) are guarded by tests, in history_source_test.go
+// and bulk_executor_mbid_gate_test.go.
 //
 // The "rule:" prefix is load-bearing twice over. artist.HistoryService.Record
 // validates its source against an exact allow-list plus the "provider:" and
@@ -56,6 +57,14 @@ import (
 // and interpolates the remainder), matching the existing
 // artist.NFOMBIDReportSource ("rule:nfo_has_mbid"). A display name would
 // neither resolve nor match those.
+//
+// Every stamped write also carries the same token as its PRODUCER (#3078),
+// derived inside withRuleHistorySource, and the two explicit history records
+// (recordRuleFixHistory, recordBulkMBIDHistory) go through recordRuleHistory
+// for the same reason. That includes the bulk fetch-metadata job: its values
+// come from providers, but the job records one "rule:bulk_fetch_metadata" per
+// write rather than a per-field "provider:<name>", because the unattended
+// bulk job, not an operator, chose to apply them.
 
 const (
 	// ruleHistorySourceMultiple attributes a batched writeback that more than
@@ -133,9 +142,27 @@ func ruleHistorySource(ruleID string) string {
 // write would attribute a rule fix to a pass that made none. It also leaves an
 // already-tagged ctx (FixViolation stamps its own before re-entering the shared
 // persist helper) alone rather than re-stamping it.
+//
+// The producer (#3078) is DERIVED here from the same token rather than stamped
+// at each call site, so a rule write's producer cannot disagree with its
+// source: a rule pass both triggered the write and supplied the value. The
+// per-field overlay is replaced with an empty one because it outranks the
+// scalar in artist.producerForField; a caller's overlay (a refresh's
+// "provider:<name>" map, say) inherited into a rule write would otherwise
+// credit a provider with the rule's value.
 func withRuleHistorySource(ctx context.Context, source string) context.Context {
 	if source == "" {
 		return ctx
 	}
+	ctx = artist.ContextWithFieldProducers(ctx, nil)
+	ctx = artist.ContextWithProducer(ctx, source)
 	return artist.ContextWithSource(ctx, source)
+}
+
+// recordRuleHistory writes one explicit history row under a rule source, with
+// the producer mirrored from that source by withRuleHistorySource (#3078).
+// The rule engine's two explicit Record calls go through here so neither can
+// pass a source without its producer.
+func recordRuleHistory(ctx context.Context, h *artist.HistoryService, artistID, field, oldValue, newValue, source string) error {
+	return h.Record(withRuleHistorySource(ctx, source), artistID, field, oldValue, newValue, source)
 }
