@@ -38,4 +38,5 @@
 | `make uat` | Stage a UAT copy of the live DB + encryption key into ./.uat/ (siblings) and print the run command |
 | `make clean-uat` | Remove the staged ./.uat/ UAT copy (DB + key + run root) |
 | `make bruno-ci` | Build binary, run ephemeral server, execute Bruno API tests, clean up. |
+| `make live-proof-3200` | Prove the #3200 Emby fixes against a live Emby (needs SW_LIVE_EMBY_* in the environment) |
 | `make help` | Show this help message |
