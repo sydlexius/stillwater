@@ -217,6 +217,10 @@ func TestScrapeAll_ClearsGenderForNonIndividualType(t *testing.T) {
 			if got := sourceFor(result, "gender"); got != wantSrc {
 				t.Errorf("type %q: gender source = %q, want %q", tc.typ, got, wantSrc)
 			}
+			// The clear must not touch the type source (precondition: it exists).
+			if got := sourceFor(result, "type"); got != provider.NameAudioDB {
+				t.Errorf("type %q: type source = %q, want %q", tc.typ, got, provider.NameAudioDB)
+			}
 		})
 	}
 }
