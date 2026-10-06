@@ -462,6 +462,7 @@ how-to/repair-image-registry#reading-the-report
 how-to/repair-image-registry#repair-a-single-artist
 how-to/repair-image-registry#repair-the-image-registry
 how-to/repair-image-registry#responses
+how-to/repair-image-registry#run-it-from-the-notice
 how-to/repair-image-registry#what-it-cannot-fix
 how-to/reverse-proxy#1-http-forwarding-to-stillwater1973
 how-to/reverse-proxy#2-server-sent-events-sse-without-buffering

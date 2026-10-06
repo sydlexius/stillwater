@@ -17,10 +17,26 @@ Stillwater's own records to match what it finds.
 This is an exceptional recovery operation, not routine maintenance. Run it when artwork you can see
 on disk is missing from Stillwater, not on a schedule.
 
-!!! note "No repair button yet"
+## Run It From the Notice
 
-    The repair has no run control in the interface yet. Invoke it through the API as shown below. The
-    interface does show a notice when a repair may be needed; see [Background Check](#background-check).
+When Stillwater thinks a repair is needed (see [Background Check](#background-check)), the notice at
+the top of the page has a **Repair now** button. It is available to administrators only.
+
+1. Select **Repair now** and confirm. The confirmation says no image files are changed.
+2. The button reads **Repairing...** and is disabled while the repair runs in the background. A toast
+   says the repair started.
+3. When it finishes, a toast reports the result:
+    - **Image registry repaired: N rebuilt, M restored.** The repair completed. The notice checks the
+      latest state and hides itself.
+    - **Image registry repair finished, but N changes could not be saved. Run it again.** The repair is
+      incomplete, so the notice stays. Run it again; it is safe to repeat.
+    - **Image registry repair failed. See the server log for details.** The repair did not complete. The
+      toast is deliberately generic; the full error is in the Stillwater server log.
+4. If a repair is already running (for example started from the API, or from another browser tab), a
+   toast says **An image registry repair is already running.** and the button follows that run to its
+   result instead of starting a second one.
+
+The same repair is available through the API, shown below.
 
 ## Preview First, Then Apply
 
