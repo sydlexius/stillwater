@@ -14,7 +14,16 @@ Click **Activity** in the sidebar, or **View all activity** at the bottom of the
 
 ## Read an entry
 
-Each entry shows the artist, a source badge (Manual, Scan, Import, Revert, Provider, or Rule), and a relative timestamp. Click the entry to expand it and see the field's old and new values side by side.
+Each entry shows the artist, a source badge (Manual, Scan, Import, Revert, Provider, or Rule), a value label beside it (see below), and a relative timestamp. Click the entry to expand it and see the field's old and new values side by side.
+
+## Where a value came from
+
+Each entry says two separate things:
+
+- The **badge** says what started the change. **Manual** means someone started it from Stillwater (an edit, a refresh, or a pull from Emby or Jellyfin), not that they typed the value.
+- The **Value** label says what supplied the value, for example "Value: set by a user", "Value: from Last.fm", "Value: from the NFO file", or "Value: restored an earlier value".
+
+The label is left out only when it would repeat the badge, such as on a Revert or Rule entry. Entries that show **Value source not recorded** are changes where Stillwater did not record what supplied the value: every change made before value sources were tracked, and a few changes where it cannot be known, such as a merged list from several providers. Older entries are not filled in after the fact, so this label on an old entry is permanent. French and Japanese show these labels in English.
 
 ## Undo a change
 
@@ -25,7 +34,7 @@ Entries for trackable fields carry an **Undo** button (hidden on revert entries 
 Click **Filters** to open the flyout, which has two facets:
 
 - **Change Type** -- the field that changed (Biography, Genres, Styles, Moods, Type, Gender, and other trackable fields), plus a synthetic "Rule fix" entry that surfaces automated repairs the rule engine performed (filesystem, image, and NFO fixes).
-- **Trigger Source** -- Manual, Scan, Import, Revert, Provider, or Rule.
+- **Trigger Source** -- Manual, Scan, Import, Revert, Provider, or Rule. The Manual filter also lists values a provider supplied through an edit, since the badge records what started the change, not who wrote the value.
 
 Each is a standard include-list of checkboxes (not tri-state); select one or more values per facet and they combine with an AND across facets.
 
