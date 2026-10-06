@@ -41,8 +41,11 @@ components:
           type: boolean
         status:
           type: string
-          enum: [nothing_to_do, nothing_checked, planned, blocked, failed, running]
+          enum: [nothing_to_do, nothing_checked, planned, blocked, migrated, partial, failed, running]
           description: >-
+            A preview reports planned or blocked; a live run reports migrated
+            (every file moved), partial (some moved, some did not; read the
+            per-artist outcomes) or failed.
             `nothing_checked` means there was nothing to do among the artists
             examined, but some were skipped as missing (see
             artists_skipped_missing), so the library was not fully checked.
@@ -68,7 +71,16 @@ components:
           description: Files byte-identical to an image already in the artist folder; left in place.
         problems:
           type: integer
-          description: Blocked files plus planning errors.
+          description: Blocked files, planning errors and artists whose apply failed.
+        moved:
+          type: integer
+          description: Live run only (zero in a preview). Files moved into the artist folder.
+        failed:
+          type: integer
+          description: >-
+            Live run only (zero in a preview). Files due to move that did not:
+            blocked, failed, or stranded because the artist folder vanished
+            after planning.
         artists:
           type: array
           items:
@@ -80,8 +92,11 @@ components:
                 type: string
               error:
                 type: string
-                enum: [plan_failed]
-                description: A fixed code; the full error is in the server log.
+                enum: [plan_failed, folder_unavailable, index_refresh_failed, move_failed]
+                description: >-
+                  A fixed code; the full error is in the server log.
+                  folder_unavailable: the folder was present when planned and gone
+                  when applied (for example a dropped mount).
               files:
                 type: array
                 items:
@@ -93,13 +108,13 @@ components:
                       type: string
                     outcome:
                       type: string
-                      enum: [planned, skipped, blocked]
+                      enum: [planned, skipped, blocked, moved, source_gone, failed]
                     reason:
                       type: string
-                      enum: [identical_copy, not_moved_safely]
+                      enum: [identical_copy, not_moved_safely, folder_unavailable, move_failed, run_stopped]
         error:
           type: string
-          description: A fixed, generic message. Present on 409, 500 and 501.
+          description: A fixed, generic message. Present on 409 and 500.
     PlatformBackdropPruneRequest:
       type: object
       description: >-
@@ -4387,13 +4402,25 @@ paths:
   /reports/extrafanart-migration:
     post:
       tags: [Reports]
-      summary: Preview the extrafanart/ migration
+      summary: Preview or run the extrafanart/ migration
       description: >-
-        Previews the extrafanart/ migration (#3179): reports where each file in
-        an artist's extrafanart folder would move to. Nothing is written. Moving
-        the files is not available in this version, so dry_run=false is refused
-        with 501. dry_run defaults to true; a malformed value (including null) is a 400. Only one
-        preview runs at a time (409). Admin-only.
+        Previews (dry_run=true, the default) or runs (dry_run=false) the
+        extrafanart/ migration (#3179). A preview reports where each file in an
+        artist's extrafanart folder would move to and writes nothing. A live run
+        moves the files into the artist folder (one-way, no undo; nothing is
+        deleted) and reports each artist's outcome: a failure for one artist,
+        including a folder that vanished mid-run, is reported for that artist and
+        the rest proceed. A live run is not tied to the request: it finishes even
+        if the client disconnects, and stops only when the server shuts down or
+        the 10 minute run limit is reached; files not reached are reported as
+        run_stopped and re-running is safe. partial also covers a failed refresh
+        of the stored image hashes (artist error index_refresh_failed). A file
+        reported as source_gone was no longer at its old location (expected on a
+        repeat run; also what you would see if something else removed it); it is
+        not counted as moved. A
+        malformed dry_run (including null) is a 400. Only one run at a time (409).
+        Admin-only. A run that completes answers 200 even when its status is
+        partial; read status and the counts.
       operationId: runExtraFanartMigration
       requestBody:
         required: false
@@ -4415,7 +4442,7 @@ paths:
                   default: true
       responses:
         "200":
-          description: The preview finished.
+          description: The run finished (check status; a live run can be partial).
           content:
             application/json:
               schema:
@@ -4431,19 +4458,13 @@ paths:
         "403":
           description: Administrator role required (plain text).
         "409":
-          description: A preview is already in progress. dry_run still echoes this request.
+          description: A run is already in progress. dry_run still echoes this request.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExtraFanartMigrationResult'
         "500":
-          description: The preview stopped early (status `failed`), for example when the platform profile cannot be read.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExtraFanartMigrationResult'
-        "501":
-          description: dry_run=false was requested. Not available in this version; nothing was read or changed.
+          description: The run stopped early (status `failed`, or `partial` when files had already moved), for example when the platform profile cannot be read or the server is shutting down.
           content:
             application/json:
               schema:

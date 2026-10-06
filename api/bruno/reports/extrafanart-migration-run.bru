@@ -1,0 +1,43 @@
+meta {
+  name: Extrafanart Migration Run
+  type: http
+  seq: 23
+}
+
+post {
+  url: {{apiBase}}/reports/extrafanart-migration
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "dry_run": false
+  }
+}
+
+docs {
+  Live run of the extrafanart/ migration (#3179). Safe in CI: the CI library is
+  empty (no artist has a filesystem path), so the run moves nothing and answers
+  nothing_to_do with every count zero. Admin-gated in-handler; the CI session is
+  the bootstrap admin.
+}
+
+tests {
+  test("live run returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("empty library: live run with nothing to do", function() {
+    expect(res.body.dry_run).to.equal(false);
+    expect(res.body.status).to.equal("nothing_to_do");
+    expect(res.body.moved).to.equal(0);
+    expect(res.body.failed).to.equal(0);
+    expect(res.body.problems).to.equal(0);
+    expect(res.body.artists).to.deep.equal([]);
+  });
+}
