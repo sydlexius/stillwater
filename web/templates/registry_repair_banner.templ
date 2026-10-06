@@ -1,5 +1,7 @@
 package templates
 
+import "github.com/sydlexius/stillwater/internal/i18n"
+
 // RegistryRepairBanner is the admin-only notice that the image registry may
 // need repair (#2678, slice 1: read-only). It is mounted once per page in
 // layout.templ, inside the IsAdmin gate, right after SharedFilesystemBar.
@@ -15,6 +17,11 @@ package templates
 // conflict banner's clean bar: a sessionStorage flag, no server state, so a new
 // browser session shows the banner again while the registry still needs repair.
 //
+// LANGUAGE (#2678): <html lang> is hardcoded "en", so the live region and the
+// banner each carry lang=<page locale>; otherwise a screen reader would read
+// translated text with the English voice (WCAG 3.1.2). The "Last checked" time
+// is formatted with that same locale, not the browser's.
+//
 // RUN (#2678, slice 2): the "Repair now" button confirms through the shared
 // showConfirmDialog, POSTs {commit:true} to .../registry-repair/remediate (202
 // starts the async job, 409 means one is already running and is followed), then
@@ -27,9 +34,10 @@ templ RegistryRepairBanner() {
 	// empty and is filled when the banner appears, so assistive tech announces the
 	// change; the visible banner below carries no role of its own, so the message
 	// is not announced twice.
-	<div id="sw-registry-repair-live" role="status" class="sr-only" aria-label={ t(ctx, "banner.registry_repair.aria_label") }></div>
+	<div id="sw-registry-repair-live" lang={ i18n.TFromCtx(ctx).Locale() } role="status" class="sr-only" aria-label={ t(ctx, "banner.registry_repair.aria_label") }></div>
 	<div
 		id="sw-registry-repair-banner"
+		lang={ i18n.TFromCtx(ctx).Locale() }
 		role="region"
 		aria-labelledby="sw-registry-repair-title"
 		class="hidden bg-gradient-to-r from-amber-900/60 to-yellow-700/50 dark:from-amber-900/60 dark:to-yellow-700/50 backdrop-blur-md border-b border-amber-300/30 px-6 py-3"
@@ -41,7 +49,8 @@ templ RegistryRepairBanner() {
 		data-toast-started={ t(ctx, "banner.registry_repair.toast.started") }
 		data-toast-already-running={ t(ctx, "banner.registry_repair.toast.already_running") }
 		data-toast-done={ t(ctx, "banner.registry_repair.toast.done") }
-		data-toast-incomplete={ t(ctx, "banner.registry_repair.toast.incomplete") }
+		data-toast-incomplete-one={ t(ctx, "banner.registry_repair.toast.incomplete.one") }
+		data-toast-incomplete-other={ t(ctx, "banner.registry_repair.toast.incomplete.other") }
 		data-toast-failed={ t(ctx, "banner.registry_repair.toast.failed") }
 	>
 		<div class="max-w-6xl mx-auto flex flex-wrap items-center gap-4">
@@ -112,6 +121,19 @@ templ RegistryRepairBanner() {
 					if (attempt >= RETRY_DELAYS_MS.length) return;
 					retryTimer = setTimeout(check, RETRY_DELAYS_MS[attempt++]);
 				}
+				// Prefer the browser's regional variant of the page language (en-GB
+				// over en) so en keeps its regional date format; else the page language.
+				function dateLocale() {
+					// Same fallback order as the language picker: navigator.languages,
+					// else navigator.language, so a region survives when the list is empty.
+					var langs = (Array.isArray(navigator.languages) && navigator.languages.length > 0)
+						? navigator.languages
+						: (navigator.language ? [navigator.language] : []);
+					for (var i = 0; i < langs.length; i++) {
+						if (langs[i].split('-')[0].toLowerCase() === el.lang) return langs[i];
+					}
+					return el.lang || undefined;
+				}
 				function check() {
 					if (!el.isConnected) return;
 					fetch(base + '/api/v1/reports/registry-repair/banner', {
@@ -149,7 +171,7 @@ templ RegistryRepairBanner() {
 						var when = new Date(d.checked_at);
 						if (!isNaN(when.getTime())) {
 							document.getElementById('sw-registry-repair-checked').textContent =
-								el.dataset.checkedTemplate.replace('{time}', when.toLocaleString());
+								el.dataset.checkedTemplate.replace('{time}', when.toLocaleString(dateLocale()));
 						}
 						el.classList.remove('hidden');
 						// Announce via the separate always-exposed live region.
@@ -197,7 +219,7 @@ templ RegistryRepairBanner() {
 							if (s.status === 'completed' && s.report) {
 								var r = s.report;
 								if (r.write_failures > 0) {
-									finish('showWarningToast', el.dataset.toastIncomplete.replace('{failures}', String(r.write_failures)));
+									finish('showWarningToast', (r.write_failures === 1 ? el.dataset.toastIncompleteOne : el.dataset.toastIncompleteOther).replace('{failures}', String(r.write_failures)));
 								} else {
 									finish('showStickyToast', el.dataset.toastDone.replace('{rebuilt}', String(r.rebuilt)).replace('{restored}', String(r.restored)));
 								}
