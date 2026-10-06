@@ -119,3 +119,36 @@ func TestRecordHistoryTx_WarnsWhenNoProducerSet(t *testing.T) {
 		t.Fatalf("tx warn attrs = %v, want exactly one warn with artist_id, field=biography, source=revert", got)
 	}
 }
+
+// TestRestoreLockedFieldGuarded_StampedTxDoesNotWarn drives the real
+// production caller of recordHistoryTx (RestoreLockedFieldGuarded stamps
+// ProducerRestore) and asserts no "no producer set" warn is emitted.
+func TestRestoreLockedFieldGuarded_StampedTxDoesNotWarn(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	a := &Artist{Name: "Stamped Tx", SortName: "Stamped Tx", Type: "group", Path: "/music/Stamped Tx", Biography: "damaged"}
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	var recs []slog.Record
+	prev := slog.Default()
+	slog.SetDefault(slog.New(captureHandler{mu: &sync.Mutex{}, recs: &recs}))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	if err := svc.SetLockedFields(ctx, a.ID, []string{"biography"}); err != nil {
+		t.Fatalf("SetLockedFields: %v", err)
+	}
+	if _, err := svc.RestoreLockedFieldGuarded(ctx, a.ID, "biography", "damaged", "restored"); err != nil {
+		t.Fatalf("RestoreLockedFieldGuarded: %v", err)
+	}
+	var producer string
+	if err := db.QueryRowContext(ctx,
+		`SELECT producer FROM metadata_changes WHERE artist_id = ? AND field = 'biography'`, a.ID,
+	).Scan(&producer); err != nil || producer != ProducerRestore {
+		t.Fatalf("precondition: a restore row with producer %q must exist, got %q (err=%v)", ProducerRestore, producer, err)
+	}
+	if got := warnsFor(recs, a.ID); len(got) != 0 {
+		t.Errorf("stamped transactional write warned: %v", got)
+	}
+}

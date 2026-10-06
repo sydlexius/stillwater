@@ -18,8 +18,12 @@ import (
 // interface; the runtime WARN in artist.resolveProducerForWrite is the other
 // half for those.
 
-// historyWriteVerbs are the artist.Service methods that record history.
+// historyWriteVerbs are the artist.Service methods that record history, plus
+// HistoryService.Record (receiver historyService, or h), the only exported
+// HistoryService method that inserts a row. Its non-test callers outside
+// internal/artist are handlers_identify.go and rule/history_source.go.
 var historyWriteVerbs = map[string]bool{
+	"Record": true,
 	"Update": true, "UpdateField": true, "ClearField": true,
 	"UpdateReportingLocks": true, "UpdateAfterRuleEvaluation": true,
 	"UpdateAfterRuleEvaluationReportingLocks": true,
@@ -42,6 +46,8 @@ type siteClass struct {
 // stamps its own ctx. "caller" = the producer comes from the caller's ctx.
 // "none" = deliberately unstamped, reason says why.
 var historySiteClasses = map[string]siteClass{
+	"api/handlers_identify.go::recordIdentityHistory":              {"stamped", "direct HistoryService.Record; identityProducer(source)"},
+	"rule/history_source.go::recordRuleHistory":                    {"stamped", "direct HistoryService.Record; withRuleHistorySource mirrors rule:<id>"},
 	"api/handlers_refresh.go::handleRefreshLink":                   {"stamped", "operator-supplied IDs"},
 	"api/handlers_refresh.go::executeRefreshCtx":                   {"stamped", "per-field provider:<name>"},
 	"api/handlers_refresh.go::applyProviderName":                   {"stamped", "provider: bare prefix"},
@@ -104,22 +110,20 @@ func collectSites(f *ast.File, file string, sites map[string][]string, stamps ma
 			continue
 		}
 		key := file + "::" + fn.Name.Name
-		// Identifiers assigned from a stamper call: `ctx = stamp(ctx)`.
+		// ONE source-order traversal: fed[id] says whether id currently holds a
+		// stamped ctx, updated at EVERY assignment, so each write sees the most
+		// recent assignment before it. stamps[key] = EVERY write's ctx argument
+		// is a stamper call or such an identifier; a stamper merely present in
+		// the function, or whose result is discarded, does not count.
 		fed := map[string]bool{}
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
 			if as, ok := n.(*ast.AssignStmt); ok && len(as.Lhs) == len(as.Rhs) {
 				for k, rhs := range as.Rhs {
-					if id, ok := as.Lhs[k].(*ast.Ident); ok && isStamper(rhs) {
-						fed[id.Name] = true
+					if id, ok := as.Lhs[k].(*ast.Ident); ok {
+						fed[id.Name] = isStamper(rhs) || wrapsFed(rhs, fed)
 					}
 				}
 			}
-			return true
-		})
-		// stamps[key] = EVERY write's ctx argument is a stamper call or an
-		// identifier assigned from one. A stamper merely present in the
-		// function, or whose result is discarded, does not count.
-		ast.Inspect(fn.Body, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok || len(call.Args) == 0 {
 				return true
@@ -142,6 +146,18 @@ func collectSites(f *ast.File, file string, sites map[string][]string, stamps ma
 	}
 }
 
+// wrapsFed reports whether e is a ctx-wrapping call (artist.ContextWithSource,
+// ContextWithHistoryID...) whose first argument is an already-stamped ident, so
+// stamping then wrapping keeps the ctx stamped.
+func wrapsFed(e ast.Expr, fed map[string]bool) bool {
+	call, ok := e.(*ast.CallExpr)
+	if !ok || len(call.Args) == 0 {
+		return false
+	}
+	id, ok := call.Args[0].(*ast.Ident)
+	return ok && fed[id.Name]
+}
+
 // isStamper reports whether e is a call to one of producerStampers.
 func isStamper(e ast.Expr) bool {
 	call, ok := e.(*ast.CallExpr)
@@ -162,9 +178,9 @@ func isStamper(e ast.Expr) bool {
 func receiverIsArtistService(x ast.Expr) bool {
 	switch e := x.(type) {
 	case *ast.SelectorExpr:
-		return e.Sel.Name == "artistService"
+		return e.Sel.Name == "artistService" || e.Sel.Name == "historyService"
 	case *ast.Ident:
-		return e.Name == "svc"
+		return e.Name == "svc" || e.Name == "h"
 	}
 	return false
 }
@@ -274,5 +290,49 @@ func (r *Router) good() {
 	}
 	if strings.Contains(got, "::good") {
 		t.Errorf("fully stamped function was flagged:\n%s", got)
+	}
+}
+
+// TestHistoryCensusTracksReassignment: a ctx variable's stamped state is taken
+// at each write in source order, not once per function. Also covers a direct
+// HistoryService.Record call.
+func TestHistoryCensusTracksReassignment(t *testing.T) {
+	t.Parallel()
+	const src = `package api
+func (r *Router) before() {
+	c := artist.ContextWithProducer(ctx, "x")
+	r.artistService.Update(c, a)
+	c = req.Context()
+}
+func (r *Router) after() {
+	c := artist.ContextWithProducer(ctx, "x")
+	c = req.Context()
+	r.artistService.Update(c, a)
+}
+func (r *Router) direct() {
+	r.historyService.Record(ctx, "a", "f", "o", "n", "manual")
+}
+`
+	f, err := parser.ParseFile(token.NewFileSet(), "fixture.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sites, stamps := map[string][]string{}, map[string]bool{}
+	collectSites(f, "api/fixture.go", sites, stamps)
+	if len(sites) != 3 {
+		t.Fatalf("precondition: want 3 sites (incl. the direct Record), got %v", sites)
+	}
+	table := map[string]siteClass{}
+	for _, n := range []string{"before", "after", "direct"} {
+		table["api/fixture.go::"+n] = siteClass{"stamped", "r"}
+	}
+	got := strings.Join(censusProblems(sites, stamps, table), "\n")
+	if strings.Contains(got, "::before") {
+		t.Errorf("stamped write before a reassignment was rejected:\n%s", got)
+	}
+	for _, want := range []string{"::after: classified stamped", "::direct: classified stamped"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
 	}
 }
