@@ -252,6 +252,10 @@ type Router struct {
 	// four remediation handlers that DO read local images now do.
 	platformPruneMu      sync.Mutex
 	platformPruneRunning bool
+	// extraFanartMu/extraFanartRunning make the extrafanart/ migration (#3179) a
+	// singleton: a second request while one runs gets 409.
+	extraFanartMu      sync.Mutex
+	extraFanartRunning bool
 	// platformDupReportMu guards the cached platform backdrop-duplicate report
 	// backing GET /reports/platform-backdrop-duplicates (#3092). The page used
 	// to run ScanPlatformBackdropDuplicates synchronously on every render -- a
@@ -1138,6 +1142,8 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// /api/v1/reports/backdrop-duplicates/remediate above) since the admin
 	// gate is enforced in-handler via requireForeignAdmin.
 	mux.HandleFunc("POST "+bp+"/api/v1/reports/platform-backdrop-duplicates/prune", wrapAuth(r.handlePlatformBackdropDuplicatesPrune, authMw))
+	// extrafanart/ migration (#3179): admin-only, in-handler requireForeignAdmin.
+	mux.HandleFunc("POST "+bp+"/api/v1/reports/extrafanart-migration", wrapAuth(r.handleExtraFanartMigrationRun, authMw))
 	// Cross-artist backdrop pollution report (#2564 PR-2): read-only phash
 	// collision detection. Registered as a plain /api/v1 GET alongside the
 	// report endpoints above; admin gate is enforced in-handler via

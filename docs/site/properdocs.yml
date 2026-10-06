@@ -125,6 +125,7 @@ nav:
       - View reports: how-to/view-reports.md
       - Unmatched images: how-to/foreign-files.md
       - Repair the image registry: how-to/repair-image-registry.md
+      - Migrate extrafanart files: how-to/migrate-extrafanart.md
       - Activity feed: how-to/activity-feed.md
       - Logs viewer: how-to/logs-viewer.md
       - Edit an artist: how-to/edit-artist.md

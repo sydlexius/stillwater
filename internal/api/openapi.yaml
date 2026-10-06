@@ -30,6 +30,59 @@ components:
       description: "Deprecated: prefer bearerAuth (Authorization header). Query-string tokens risk leakage via logs and referrers."
       x-deprecated: true
   schemas:
+    ExtraFanartMigrationResult:
+      type: object
+      description: >-
+        The body of every response to POST /reports/extrafanart-migration that
+        follows a parsed request. dry_run is always the truth about THIS request.
+      required: [dry_run, status, artists]
+      properties:
+        dry_run:
+          type: boolean
+        status:
+          type: string
+          enum: [nothing_to_do, planned, blocked, failed, running]
+        artists_scanned:
+          type: integer
+        artists_with_files:
+          type: integer
+        planned:
+          type: integer
+        skipped_identical:
+          type: integer
+        problems:
+          type: integer
+          description: Blocked files plus planning errors.
+        artists:
+          type: array
+          items:
+            type: object
+            properties:
+              artist_id:
+                type: string
+              name:
+                type: string
+              error:
+                type: string
+                enum: [plan_failed]
+                description: A fixed code; the full error is in the server log.
+              files:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    file:
+                      type: string
+                    destination:
+                      type: string
+                    outcome:
+                      type: string
+                      enum: [planned, skipped, blocked]
+                    reason:
+                      type: string
+                      enum: [identical_copy, not_moved_safely]
+        error:
+          type: string
     PlatformBackdropPruneRequest:
       type: object
       description: >-
@@ -4303,6 +4356,71 @@ paths:
             text/plain:
               schema:
                 type: string
+
+  /reports/extrafanart-migration:
+    post:
+      tags: [Reports]
+      summary: Preview the extrafanart/ migration
+      description: >-
+        Previews the extrafanart/ migration (#3179): reports where each file in
+        an artist's extrafanart folder would move to. Nothing is written. Moving
+        the files is not available in this version, so dry_run=false is refused
+        with 503. dry_run defaults to true; a malformed value is a 400. Only one
+        preview runs at a time (409). Admin-only.
+      operationId: runExtraFanartMigration
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                dry_run:
+                  type: boolean
+                  default: true
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                dry_run:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: The preview finished.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtraFanartMigrationResult'
+        "400":
+          description: The body or dry_run value could not be parsed (JSON body with an `error` message). Nothing ran, so there is no dry_run field.
+        "401":
+          description: Authentication required (plain text, from the auth middleware).
+          content:
+            text/plain:
+              schema:
+                type: string
+        "403":
+          description: Administrator role required (plain text).
+        "409":
+          description: A preview is already in progress. dry_run still echoes this request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtraFanartMigrationResult'
+        "500":
+          description: The preview stopped early (status `failed`), for example when the platform profile cannot be read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtraFanartMigrationResult'
+        "503":
+          description: dry_run=false was requested. Not available in this version; nothing was read or changed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtraFanartMigrationResult'
 
   /reports/platform-backdrop-duplicates/prune:
     post:

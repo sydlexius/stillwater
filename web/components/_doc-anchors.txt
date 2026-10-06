@@ -433,6 +433,7 @@ how-to/merge-duplicate-artists#read-the-preview-before-confirming
 how-to/merge-duplicate-artists#safety-checks-that-can-block-a-merge
 how-to/merge-duplicate-artists#see-also
 how-to/merge-duplicate-artists#what-happens-on-merge
+how-to/migrate-extrafanart#migrate-extrafanart-files
 how-to/quick-actions#cycle-theme
 how-to/quick-actions#keyboard-shortcuts
 how-to/quick-actions#log-out
