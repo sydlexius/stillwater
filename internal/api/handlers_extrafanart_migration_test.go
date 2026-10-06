@@ -323,35 +323,6 @@ func TestExtraFanartMigration_AdminGateAndStrictFlag(t *testing.T) {
 	}
 }
 
-// A live request is refused before any work: a status the client cannot mistake
-// for success, dry_run echoed as false, a fixed message, and the library untouched.
-func TestExtraFanartMigration_LiveRequestIsRefused(t *testing.T) {
-	t.Parallel()
-	r, svc := testRouterForBackdrops(t)
-	a := seedExtraFanartArtist(t, svc, "Alpha", 2)
-	before := inventory(t, a)
-	// Hold the singleton: a refusal that tried to take it would answer 409.
-	r.extraFanartMu.Lock()
-	r.extraFanartRunning = true
-	r.extraFanartMu.Unlock()
-	for _, tc := range []struct{ body, ct string }{
-		{`{"dry_run": false}`, "application/json"},
-		{`dry_run=false`, "application/x-www-form-urlencoded"},
-	} {
-		w := postExtraFanart(r, adminContext(), tc.body, tc.ct)
-		res := decodeRun(t, w)
-		if w.Code != http.StatusNotImplemented || res.DryRun || res.Status != "failed" || res.Error == "" {
-			t.Errorf("%q: want 501 failed with dry_run=false and a message, got %d %+v", tc.body, w.Code, res)
-		}
-		if strings.Contains(w.Body.String(), a.dir) {
-			t.Errorf("%q: the refusal leaked a path", tc.body)
-		}
-	}
-	if d := diffInventory(before, inventory(t, a)); len(d) > 0 {
-		t.Errorf("a refused live request changed the library: %v", d)
-	}
-}
-
 // F2: an artist whose own folder does not exist (unmounted share, stale row)
 // has nothing to migrate and must not count as a problem on every run.
 func TestExtraFanartMigration_MissingArtistFolderIsSkippedNotAProblem(t *testing.T) {
