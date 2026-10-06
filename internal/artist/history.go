@@ -182,7 +182,7 @@ func (h *HistoryService) Record(ctx context.Context, artistID, field, oldValue, 
 		OldValue:  oldValue,
 		NewValue:  newValue,
 		Source:    source,
-		Producer:  producerForField(ctx, field),
+		Producer:  resolveProducerForWrite(ctx, artistID, field, source),
 		CreatedAt: time.Now().UTC(),
 	}
 	return h.repo.Record(ctx, change)

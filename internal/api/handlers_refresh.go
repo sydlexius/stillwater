@@ -401,7 +401,9 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 		a.DiscogsID = body.DiscogsID
 	}
 
-	if err := r.artistService.Update(req.Context(), a); err != nil {
+	// #3078: the operator supplied these IDs. No tracked field moves today; the
+	// stamp is in place for the day trackableFields widens.
+	if err := r.artistService.Update(artist.ContextWithProducer(req.Context(), artist.ProducerOperator), a); err != nil {
 		r.logger.Warn("failed to store provider ID",
 			"artist_id", a.ID,
 			"error", err,

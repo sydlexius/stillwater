@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
@@ -228,7 +229,7 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 		// Log the rejected TOKEN only, never the field value.
 		r.logger.Warn("rejected producer claim, recording unrecorded",
 			slog.String("field", field),
-			slog.String("producer_claim", producerClaim))
+			slog.String("producer_claim", boundedClaimForLog(producerClaim)))
 	}
 	writeCtx := artist.ContextWithProducer(req.Context(), producer)
 
@@ -645,6 +646,31 @@ func jsonProducerClaim(raw json.RawMessage) string {
 		return ""
 	}
 	return s
+}
+
+// maxLoggedClaimRunes bounds how much of a client-supplied producer claim is
+// logged. The longest legitimate claim ("provider:" + a provider name) is far
+// shorter; anything past this is junk or a log-flooding attempt.
+const maxLoggedClaimRunes = 64
+
+// boundedClaimForLog makes an untrusted producer claim safe to log: control
+// characters (newlines, ANSI escapes, NUL) are dropped so a claim cannot forge
+// a log line, and the rest is truncated to maxLoggedClaimRunes.
+func boundedClaimForLog(claim string) string {
+	var b strings.Builder
+	n := 0
+	for _, r := range claim {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == 0x2028 || r == 0x2029 {
+			continue
+		}
+		if n == maxLoggedClaimRunes {
+			b.WriteString("...")
+			break
+		}
+		b.WriteRune(r)
+		n++
+	}
+	return b.String()
 }
 
 // sanitizeProducerClaim turns a client-supplied producer claim into the value
