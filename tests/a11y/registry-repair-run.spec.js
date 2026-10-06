@@ -187,6 +187,16 @@ test('incomplete: write failures give a warning toast and the banner stays', asy
   await context.close();
 });
 
+test('incomplete: a single write failure uses the singular wording', async ({ browser }) => {
+  const { context, page } = await openBanner(browser);
+  await page.route(`**${REMEDIATE_API}`, (route) => route.fulfill({ status: 202, json: { running: true, status: 'running' } }));
+  await page.route(`**${STATUS_API}`, (route) => route.fulfill({ json: { status: 'completed', report: { rebuilt: 1, restored: 0, write_failures: 1 } } }));
+  await confirmRun(page);
+  await expect(page.locator(TOASTS)).toContainText('1 change could not be saved');
+  await expect(page.locator(TOASTS)).not.toContainText('1 changes');
+  await context.close();
+});
+
 for (const theme of ['dark', 'light']) {
   test(`failure: fixed generic message, no server detail leaks, button recovers (${theme})`, async ({ browser }) => {
     const { context, page, errors } = await openBanner(browser, theme);
