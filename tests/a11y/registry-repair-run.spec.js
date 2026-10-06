@@ -198,6 +198,11 @@ test('incomplete: write failures give a warning toast and the banner stays', asy
   await page.route(`**${STATUS_API}`, (route) => route.fulfill({ json: { status: 'completed', report: { rebuilt: 1, restored: 0, write_failures: 4 } } }));
   await confirmRun(page);
   await expect(page.locator(TOASTS)).toContainText('4 changes could not be saved');
+  // The warning helper forwards the banner's language like the other toast helpers (#2678).
+  const warnToast = page.locator(`${TOASTS} > div`, { hasText: '4 changes could not be saved' });
+  await expect(warnToast).toHaveCount(1);
+  await expect(warnToast.locator('span').first()).toHaveAttribute('lang', 'en');
+  await expect(warnToast.locator('button')).toHaveAttribute('lang', 'en');
   await expect(page.locator(BANNER)).toBeVisible();
   await expect(page.locator(RUN)).toBeEnabled();
   await context.close();

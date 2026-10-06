@@ -564,8 +564,8 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 					window.showSuccessToast = function(msg, lang) {
 						enqueueToast('success', msg, 5000, lang);
 					};
-					window.showWarningToast = function(msg) {
-						enqueueToast('warning', msg, 8000);
+					window.showWarningToast = function(msg, lang) {
+						enqueueToast('warning', msg, 8000, lang);
 					};
 
 					// swCopyToClipboard copies text to the clipboard, falling back to
@@ -1259,10 +1259,12 @@ templ LayoutGlobalChrome(assets AssetPaths) {
 						hideModal();
 					}
 
-					// hx-confirm text is written in the language of the nearest lang
-					// ancestor of the trigger (<html> unless a component declares one).
+					// hx-confirm text carries the language a component explicitly declares
+					// on an ancestor of the trigger. <html lang> is the page default, not a
+					// caller declaration, so it is excluded and the text stays untagged.
 					function triggerLangOpts(trigger) {
 						var holder = trigger && trigger.closest ? trigger.closest('[lang]') : null;
+						if (holder === document.documentElement) holder = null;
 						return { lang: holder ? holder.getAttribute('lang') : '' };
 					}
 
