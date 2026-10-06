@@ -588,8 +588,8 @@ bruno-ci: build
 ## live-proof-3200: Prove the #3200 Emby fixes against a live Emby (needs SW_LIVE_EMBY_* in the environment)
 live-proof-3200:
 	@rc=0; \
-	scripts/live-emby-proof.sh --test 'TestLiveEmby_NilSlotFullPath_' --without 'edf27433^' --files internal/publish/live_nil_slot_full_path_integration_test.go || rc=$$?; \
-	scripts/live-emby-proof.sh --test 'TestLiveEmby_NilSlotUnreadablePeer_' --without '014e4c24^' --files internal/publish/live_nil_slot_unreadable_peer_integration_test.go || rc=$$?; \
+	scripts/live-emby-proof.sh --test 'TestLiveEmby_NilSlotFullPath_' --without 'edf27433^' --files internal/publish/live_nil_slot_full_path_integration_test.go --expect TestLiveEmby_NilSlotFullPath_ShortPeerCompactsWithoutDuplicates --expect TestLiveEmby_NilSlotFullPath_FullPeerStaysInPlace || rc=$$?; \
+	scripts/live-emby-proof.sh --test 'TestLiveEmby_NilSlotUnreadablePeer_' --without '014e4c24^' --files internal/publish/live_nil_slot_unreadable_peer_integration_test.go --expect TestLiveEmby_NilSlotUnreadablePeer_LaterSurvivorWaits || rc=$$?; \
 	exit $$rc
 
 ## help: Show this help message

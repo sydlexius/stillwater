@@ -2,7 +2,9 @@
 # scripts/live-emby-proof.sh -- prove a live-Emby integration test fails WITHOUT
 # a fix and passes WITH it (#3200). Local machine only; the maintainer runs it.
 #
-# Usage: live-emby-proof.sh --test <regex> --without <ref> --files <f1,f2>
+# Usage: live-emby-proof.sh --test <regex> --without <ref> --files <f1,f2> --expect <TestName> [--expect ...]
+#   --expect names every test that must PASS with the fix (declared by the caller,
+#   never derived from the files, so a deleted or renamed test cannot hide).
 #   Logs and summary are labeled by the sanitized --test value, so runs do not overwrite each other.
 #   --files are repo-relative integration test files copied into a private
 #   `git archive <ref>` extract; the same run then repeats in the current tree.
@@ -12,22 +14,23 @@
 # build failure, an unreachable server, or a missing marker never counts).
 set -euo pipefail
 
-TEST="" REF="" FILES=""
+TEST="" REF="" FILES="" EXPECTED=()
 while [ $# -gt 0 ]; do
 	case "$1" in
-	--test | --without | --files)
+	--test | --without | --files | --expect)
 		if [ $# -lt 2 ]; then echo "live-emby-proof: $1 needs a value" >&2; exit 2; fi
 		case "$1" in
 		--test) TEST="$2" ;;
 		--without) REF="$2" ;;
 		--files) FILES="$2" ;;
+		--expect) EXPECTED+=("$2") ;;
 		esac
 		shift 2 ;;
 	*) echo "live-emby-proof: unknown argument: $1" >&2; exit 2 ;;
 	esac
 done
-if [ -z "$TEST" ] || [ -z "$REF" ] || [ -z "$FILES" ]; then
-	echo "usage: live-emby-proof.sh --test <regex> --without <ref> --files <f1,f2>" >&2
+if [ -z "$TEST" ] || [ -z "$REF" ] || [ -z "$FILES" ] || [ ${#EXPECTED[@]} -eq 0 ]; then
+	echo "usage: live-emby-proof.sh --test <regex> --without <ref> --files <f1,f2> --expect <TestName> [--expect ...]" >&2
 	exit 2
 fi
 case "$REF" in
@@ -35,20 +38,22 @@ case "$REF" in
 esac
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel)"
 IFS=',' read -r -a FILE_LIST <<<"$FILES"
-EXPECTED=()
 for f in "${FILE_LIST[@]}"; do
 	if [ ! -f "$ROOT/$f" ]; then
 		echo "live-emby-proof: --files entry is not a regular file: $f" >&2
 		exit 2
 	fi
-	while IFS= read -r name; do
-		[ -n "$name" ] && EXPECTED+=("$name")
-	done < <(sed -n 's/^func \(Test[A-Za-z0-9_]*\)(.*/\1/p' "$ROOT/$f" | grep -E -- "$TEST" || true)
 done
-if [ ${#EXPECTED[@]} -eq 0 ]; then
-	echo "live-emby-proof: no Test function in --files matches --test: $TEST" >&2
-	exit 2
-fi
+for name in "${EXPECTED[@]}"; do
+	found=0
+	for f in "${FILE_LIST[@]}"; do
+		if grep -qE -- "^func $name\\(" "$ROOT/$f"; then found=1; fi
+	done
+	if [ "$found" -eq 0 ]; then
+		echo "live-emby-proof: --expect $name is not defined in --files (renamed or deleted?)" >&2
+		exit 2
+	fi
+done
 for v in SW_LIVE_EMBY_URL SW_LIVE_EMBY_API_KEY SW_LIVE_EMBY_USER_ID SW_LIVE_EMBY_ITEM_ID; do
 	if [ -z "${!v:-}" ]; then
 		echo "NOT PROVEN: $v is not set; export SW_LIVE_EMBY_* in the environment (not as arguments)" >&2
