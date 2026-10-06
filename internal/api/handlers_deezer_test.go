@@ -35,7 +35,7 @@ func installDeezerOrchestrator(t *testing.T, r *Router,
 	registry.Register(stub)
 	r.providerRegistry = registry
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	r.orchestrator = provider.NewOrchestrator(registry, nil, logger, nil)
+	r.orchestrator = provider.NewOrchestrator(registry, nil, logger, nil, noopScraperExecutor{})
 }
 
 func TestIsAllDigits(t *testing.T) {

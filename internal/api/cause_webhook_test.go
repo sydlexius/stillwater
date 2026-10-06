@@ -88,14 +88,13 @@ func newWebhookCauseFixture(t *testing.T, onGet func(context.Context, string), s
 	registry.Register(webhookFakeProvider{onGet: onGet})
 	logger, logs := logtest.NewJSONLogger()
 	settings := provider.NewSettingsService(db, enc)
-	orch := provider.NewOrchestrator(registry, settings, logger, nil)
 	// Production wiring: FetchMetadata delegates to the scraper executor, which
 	// is what reaches the shared fetch point.
 	scraperSvc := scraper.NewService(db, logger)
 	if err := scraperSvc.SeedDefaults(ctx); err != nil {
 		t.Fatalf("seeding scraper config: %v", err)
 	}
-	orch.SetExecutor(scraper.NewExecutor(scraperSvc, registry, settings, logger, nil))
+	orch := provider.NewOrchestrator(registry, settings, logger, nil, scraper.NewExecutor(scraperSvc, registry, settings, logger, nil))
 
 	f := &webhookCauseFixture{logs: logs, artist: map[string]*artist.Artist{}}
 	for i, mbid := range mbids {
