@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/encryption"
-	"github.com/sydlexius/stillwater/internal/provider/tagdict"
 	_ "modernc.org/sqlite"
 )
 
@@ -257,15 +255,6 @@ func TestExtractFieldForComparison_Origin(t *testing.T) {
 // testDiscardLogger returns a logger that drops everything, for tests that
 // call FetchProviderResult directly.
 func testDiscardLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
-
-func findSource(sources []FieldSource, field string) *FieldSource {
-	for _, s := range sources {
-		if s.Field == field {
-			return &s
-		}
-	}
-	return nil
-}
 
 // TestFetchProviderResult_ProviderIDPrecedence verifies that a provider-specific
 // ID in providerIDs beats the MBID: AudioDB must receive its own numeric ID, and
@@ -617,140 +606,6 @@ func TestIsImageFieldName(t *testing.T) {
 		if isImageFieldName(f) {
 			t.Errorf("isImageFieldName(%q) = true, want false", f)
 		}
-	}
-}
-
-// TestApplyFieldDetailFields verifies that applyField handles the detail
-// fields (gender, type, years_active, born, died, disbanded) by setting the
-// target field only when it is currently empty (first-match-wins) and returns
-// true when a value was applied.
-func TestApplyFieldDetailFields(t *testing.T) {
-	cases := []struct {
-		field    string
-		meta     ArtistMetadata
-		readBack func(*ArtistMetadata) string
-	}{
-		{"gender", ArtistMetadata{Gender: "Male"}, func(m *ArtistMetadata) string { return m.Gender }},
-		{"type", ArtistMetadata{Type: "group"}, func(m *ArtistMetadata) string { return m.Type }},
-		{"origin", ArtistMetadata{Origin: "United Kingdom"}, func(m *ArtistMetadata) string { return m.Origin }},
-		{"years_active", ArtistMetadata{YearsActive: "1980-1990"}, func(m *ArtistMetadata) string { return m.YearsActive }},
-		{"born", ArtistMetadata{Born: "1970-01-01"}, func(m *ArtistMetadata) string { return m.Born }},
-		{"died", ArtistMetadata{Died: "2020-01-01"}, func(m *ArtistMetadata) string { return m.Died }},
-		{"disbanded", ArtistMetadata{Disbanded: "2005-01-01"}, func(m *ArtistMetadata) string { return m.Disbanded }},
-	}
-	for _, tc := range cases {
-		t.Run(tc.field, func(t *testing.T) {
-			result := &FetchResult{Metadata: &ArtistMetadata{URLs: make(map[string]string)}}
-			pr := &ProviderResult{meta: &tc.meta}
-			if !applyField(result, tc.field, pr, NameMusicBrainz) {
-				t.Fatalf("applyField(%s) = false, want true", tc.field)
-			}
-			if got := tc.readBack(result.Metadata); got != tc.readBack(&tc.meta) {
-				t.Errorf("after apply %s: got %q, want %q", tc.field, got, tc.readBack(&tc.meta))
-			}
-			src := findSource(result.Sources, tc.field)
-			if src == nil || src.Provider != NameMusicBrainz {
-				t.Errorf("applyField(%s) source = %v, want provider %s", tc.field, src, NameMusicBrainz)
-			}
-			// Second provider must not overwrite the first-match-wins value.
-			pr2 := &ProviderResult{meta: &ArtistMetadata{
-				Gender: "Female", Type: "solo", YearsActive: "1999", Born: "x",
-				Died: "y", Disbanded: "z", Origin: "Canada",
-			}}
-			if applyField(result, tc.field, pr2, NameWikidata) {
-				t.Errorf("applyField(%s) returned true on second provider, expected first-match-wins", tc.field)
-			}
-			if got := tc.readBack(result.Metadata); got != tc.readBack(&tc.meta) {
-				t.Errorf("after second apply %s: got %q, want preserved %q", tc.field, got, tc.readBack(&tc.meta))
-			}
-		})
-	}
-}
-
-// TestApplyFieldGenderRejectedWhenTypeNonIndividual verifies that when the
-// accumulated type is already a non-individual value, a later gender apply
-// is rejected.
-func TestApplyFieldGenderRejectedWhenTypeNonIndividual(t *testing.T) {
-	result := &FetchResult{
-		Metadata: &ArtistMetadata{Type: "group", URLs: make(map[string]string)},
-		Sources:  []FieldSource{{Field: "type", Provider: NameMusicBrainz}},
-	}
-	pr := &ProviderResult{meta: &ArtistMetadata{Gender: "Male"}}
-	if applyField(result, "gender", pr, NameWikidata) {
-		t.Errorf("applyField(gender) = true with non-individual type, want false")
-	}
-	if result.Metadata.Gender != "" {
-		t.Errorf("Gender = %q, want empty", result.Metadata.Gender)
-	}
-	if findSource(result.Sources, "gender") != nil {
-		t.Errorf("gender FieldSource set on rejected apply")
-	}
-}
-
-// TestApplyFieldGenderPreservedForIndividualTypes guards against the
-// predicate-vocabulary regression where applyType / applyGender used a local
-// orchestrator helper that only recognized "person", while the upstream
-// MusicBrainz mapping layer (and internal/artist) treats "solo", "person",
-// and "character" as individual types that carry gender. Without sharing the
-// predicate, a solo artist's gender was silently cleared in applyType or
-// blocked in applyGender depending on field-arrival order.
-func TestApplyFieldGenderPreservedForIndividualTypes(t *testing.T) {
-	for _, typ := range []string{"solo", "person", "character"} {
-		t.Run("gender_first_type="+typ, func(t *testing.T) {
-			result := &FetchResult{Metadata: &ArtistMetadata{URLs: make(map[string]string)}}
-			applyField(result, "gender", &ProviderResult{meta: &ArtistMetadata{Gender: "Female"}}, NameMusicBrainz)
-			applyField(result, "type", &ProviderResult{meta: &ArtistMetadata{Type: typ}}, NameWikidata)
-			if result.Metadata.Gender != "Female" {
-				t.Errorf("Gender = %q, want Female (type %q must preserve gender)", result.Metadata.Gender, typ)
-			}
-			if findSource(result.Sources, "gender") == nil {
-				t.Errorf("gender FieldSource cleared for individual type %q", typ)
-			}
-		})
-		t.Run("type_first_then_gender_type="+typ, func(t *testing.T) {
-			result := &FetchResult{
-				Metadata: &ArtistMetadata{Type: typ, URLs: make(map[string]string)},
-				Sources:  []FieldSource{{Field: "type", Provider: NameMusicBrainz}},
-			}
-			if !applyField(result, "gender", &ProviderResult{meta: &ArtistMetadata{Gender: "Male"}}, NameWikidata) {
-				t.Errorf("applyField(gender) = false for individual type %q, want true", typ)
-			}
-			if result.Metadata.Gender != "Male" {
-				t.Errorf("Gender = %q, want Male (type %q must accept gender)", result.Metadata.Gender, typ)
-			}
-		})
-	}
-}
-
-// TestApplyFieldImageTypeFilter verifies that applyField returns true only
-// when the provider has images of the requested type, not just any images.
-func TestApplyFieldImageTypeFilter(t *testing.T) {
-	result := &FetchResult{
-		Metadata: &ArtistMetadata{URLs: make(map[string]string)},
-	}
-	// Provider has fanart images but no thumb images.
-	pr := &ProviderResult{
-		meta: &ArtistMetadata{Name: "Test"},
-		images: []ImageResult{
-			{URL: "http://example.com/fanart1.jpg", Type: ImageFanart, Source: "test"},
-			{URL: "http://example.com/fanart2.jpg", Type: ImageFanart, Source: "test"},
-		},
-	}
-
-	// applyField for "thumb" should return false because there are no thumb images.
-	if applyField(result, "thumb", pr, NameAudioDB) {
-		t.Error("applyField(thumb) returned true, but provider has no thumb images")
-	}
-	if len(result.Images) != 0 {
-		t.Errorf("expected 0 images after thumb miss, got %d", len(result.Images))
-	}
-
-	// applyField for "fanart" should return true and add both images.
-	if !applyField(result, "fanart", pr, NameAudioDB) {
-		t.Error("applyField(fanart) returned false, but provider has fanart images")
-	}
-	if len(result.Images) != 2 {
-		t.Errorf("expected 2 fanart images, got %d", len(result.Images))
 	}
 }
 
@@ -2083,46 +1938,6 @@ func TestAIMDSearchForLinkingRateLimitSignal(t *testing.T) {
 
 		if aimdSuccessCount(ctrl2, prov) != 1 {
 			t.Fatalf("SearchForLinking: expected 1 RecordSuccess signal, got %d", aimdSuccessCount(ctrl2, prov))
-		}
-	})
-}
-
-// TestApplyTagSliceField_VocabFilter verifies the orchestrator tag-merge path
-// applies the user's vocab exclude filter and count cap (issue #1130). This is
-// the orchestrator half of the dual-path integration: a refresh runs through
-// the scraper-executor, but the orchestrator path must filter identically.
-func TestApplyTagSliceField_VocabFilter(t *testing.T) {
-	t.Run("exclude pattern drops matching tags", func(t *testing.T) {
-		result := &FetchResult{
-			Metadata:         &ArtistMetadata{},
-			MetadataVocabCfg: &tagdict.VocabConfig{Exclude: []string{"junk*"}},
-		}
-		pr := &ProviderResult{meta: &ArtistMetadata{Genres: []string{"Rock", "junk tag", "Pop"}}}
-
-		applyTagSliceField(result, "genres", pr, NameMusicBrainz)
-
-		for _, g := range result.Metadata.Genres {
-			if strings.Contains(strings.ToLower(g), "junk") {
-				t.Fatalf("orchestrator path did not apply the vocab exclude filter: %v", result.Metadata.Genres)
-			}
-		}
-		if len(result.Metadata.Genres) != 2 {
-			t.Fatalf("expected 2 genres after exclude, got %v", result.Metadata.Genres)
-		}
-	})
-
-	t.Run("count cap truncates", func(t *testing.T) {
-		result := &FetchResult{
-			Metadata:         &ArtistMetadata{},
-			MetadataVocabCfg: &tagdict.VocabConfig{MaxGenres: 2},
-		}
-		pr := &ProviderResult{meta: &ArtistMetadata{Genres: []string{"Rock", "Pop", "Jazz", "Blues"}}}
-
-		applyTagSliceField(result, "genres", pr, NameMusicBrainz)
-
-		got := result.Metadata.Genres
-		if len(got) != 2 || got[0] != "Rock" || got[1] != "Pop" {
-			t.Fatalf("count cap should keep exactly the first two genres [Rock Pop], got %v", got)
 		}
 	})
 }

@@ -6,8 +6,8 @@
 // Design summary:
 //   - VocabConfig holds the exclude patterns (shared across all three tag
 //     fields) and the per-field maximum-count caps.
-//   - ApplyVocabFilter is the single shared function called from BOTH the
-//     orchestrator (orchestrator.go) and the scraper-executor (executor.go).
+//   - ApplyVocabFilter is the single shared function called from the
+//     scraper-executor (internal/scraper/executor.go).
 //     It takes an already-resolved *VocabConfig so it stays a pure function.
 //   - WithMetadataVocab / MetadataVocab thread the config through
 //     context.Context from the request handler to the fetch entry points,
@@ -32,7 +32,7 @@ import (
 )
 
 // Field name constants for the three tag fields this package filters. These
-// match the field-name strings used in orchestrator.go and executor.go.
+// match the field-name strings used in internal/scraper/executor.go.
 const (
 	VocabFieldGenres = "genres"
 	VocabFieldStyles = "styles"
@@ -50,9 +50,8 @@ type VocabConfig struct {
 	Exclude []string `json:"exclude"`
 
 	// MaxGenres caps how many genres are written. 0 means unlimited. When the
-	// cap is exceeded the earliest tags in merge order are kept: the
-	// orchestrator merges providers in priority order, and the scraper-executor
-	// takes the first provider that supplies the field, so in both paths the
+	// cap is exceeded the earliest tags are kept: the scraper executor takes
+	// the first provider in priority order that supplies the field, so the
 	// survivors come from the highest-priority source.
 	MaxGenres int `json:"max_genres"`
 
@@ -135,9 +134,9 @@ func wildcardMatch(pattern, s string) bool {
 // already-normalized tags for the given field. A nil cfg returns the input
 // slice unchanged.
 //
-// This function is called from BOTH the orchestrator (applyTagSliceField in
-// orchestrator.go) and the scraper-executor (fieldAppliers in executor.go)
-// after their existing MergeAndDeduplicateLocale call. It runs AFTER
+// This function is called from the scraper-executor (fieldAppliers in
+// internal/scraper/executor.go) after its existing MergeAndDeduplicateLocale
+// call. It runs AFTER
 // deduplication so it always receives normalized, deduplicated input. Each
 // caller resolves the VocabConfig once from the request context (into the
 // FetchResult at construction time) and passes that resolved value here, so
