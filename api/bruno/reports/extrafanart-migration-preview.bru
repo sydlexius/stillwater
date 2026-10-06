@@ -1,0 +1,44 @@
+meta {
+  name: Extrafanart Migration Preview
+  type: http
+  seq: 22
+}
+
+post {
+  url: {{apiBase}}/reports/extrafanart-migration
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "dry_run": true
+  }
+}
+
+docs {
+  Preview of the extrafanart/ migration (#3179); writes nothing. dry_run is sent
+  explicitly although true is the default. dry_run=false is refused with 501 and
+  is deliberately not requested here. Admin-gated in-handler; the CI session is
+  the bootstrap admin. Empty-CI-DB expectation: no artist has a filesystem path,
+  so the status is nothing_to_do with every count zero.
+}
+
+tests {
+  test("preview returns 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("empty library: dry run with nothing to do", function() {
+    expect(res.body.dry_run).to.equal(true);
+    expect(res.body.status).to.equal("nothing_to_do");
+    expect(res.body.planned).to.equal(0);
+    expect(res.body.problems).to.equal(0);
+    expect(res.body.artists_with_files).to.equal(0);
+    expect(res.body.artists).to.deep.equal([]);
+  });
+}

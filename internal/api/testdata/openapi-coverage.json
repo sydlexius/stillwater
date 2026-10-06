@@ -1596,6 +1596,13 @@
     "covered": true
   },
   {
+    "operationId": "runExtraFanartMigration",
+    "method": "POST",
+    "path": "/reports/extrafanart-migration",
+    "handler": "handleExtraFanartMigrationRun",
+    "covered": true
+  },
+  {
     "operationId": "runRule",
     "method": "POST",
     "path": "/rules/{id}/run",
