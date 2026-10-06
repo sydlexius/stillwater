@@ -152,13 +152,13 @@ func TestScrapeAll_RecordsFallbackProviderAsFieldSource(t *testing.T) {
 }
 
 // TestScrapeAll_ClearsGenderForNonIndividualType verifies the post-merge gender
-// normalization. One provider contributes gender and another contributes a
-// group type; the per-provider merge guard only blocks gender when the type is
-// already known, so which provider merges first (Go map iteration, random)
-// decides whether the guard or the final clear removes it. The run is repeated
-// so both orders occur; every order must end with no gender. A person type is
-// the control: gender must survive, proving it really is merged. Covers the
-// behavior of the legacy TestApplyFieldGenderClearedOnNonIndividualType (#3292).
+// normalization deterministically. The gender and type FIELDS are applied in
+// config order and the gender field applier has no type guard, so configuring
+// gender before type puts "Female" on the result and then a group type, and
+// only the final clear in ScrapeAll can remove the gender. (Merging via the
+// per-provider classification pass would instead depend on Go map iteration.)
+// A person type is the control: gender must survive, proving it really was
+// merged. Covers the legacy TestApplyFieldGenderClearedOnNonIndividualType (#3292).
 func TestScrapeAll_ClearsGenderForNonIndividualType(t *testing.T) {
 	cases := []struct {
 		typ        string
@@ -175,44 +175,35 @@ func TestScrapeAll_ClearsGenderForNonIndividualType(t *testing.T) {
 			registry.Register(&mockProvider{
 				name: provider.NameWikipedia,
 				getArtFn: func(context.Context, string) (*provider.ArtistMetadata, error) {
-					return &provider.ArtistMetadata{Biography: longBio, Gender: "Female"}, nil
+					return &provider.ArtistMetadata{Gender: "Female"}, nil
 				},
 			})
 			registry.Register(&mockProvider{
 				name: provider.NameAudioDB,
 				getArtFn: func(context.Context, string) (*provider.ArtistMetadata, error) {
-					return &provider.ArtistMetadata{Genres: []string{"rock"}, Type: tc.typ}, nil
+					return &provider.ArtistMetadata{Type: tc.typ}, nil
 				},
 			})
 			chain := []provider.ProviderName{provider.NameWikipedia, provider.NameAudioDB}
-			for _, f := range []string{"biography", "genres"} {
-				if err := settings.SetPriority(ctx, f, chain); err != nil {
-					t.Fatalf("SetPriority: %v", err)
-				}
-			}
-			// Each provider wins exactly one field so both are "selected" and
-			// both have their classification fields merged.
 			saveFieldsConfig(t, svc, []FieldConfig{
-				{Field: FieldBiography, Primary: provider.NameWikipedia, Enabled: true, Category: CategoryMetadata},
-				{Field: FieldGenres, Primary: provider.NameAudioDB, Enabled: true, Category: CategoryMetadata},
+				{Field: FieldGender, Primary: provider.NameWikipedia, Enabled: true, Category: CategoryMetadata},
+				{Field: FieldType, Primary: provider.NameAudioDB, Enabled: true, Category: CategoryMetadata},
 			}, []FallbackChain{{Category: CategoryMetadata, Providers: chain}})
 
 			exec := NewExecutor(svc, registry, settings, logger, nil)
-			for i := 0; i < 60; i++ {
-				result, err := exec.ScrapeAll(ctx, "mbid-x", "Artist", ScopeGlobal, nil)
-				if err != nil {
-					t.Fatalf("ScrapeAll: %v", err)
-				}
-				// Preconditions: both providers won a field and Type was merged.
-				if sourceFor(result, "biography") != provider.NameWikipedia || sourceFor(result, "genres") != provider.NameAudioDB {
-					t.Fatalf("precondition: both providers must win a field, sources = %v", result.Sources)
-				}
-				if result.Metadata.Type != tc.typ {
-					t.Fatalf("precondition: Type = %q, want %q", result.Metadata.Type, tc.typ)
-				}
-				if result.Metadata.Gender != tc.wantGender {
-					t.Fatalf("run %d: type %q: Gender = %q, want %q", i, tc.typ, result.Metadata.Gender, tc.wantGender)
-				}
+			result, err := exec.ScrapeAll(ctx, "mbid-x", "Artist", ScopeGlobal, nil)
+			if err != nil {
+				t.Fatalf("ScrapeAll: %v", err)
+			}
+			// Preconditions: both fields were populated, gender first.
+			if got := result.PopulatedFields; len(got) != 2 || got[0] != "gender" || got[1] != "type" {
+				t.Fatalf("precondition: PopulatedFields = %v, want [gender type]", got)
+			}
+			if result.Metadata.Type != tc.typ {
+				t.Fatalf("precondition: Type = %q, want %q", result.Metadata.Type, tc.typ)
+			}
+			if result.Metadata.Gender != tc.wantGender {
+				t.Errorf("type %q: Gender = %q, want %q", tc.typ, result.Metadata.Gender, tc.wantGender)
 			}
 		})
 	}
