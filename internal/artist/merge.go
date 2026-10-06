@@ -767,6 +767,11 @@ func applyTypeConsistency(a *Artist, locked map[string]struct{}, filterDates boo
 	if isLocked(locked, "gender") {
 		a.Gender = beforeGender
 	}
+	// A cleared gender has no provider behind it; drop the stored provenance
+	// too. Like the clear itself this does not set changed (see above).
+	if beforeGender != "" && a.Gender == "" {
+		delete(a.MetadataSources, "gender")
+	}
 
 	if !filterDates {
 		return
