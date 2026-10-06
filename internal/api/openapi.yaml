@@ -41,15 +41,29 @@ components:
           type: boolean
         status:
           type: string
-          enum: [nothing_to_do, planned, blocked, failed, running]
+          enum: [nothing_to_do, nothing_checked, planned, blocked, failed, running]
+          description: >-
+            `nothing_checked` means there was nothing to do among the artists
+            examined, but some were skipped as missing (see
+            artists_skipped_missing), so the library was not fully checked.
         artists_scanned:
           type: integer
+          description: Artists with a filesystem path that were examined, including skipped ones.
+        artists_skipped_missing:
+          type: integer
+          description: >-
+            Artists skipped because their folder was not found (an unmounted
+            share or a stale record). Not a problem, but reported so an
+            unreachable library is never mistaken for a migrated one.
         artists_with_files:
           type: integer
+          description: Artists that have files in an extrafanart folder, or whose plan failed.
         planned:
           type: integer
+          description: Files that would move.
         skipped_identical:
           type: integer
+          description: Files byte-identical to an image already in the artist folder; left in place.
         problems:
           type: integer
           description: Blocked files plus planning errors.
@@ -83,6 +97,7 @@ components:
                       enum: [identical_copy, not_moved_safely]
         error:
           type: string
+          description: A fixed, generic message. Present on 409, 500 and 501.
     PlatformBackdropPruneRequest:
       type: object
       description: >-

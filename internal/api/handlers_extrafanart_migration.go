@@ -16,9 +16,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"mime"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -70,15 +72,21 @@ type extraFanartArtistResult struct {
 // defect PR #3169 shipped, issue #3179 trap 2).
 type extraFanartRunResult struct {
 	DryRun bool `json:"dry_run"`
-	// Status: nothing_to_do | planned | blocked | failed (the run stopped early) | running.
-	Status           string                    `json:"status"`
-	ArtistsScanned   int                       `json:"artists_scanned"`
-	ArtistsWithFiles int                       `json:"artists_with_files"`
-	Planned          int                       `json:"planned"` // files a dry run would move
-	SkippedIdentical int                       `json:"skipped_identical"`
-	Problems         int                       `json:"problems"` // blocked files and planning errors
-	Artists          []extraFanartArtistResult `json:"artists"`
-	Error            string                    `json:"error,omitempty"`
+	// Status: nothing_to_do | nothing_checked (nothing to do, but some artists were
+	// skipped as missing, so not everything was examined) | planned | blocked |
+	// failed (the run stopped early) | running.
+	Status         string `json:"status"`
+	ArtistsScanned int    `json:"artists_scanned"`
+	// ArtistsSkippedMissing counts artists whose folder was not found (an
+	// unmounted share, a stale row). Not a problem, but never invisible: the
+	// response reports it, so an unreachable library cannot read as migrated.
+	ArtistsSkippedMissing int                       `json:"artists_skipped_missing"`
+	ArtistsWithFiles      int                       `json:"artists_with_files"`
+	Planned               int                       `json:"planned"` // files a dry run would move
+	SkippedIdentical      int                       `json:"skipped_identical"`
+	Problems              int                       `json:"problems"` // blocked files and planning errors
+	Artists               []extraFanartArtistResult `json:"artists"`
+	Error                 string                    `json:"error,omitempty"`
 
 	// aborted is set when the run stopped early (a lookup failed or the context
 	// ended) rather than finishing. Not part of the body; it only steers Status.
@@ -97,6 +105,10 @@ func (res *extraFanartRunResult) finish() {
 		res.Status = "planned"
 	case res.DryRun && res.Problems > 0:
 		res.Status = "blocked"
+	case res.DryRun && res.ArtistsSkippedMissing > 0:
+		// Nothing to do among the artists that WERE examined, but some were not:
+		// an unmounted library must not read as a verified-empty one.
+		res.Status = "nothing_checked"
 	case moves == 0:
 		res.Status = "nothing_to_do"
 	}
@@ -187,11 +199,32 @@ func (r *Router) extraFanartConvention(ctx context.Context) (names []string, kod
 	return names, kodi, err
 }
 
+// artistFolderMissing reports whether a planning error just means the artist's
+// own folder is gone (an unmounted share, a stale row). Such an artist has
+// nothing to migrate, and counting it would make every run report a problem
+// forever and never reach "nothing to do". The Stat is what separates that from
+// an unreadable extrafanart/ inside a folder that EXISTS, which stays a real
+// problem, as do permission errors and everything else. os.Stat follows
+// symlinks, so an artist path that is a dangling link counts as missing.
+func artistFolderMissing(planErr error, artistPath string) bool {
+	if !errors.Is(planErr, fs.ErrNotExist) {
+		return false
+	}
+	_, err := os.Stat(artistPath)
+	return errors.Is(err, fs.ErrNotExist)
+}
+
 // migrateOneArtist plans one artist, folding the outcome into res. Only the
 // preview path exists in this version; dryRun is kept for the live run. A failure is recorded and the run continues.
 func (r *Router) migrateOneArtist(ctx context.Context, a *artist.Artist, names []string, kodi, dryRun bool, res *extraFanartRunResult) {
 	plan, err := img.PlanExtraFanartMigration(ctx, a.Path, names, kodi)
 	if err != nil {
+		if artistFolderMissing(err, a.Path) {
+			r.logger.Info("extrafanart migration: artist folder does not exist; skipping",
+				slog.String("artist_id", a.ID), slog.String("artist", a.Name))
+			res.ArtistsSkippedMissing++
+			return
+		}
 		r.logger.Warn("extrafanart migration: planning failed", slog.String("artist_id", a.ID),
 			slog.String("artist", a.Name), slog.String("error", err.Error()))
 		res.ArtistsWithFiles++
