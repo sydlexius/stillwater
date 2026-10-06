@@ -32,6 +32,7 @@ import {
   fixtureConnectionIDs,
   deleteFixtureConnections,
 } from './helpers/seed-platform-backdrop-duplicates.js';
+import { apiFetch } from './helpers/api.js';
 
 // Deliberately NOT the seeder's own FIXTURE_CONNECTION_NAME: this spec and
 // platform-backdrop-perceptual.spec.js run against the same server, and a
@@ -119,4 +120,37 @@ test('teardown removes the connection, not just the loopback listener', async ({
     await fixtureConnectionIDs(request, NAME),
     'the connection survived teardown -- closing the fake server does not remove the DB row',
   ).toHaveLength(0);
+});
+
+test('fake emby serves an empty library list so conflict checks succeed (#3427)', async () => {
+  const fake = await startFakeEmby();
+  try {
+    const resp = await fetch(`http://127.0.0.1:${fake.port}/Library/VirtualFolders`);
+    expect(resp.status).toBe(200);
+    expect(await resp.json()).toEqual([]);
+  } finally {
+    await fake.close();
+  }
+});
+
+// The acceptance proof for #3427: the fixture connection must never make the
+// conflict ledger fail closed. Asserted by NAME only, since other rows in the
+// shared database may be debris from elsewhere.
+test('the fixture connection reports clean conflict checks, never a blocking check_err (#3427)', async ({ request }) => {
+  await deleteFixtureConnections(request, NAME);
+  const fake = await startFakeEmby();
+  try {
+    await ensureConnection(request, fake.port, NAME);
+    // refresh=1 invalidates the cache, so this is a live re-query of the fake.
+    const resp = await apiFetch(request, 'GET', '/api/v1/conflicts?refresh=1');
+    expect(resp.ok(), `GET /conflicts failed: ${resp.status()}`).toBe(true);
+    const row = (await resp.json()).connections.find(c => c.connection_name === NAME);
+    expect(row, 'the fixture connection is absent from the ledger, so nothing below was measured').toBeTruthy();
+    expect(row.check_err || '', 'a failed check fails closed and blocks writes ledger-wide').toBe('');
+    expect(row.nfo_writeback).toBe(false);
+    expect(row.image_writeback).toBe(false);
+  } finally {
+    await fake.close();
+    await deleteFixtureConnections(request, NAME);
+  }
 });

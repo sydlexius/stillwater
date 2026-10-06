@@ -103,6 +103,14 @@ export function startFakeEmby() {
       res.end(JSON.stringify([{ Id: 'fake-user-id', Name: 'fake' }]));
       return;
     }
+    // An empty library list makes the conflict detector's nfo, image and
+    // paths checks all SUCCEED with nothing found (#3427). A 404 here made
+    // every check error, which fails closed and blocks writes ledger-wide.
+    if (u.pathname === '/Library/VirtualFolders') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('[]');
+      return;
+    }
     // Every artist-detail lookup (/Users/{uid}/Items/{id}) is definitively
     // absent, so backdropRedundantIndices wraps errArtistAbsentOnPlatform.
     res.writeHead(404, { 'Content-Type': 'application/json' }).end('{}');

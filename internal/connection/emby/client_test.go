@@ -2119,3 +2119,32 @@ func containsString(haystack []string, needle string) bool {
 	}
 	return false
 }
+
+// TestFixtureEmptyLibraryList_ChecksSucceed pins the response the a11y
+// harness's fake Emby serves for GET /Library/VirtualFolders
+// (tests/a11y/helpers/seed-platform-backdrop-duplicates.js, startFakeEmby):
+// an empty JSON array. It must make the NFO and image checks succeed with
+// nothing found, so the conflict ledger never blocks writes (#3427).
+// It does not prove the full gate stays open over a long run.
+func TestFixtureEmptyLibraryList_ChecksSucceed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/Library/VirtualFolders" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`)) // keep in sync with the JS fixture
+	}))
+	defer srv.Close()
+	c := NewWithHTTPClient(srv.URL, "k", "", srv.Client(), testLogger())
+	ctx := context.Background()
+	if on, _, err := c.CheckNFOWriterEnabled(ctx); err != nil || on {
+		t.Fatalf("nfo: on=%v err=%v, want false/nil", on, err)
+	}
+	if on, _, err := c.CheckImageSaverEnabled(ctx); err != nil || on {
+		t.Fatalf("image: on=%v err=%v, want false/nil", on, err)
+	}
+	if libs, err := c.GetMusicLibraries(ctx); err != nil || len(libs) != 0 {
+		t.Fatalf("paths source: libs=%d err=%v, want 0/nil", len(libs), err)
+	}
+}
