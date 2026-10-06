@@ -19,6 +19,8 @@ type bioOverwritingFixer struct {
 	ruleID   string
 	newBio   string
 	fixCalls int
+	// omitRuleID leaves fr.RuleID empty, as a fixer is allowed to.
+	omitRuleID bool
 }
 
 func (f *bioOverwritingFixer) CanFix(v *Violation) bool { return v.RuleID == f.ruleID }
@@ -26,6 +28,9 @@ func (f *bioOverwritingFixer) CanFix(v *Violation) bool { return v.RuleID == f.r
 func (f *bioOverwritingFixer) Fix(_ context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
 	f.fixCalls++
 	a.Biography = f.newBio
+	if f.omitRuleID {
+		return &FixResult{Fixed: true, Message: "overwrote biography"}, nil
+	}
 	return &FixResult{RuleID: v.RuleID, Fixed: true, Message: "overwrote biography"}, nil
 }
 
@@ -256,7 +261,9 @@ func TestRunPath_StampsRuleSource(t *testing.T) {
 		t.Fatalf("MarkDirty: %v", err)
 	}
 
-	fixer := &bioOverwritingFixer{ruleID: RuleBioExists, newBio: "a rule wrote this longer biography"}
+	// fr.RuleID left empty: every row must still name the VIOLATION's rule,
+	// never a bare "rule:" (#3078).
+	fixer := &bioOverwritingFixer{ruleID: RuleBioExists, newBio: "a rule wrote this longer biography", omitRuleID: true}
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
 	// Wired so grantFixCredits' recordRuleFixHistory writes its "rule_fix" row.

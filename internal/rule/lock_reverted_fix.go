@@ -243,7 +243,7 @@ func (p *Pipeline) grantFixCredits(ctx context.Context, a *artist.Artist, acc *r
 		// row. Deferred to here from processAutoFixViolation so a reverted fix
 		// never emits either. recordRuleFixHistory warn-logs on failure and never
 		// fails the surrounding flow.
-		p.recordRuleFixHistory(ctx, a.ID, c.fr)
+		p.recordRuleFixHistory(ctx, a.ID, c.ruleID, c.fr)
 	}
 }
 

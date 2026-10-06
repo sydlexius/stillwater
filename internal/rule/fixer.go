@@ -472,17 +472,20 @@ func (p *Pipeline) getArtistWorkers() int {
 // Errors are warn-logged and never propagated: the history entry is
 // supplementary audit data and must not fail the actual fix.
 //
+// ruleID is the VIOLATION's rule id (pendingFixCredit.ruleID), never
+// fr.RuleID, which a fixer can leave empty and would record a bare "rule:".
+//
 // Issue #1106.
-func (p *Pipeline) recordRuleFixHistory(ctx context.Context, artistID string, fr *FixResult) {
+func (p *Pipeline) recordRuleFixHistory(ctx context.Context, artistID, ruleID string, fr *FixResult) {
 	if fr == nil || !fr.Fixed {
 		return
 	}
 	// History entry (best-effort audit trail). Guarded INDEPENDENTLY of the live
 	// push below so a missing history service does not also suppress the rail row.
 	if h := p.getHistoryService(); h != nil {
-		if err := recordRuleHistory(ctx, h, artistID, "rule_fix", "", fr.Message, ruleHistorySource(fr.RuleID)); err != nil {
+		if err := recordRuleHistory(ctx, h, artistID, "rule_fix", "", fr.Message, ruleHistorySource(ruleID)); err != nil {
 			p.logger.Warn("recording rule auto-fix history",
-				"rule_id", fr.RuleID, "artist_id", artistID, "error", err)
+				"rule_id", ruleID, "artist_id", artistID, "error", err)
 		}
 	}
 	// Push a live activity row so the next/ dashboard rail reflects the fix

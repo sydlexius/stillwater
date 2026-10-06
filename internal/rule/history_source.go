@@ -37,8 +37,9 @@ import (
 // The inert sites are untested BY CONSTRUCTION: producing no history row, they
 // give a test nothing to assert a source against, so the green suite is not
 // evidence that their tags are correct. Only the sites that do produce a row
-// (FixViolation, the run paths, and the bulk fetch-metadata write) are guarded
-// by tests in history_source_test.go.
+// (FixViolation, the run paths, the bulk fetch-metadata write, and the explicit
+// rule_fix and bulk-MBID records) are guarded by tests, in history_source_test.go
+// and bulk_executor_mbid_gate_test.go.
 //
 // The "rule:" prefix is load-bearing twice over. artist.HistoryService.Record
 // validates its source against an exact allow-list plus the "provider:" and
