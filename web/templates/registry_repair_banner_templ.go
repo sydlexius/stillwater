@@ -46,27 +46,27 @@ func RegistryRepairBanner() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"sw-registry-repair-banner\" class=\"hidden bg-gradient-to-r from-amber-900/60 to-yellow-700/50 dark:from-amber-900/60 dark:to-yellow-700/50 backdrop-blur-md border-b border-amber-300/30 px-6 py-3\" role=\"status\" aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"sw-registry-repair-live\" role=\"status\" class=\"sr-only\" aria-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "banner.registry_repair.aria_label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/registry_repair_banner.templ`, Line: 25, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/registry_repair_banner.templ`, Line: 25, Col: 121}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" data-count-one=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\"></div><div id=\"sw-registry-repair-banner\" role=\"region\" aria-labelledby=\"sw-registry-repair-title\" class=\"hidden bg-gradient-to-r from-amber-900/60 to-yellow-700/50 dark:from-amber-900/60 dark:to-yellow-700/50 backdrop-blur-md border-b border-amber-300/30 px-6 py-3\" data-count-one=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "banner.registry_repair.body.one"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/registry_repair_banner.templ`, Line: 26, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/registry_repair_banner.templ`, Line: 31, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
@@ -79,7 +79,7 @@ func RegistryRepairBanner() templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "banner.registry_repair.body.other"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/registry_repair_banner.templ`, Line: 27, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/registry_repair_banner.templ`, Line: 32, Col: 64}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 		if templ_7745c5c3_Err != nil {
@@ -92,20 +92,20 @@ func RegistryRepairBanner() templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "banner.registry_repair.checked"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/registry_repair_banner.templ`, Line: 28, Col: 66}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/registry_repair_banner.templ`, Line: 33, Col: 66}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"><div class=\"max-w-6xl mx-auto flex flex-wrap items-center gap-4\"><div class=\"flex items-center gap-3 min-w-0 flex-1\"><span class=\"inline-block h-2 w-2 rounded-full bg-amber-400 ring-4 ring-amber-400/20 shrink-0\" aria-hidden=\"true\"></span><div class=\"min-w-0\"><div class=\"font-semibold text-amber-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"><div class=\"max-w-6xl mx-auto flex flex-wrap items-center gap-4\"><div class=\"flex items-center gap-3 min-w-0 flex-1\"><span class=\"inline-block h-2 w-2 rounded-full bg-amber-400 ring-4 ring-amber-400/20 shrink-0\" aria-hidden=\"true\"></span><div class=\"min-w-0\"><div id=\"sw-registry-repair-title\" class=\"font-semibold text-amber-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "banner.registry_repair.title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/registry_repair_banner.templ`, Line: 35, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/registry_repair_banner.templ`, Line: 40, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -118,7 +118,7 @@ func RegistryRepairBanner() templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.learn_more"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/registry_repair_banner.templ`, Line: 44, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/registry_repair_banner.templ`, Line: 49, Col: 35}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -131,13 +131,13 @@ func RegistryRepairBanner() templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "banner.registry_repair.dismiss_aria"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/registry_repair_banner.templ`, Line: 52, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/registry_repair_banner.templ`, Line: 57, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M6 18L18 6M6 6l12 12\"></path></svg></button></div></div><script>\n\t\t\t(function () {\n\t\t\t\tvar DISMISS_KEY = 'sw_registry_repair_dismissed';\n\t\t\t\tvar el = document.getElementById('sw-registry-repair-banner');\n\t\t\t\tif (!el) return;\n\t\t\t\ttry {\n\t\t\t\t\tif (sessionStorage.getItem(DISMISS_KEY) === '1') { el.remove(); return; }\n\t\t\t\t} catch (e) { /* storage blocked: fall through and show per session */ }\n\n\t\t\t\tdocument.getElementById('sw-registry-repair-dismiss').addEventListener('click', function () {\n\t\t\t\t\ttry { sessionStorage.setItem(DISMISS_KEY, '1'); } catch (e) { console.error('registry repair banner: cannot persist dismissal', e); }\n\t\t\t\t\t// Move focus to the skip-link target BEFORE removing the focused\n\t\t\t\t\t// button, or focus drops to <body> and a keyboard user loses place.\n\t\t\t\t\tvar main = document.getElementById('sw-main');\n\t\t\t\t\tif (main) main.focus();\n\t\t\t\t\tel.remove();\n\t\t\t\t});\n\n\t\t\t\tvar meta = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\tvar base = meta ? meta.content : '';\n\t\t\t\tfetch(base + '/api/v1/reports/registry-repair/banner', {\n\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\theaders: { Accept: 'application/json' }\n\t\t\t\t}).then(function (resp) {\n\t\t\t\t\tif (!resp.ok) throw new Error('banner endpoint answered HTTP ' + resp.status);\n\t\t\t\t\treturn resp.json();\n\t\t\t\t}).then(function (d) {\n\t\t\t\t\t// Dismissed while the request was in flight: nothing to fill.\n\t\t\t\t\tif (!el.isConnected) return;\n\t\t\t\t\tif (!d || d.ok !== true) {\n\t\t\t\t\t\t// Expected for ~2 minutes after boot (never checked), so not an error.\n\t\t\t\t\t\tconsole.info('registry repair banner: detector has no usable result (never checked, or the last check failed)');\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tif (d.needs_repair !== true || !(d.count > 0)) return;\n\t\t\t\t\tvar tpl = d.count === 1 ? el.dataset.countOne : el.dataset.countOther;\n\t\t\t\t\tdocument.getElementById('sw-registry-repair-count').textContent = '-- ' + tpl.replace('{count}', String(d.count));\n\t\t\t\t\tvar when = new Date(d.checked_at);\n\t\t\t\t\tif (!isNaN(when.getTime())) {\n\t\t\t\t\t\tdocument.getElementById('sw-registry-repair-checked').textContent =\n\t\t\t\t\t\t\tel.dataset.checkedTemplate.replace('{time}', when.toLocaleString());\n\t\t\t\t\t}\n\t\t\t\t\tel.classList.remove('hidden');\n\t\t\t\t}).catch(function (err) {\n\t\t\t\t\tconsole.error('registry repair banner: check failed', err);\n\t\t\t\t});\n\t\t\t})();\n\t\t</script></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M6 18L18 6M6 6l12 12\"></path></svg></button></div></div><script>\n\t\t\t(function () {\n\t\t\t\tvar DISMISS_KEY = 'sw_registry_repair_dismissed';\n\t\t\t\tvar el = document.getElementById('sw-registry-repair-banner');\n\t\t\t\tif (!el) return;\n\t\t\t\ttry {\n\t\t\t\t\tif (sessionStorage.getItem(DISMISS_KEY) === '1') { el.remove(); return; }\n\t\t\t\t} catch (e) { /* storage blocked: fall through and show per session */ }\n\n\t\t\t\tdocument.getElementById('sw-registry-repair-dismiss').addEventListener('click', function () {\n\t\t\t\t\ttry { sessionStorage.setItem(DISMISS_KEY, '1'); } catch (e) { console.error('registry repair banner: cannot persist dismissal', e); }\n\t\t\t\t\t// Move focus to the skip-link target BEFORE removing the focused\n\t\t\t\t\t// button, or focus drops to <body> and a keyboard user loses place.\n\t\t\t\t\tvar main = document.getElementById('sw-main');\n\t\t\t\t\tif (main) main.focus();\n\t\t\t\t\tclearTimeout(retryTimer);\n\t\t\t\t\tel.remove();\n\t\t\t\t});\n\n\t\t\t\tvar meta = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\tvar base = meta ? meta.content : '';\n\t\t\t\t// Unusable answers (detector has not finished its first check, or the\n\t\t\t\t// call failed) are retried a bounded number of times while the page\n\t\t\t\t// stays open: 5s, 15s, 45s after the previous attempt, then give up.\n\t\t\t\tvar RETRY_DELAYS_MS = [5000, 15000, 45000];\n\t\t\t\tvar retryTimer = null;\n\t\t\t\tvar attempt = 0;\n\t\t\t\tfunction retryLater() {\n\t\t\t\t\tif (attempt >= RETRY_DELAYS_MS.length) return;\n\t\t\t\t\tretryTimer = setTimeout(check, RETRY_DELAYS_MS[attempt++]);\n\t\t\t\t}\n\t\t\t\tfunction check() {\n\t\t\t\t\tif (!el.isConnected) return;\n\t\t\t\t\tfetch(base + '/api/v1/reports/registry-repair/banner', {\n\t\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\t\theaders: { Accept: 'application/json' }\n\t\t\t\t\t}).then(function (resp) {\n\t\t\t\t\t\tif (!resp.ok) throw new Error('banner endpoint answered HTTP ' + resp.status);\n\t\t\t\t\t\treturn resp.json();\n\t\t\t\t\t}).then(function (d) {\n\t\t\t\t\t\t// Dismissed while the request was in flight: nothing to fill.\n\t\t\t\t\t\tif (!el.isConnected) return;\n\t\t\t\t\t\tif (!d || d.ok !== true) {\n\t\t\t\t\t\t\t// Expected for ~2 minutes after boot (never checked), so not an error.\n\t\t\t\t\t\t\tconsole.info('registry repair banner: detector has no usable result (never checked, or the last check failed)');\n\t\t\t\t\t\t\tretryLater();\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (d.needs_repair !== true || !(d.count > 0)) return;\n\t\t\t\t\t\tvar tpl = d.count === 1 ? el.dataset.countOne : el.dataset.countOther;\n\t\t\t\t\t\tdocument.getElementById('sw-registry-repair-count').textContent = '-- ' + tpl.replace('{count}', String(d.count));\n\t\t\t\t\t\tvar when = new Date(d.checked_at);\n\t\t\t\t\t\tif (!isNaN(when.getTime())) {\n\t\t\t\t\t\t\tdocument.getElementById('sw-registry-repair-checked').textContent =\n\t\t\t\t\t\t\t\tel.dataset.checkedTemplate.replace('{time}', when.toLocaleString());\n\t\t\t\t\t\t}\n\t\t\t\t\t\tel.classList.remove('hidden');\n\t\t\t\t\t\t// Announce via the separate always-exposed live region.\n\t\t\t\t\t\tdocument.getElementById('sw-registry-repair-live').textContent =\n\t\t\t\t\t\t\tel.querySelector('.font-semibold').textContent.replace(/\\s+/g, ' ').trim() + ' ' +\n\t\t\t\t\t\t\tdocument.getElementById('sw-registry-repair-checked').textContent;\n\t\t\t\t\t}).catch(function (err) {\n\t\t\t\t\t\tconsole.error('registry repair banner: check failed', err);\n\t\t\t\t\t\tretryLater();\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t\tcheck();\n\t\t\t})();\n\t\t</script></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

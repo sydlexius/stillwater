@@ -40,7 +40,7 @@ func TestRegistryRepairBanner_ReadOnlyAndHiddenByDefault(t *testing.T) {
 	}
 	html := buf.String()
 	for _, want := range []string{
-		`class="hidden `, `role="status"`, `how-to/repair-image-registry/#background-check`,
+		`class="hidden `, `id="sw-registry-repair-live" role="status" class="sr-only"`, `how-to/repair-image-registry/#background-check`,
 		`id="sw-registry-repair-dismiss"`, `data-count-other="{count} registry rows`,
 	} {
 		if !strings.Contains(html, want) {

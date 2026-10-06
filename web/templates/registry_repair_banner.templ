@@ -18,11 +18,16 @@ package templates
 // SLICE 2 EXTENSION POINT: the run/preview flow adds its button inside the
 // "actions" container below. Slice 1 deliberately renders no repair control.
 templ RegistryRepairBanner() {
+	// Always-exposed (visually hidden, never display:none) live region. It starts
+	// empty and is filled when the banner appears, so assistive tech announces the
+	// change; the visible banner below carries no role of its own, so the message
+	// is not announced twice.
+	<div id="sw-registry-repair-live" role="status" class="sr-only" aria-label={ t(ctx, "banner.registry_repair.aria_label") }></div>
 	<div
 		id="sw-registry-repair-banner"
+		role="region"
+		aria-labelledby="sw-registry-repair-title"
 		class="hidden bg-gradient-to-r from-amber-900/60 to-yellow-700/50 dark:from-amber-900/60 dark:to-yellow-700/50 backdrop-blur-md border-b border-amber-300/30 px-6 py-3"
-		role="status"
-		aria-label={ t(ctx, "banner.registry_repair.aria_label") }
 		data-count-one={ t(ctx, "banner.registry_repair.body.one") }
 		data-count-other={ t(ctx, "banner.registry_repair.body.other") }
 		data-checked-template={ t(ctx, "banner.registry_repair.checked") }
@@ -31,7 +36,7 @@ templ RegistryRepairBanner() {
 			<div class="flex items-center gap-3 min-w-0 flex-1">
 				<span class="inline-block h-2 w-2 rounded-full bg-amber-400 ring-4 ring-amber-400/20 shrink-0" aria-hidden="true"></span>
 				<div class="min-w-0">
-					<div class="font-semibold text-amber-100">
+					<div id="sw-registry-repair-title" class="font-semibold text-amber-100">
 						{ t(ctx, "banner.registry_repair.title") }
 						<span id="sw-registry-repair-count" class="font-normal text-amber-100"></span>
 					</div>
@@ -72,37 +77,58 @@ templ RegistryRepairBanner() {
 					// button, or focus drops to <body> and a keyboard user loses place.
 					var main = document.getElementById('sw-main');
 					if (main) main.focus();
+					clearTimeout(retryTimer);
 					el.remove();
 				});
 
 				var meta = document.querySelector('meta[name="htmx-base-path"]');
 				var base = meta ? meta.content : '';
-				fetch(base + '/api/v1/reports/registry-repair/banner', {
-					credentials: 'same-origin',
-					headers: { Accept: 'application/json' }
-				}).then(function (resp) {
-					if (!resp.ok) throw new Error('banner endpoint answered HTTP ' + resp.status);
-					return resp.json();
-				}).then(function (d) {
-					// Dismissed while the request was in flight: nothing to fill.
+				// Unusable answers (detector has not finished its first check, or the
+				// call failed) are retried a bounded number of times while the page
+				// stays open: 5s, 15s, 45s after the previous attempt, then give up.
+				var RETRY_DELAYS_MS = [5000, 15000, 45000];
+				var retryTimer = null;
+				var attempt = 0;
+				function retryLater() {
+					if (attempt >= RETRY_DELAYS_MS.length) return;
+					retryTimer = setTimeout(check, RETRY_DELAYS_MS[attempt++]);
+				}
+				function check() {
 					if (!el.isConnected) return;
-					if (!d || d.ok !== true) {
-						// Expected for ~2 minutes after boot (never checked), so not an error.
-						console.info('registry repair banner: detector has no usable result (never checked, or the last check failed)');
-						return;
-					}
-					if (d.needs_repair !== true || !(d.count > 0)) return;
-					var tpl = d.count === 1 ? el.dataset.countOne : el.dataset.countOther;
-					document.getElementById('sw-registry-repair-count').textContent = '-- ' + tpl.replace('{count}', String(d.count));
-					var when = new Date(d.checked_at);
-					if (!isNaN(when.getTime())) {
-						document.getElementById('sw-registry-repair-checked').textContent =
-							el.dataset.checkedTemplate.replace('{time}', when.toLocaleString());
-					}
-					el.classList.remove('hidden');
-				}).catch(function (err) {
-					console.error('registry repair banner: check failed', err);
-				});
+					fetch(base + '/api/v1/reports/registry-repair/banner', {
+						credentials: 'same-origin',
+						headers: { Accept: 'application/json' }
+					}).then(function (resp) {
+						if (!resp.ok) throw new Error('banner endpoint answered HTTP ' + resp.status);
+						return resp.json();
+					}).then(function (d) {
+						// Dismissed while the request was in flight: nothing to fill.
+						if (!el.isConnected) return;
+						if (!d || d.ok !== true) {
+							// Expected for ~2 minutes after boot (never checked), so not an error.
+							console.info('registry repair banner: detector has no usable result (never checked, or the last check failed)');
+							retryLater();
+							return;
+						}
+						if (d.needs_repair !== true || !(d.count > 0)) return;
+						var tpl = d.count === 1 ? el.dataset.countOne : el.dataset.countOther;
+						document.getElementById('sw-registry-repair-count').textContent = '-- ' + tpl.replace('{count}', String(d.count));
+						var when = new Date(d.checked_at);
+						if (!isNaN(when.getTime())) {
+							document.getElementById('sw-registry-repair-checked').textContent =
+								el.dataset.checkedTemplate.replace('{time}', when.toLocaleString());
+						}
+						el.classList.remove('hidden');
+						// Announce via the separate always-exposed live region.
+						document.getElementById('sw-registry-repair-live').textContent =
+							el.querySelector('.font-semibold').textContent.replace(/\s+/g, ' ').trim() + ' ' +
+							document.getElementById('sw-registry-repair-checked').textContent;
+					}).catch(function (err) {
+						console.error('registry repair banner: check failed', err);
+						retryLater();
+					});
+				}
+				check();
 			})();
 		</script>
 	</div>

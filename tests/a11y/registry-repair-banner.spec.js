@@ -141,10 +141,12 @@ test('dismissal holds across navigation in the session and resets in a new sessi
   await page.locator('#sw-registry-repair-dismiss').click();
   await expect(page.locator(BANNER)).toHaveCount(0);
 
+  // Registered BEFORE goto so it can actually observe the banner fetch.
+  const bannerCalls = [];
+  page.on('request', (r) => { if (r.url().includes(API)) bannerCalls.push(r.url()); });
   await page.goto(`${server.baseURL}/artists`);
-  const bannerCall = page.waitForResponse((r) => r.url().includes(API), { timeout: 3_000 }).catch(() => null);
-  await page.waitForLoadState('load');
-  expect(await bannerCall, 'a dismissed session must not even ask the endpoint again').toBeNull();
+  await page.waitForLoadState('networkidle');
+  expect(bannerCalls, 'a dismissed session must not even ask the endpoint again').toEqual([]);
   await expect(page.locator(BANNER)).toHaveCount(0);
   await context.close();
 
@@ -241,11 +243,34 @@ test('dismiss target is at least 24x24 and focus moves to #sw-main', async ({ br
   await context.close();
 });
 
-test('banner uses role=status, not alert', async ({ browser }) => {
+test('announcement uses a separate role=status live region; the banner is a non-live region', async ({ browser }) => {
   const { context, page } = await openAs(browser, server.sessionCookie);
   await page.goto(`${server.baseURL}/`);
   await expect(page.locator(BANNER)).toBeVisible();
-  await expect(page.locator(BANNER)).toHaveAttribute('role', 'status');
+  await expect(page.locator(BANNER)).toHaveAttribute('role', 'region');
+  const live = page.locator('#sw-registry-repair-live');
+  await expect(live).toHaveAttribute('role', 'status');
+  await expect(live).toContainText('Image registry may need repair');
+  expect(await live.evaluate((e) => getComputedStyle(e).display), 'live region must not be display:none').not.toBe('none');
+  await context.close();
+});
+
+test('an unusable first answer is retried and the banner appears without a reload', async ({ browser }) => {
+  const { context, page } = await openAs(browser, server.sessionCookie);
+  let calls = 0;
+  await page.clock.install();
+  await page.route(`**${API}`, (route) => {
+    calls += 1;
+    return route.fulfill({ json: calls === 1
+      ? { ok: false, needs_repair: false, count: 0 }
+      : { ok: true, needs_repair: true, count: 2, checked_at: new Date().toISOString() } });
+  });
+  await page.goto(`${server.baseURL}/`);
+  await expect.poll(() => calls).toBe(1);
+  await expect(page.locator(BANNER)).toBeHidden();
+  await page.clock.runFor(6_000);
+  await expect(page.locator(BANNER)).toBeVisible();
+  await expect(page.locator('#sw-registry-repair-live')).toContainText('2 registry rows');
   await context.close();
 });
 
