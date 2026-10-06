@@ -367,8 +367,7 @@ func (s bioReturningScrapeAll) ScrapeAll(_ context.Context, _, _, _ string, _ ma
 func TestBulkFetchMetadata_StampsBulkSource(t *testing.T) {
 	artistSvc, historySvc, a, _, ctx := attributionFixture(t, "")
 
-	orch := provider.NewOrchestrator(nil, nil, testLogger(), nil)
-	orch.SetExecutor(bioReturningScrapeAll{bio: "a bulk job wrote this"})
+	orch := provider.NewOrchestrator(nil, nil, testLogger(), nil, bioReturningScrapeAll{bio: "a bulk job wrote this"})
 	e := &BulkExecutor{artistService: artistSvc, orchestrator: orch, logger: testLogger()}
 
 	status, msg := e.fetchMetadata(ctx, a, BulkModeYOLO)

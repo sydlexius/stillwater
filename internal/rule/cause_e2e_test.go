@@ -80,15 +80,13 @@ func newCauseFixture(t *testing.T) *causeFixture {
 	registry.Register(causeNotFoundProvider{})
 	logger, logs := logtest.NewJSONLogger()
 	settings := provider.NewSettingsService(db, enc)
-	orch := provider.NewOrchestrator(registry, settings, logger, nil)
 	// Production wiring (cmd/stillwater/main.go): FetchMetadata delegates to
-	// the scraper executor, which is what reaches FetchProviderResult. Without
-	// it these tests would run the orchestrator's legacy path instead.
+	// the scraper executor, which is what reaches FetchProviderResult.
 	scraperSvc := scraper.NewService(db, logger)
 	if err := scraperSvc.SeedDefaults(ctx); err != nil {
 		t.Fatalf("seeding scraper config: %v", err)
 	}
-	orch.SetExecutor(scraper.NewExecutor(scraperSvc, registry, settings, logger, nil))
+	orch := provider.NewOrchestrator(registry, settings, logger, nil, scraper.NewExecutor(scraperSvc, registry, settings, logger, nil))
 
 	a := &artist.Artist{Name: "Cause Subject", SortName: "Cause Subject", Path: t.TempDir(), Biography: "short"}
 	if err := artistSvc.Create(ctx, a); err != nil {

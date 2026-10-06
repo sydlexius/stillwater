@@ -137,8 +137,7 @@ func TestFetchMetadata_UpdateFailure_SanitizesOperatorMessage(t *testing.T) {
 		},
 		AttemptedProviders: []provider.ProviderName{provider.NameMusicBrainz},
 	}
-	orch := provider.NewOrchestrator(nil, nil, testLogger(), nil)
-	orch.SetExecutor(&stubScrapeAll{result: result})
+	orch := provider.NewOrchestrator(nil, nil, testLogger(), nil, &stubScrapeAll{result: result})
 
 	e, buf := sanitizeCapturingExecutor(t, artistSvc, orch)
 
@@ -362,8 +361,7 @@ func TestFetchMetadata_FetchFailure_SanitizesOperatorMessage(t *testing.T) {
 		t.Fatalf("seeding artist: %v", err)
 	}
 
-	orch := provider.NewOrchestrator(nil, nil, testLogger(), nil)
-	orch.SetExecutor(failingScrapeAll{})
+	orch := provider.NewOrchestrator(nil, nil, testLogger(), nil, failingScrapeAll{})
 
 	e, buf := sanitizeCapturingExecutor(t, artistSvc, orch)
 
