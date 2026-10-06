@@ -524,6 +524,38 @@ func decodeExtraFanartRequest(w http.ResponseWriter, req *http.Request) (dryRun,
 	return dry == nil || *dry, true
 }
 
+// extraFanartWriteDeadline is when the response must be written by. The run is
+// bounded by extraFanartRunTimeout, but its tail runs past that: two sequential
+// hash invalidations (each bounded by extraFanartInvalidateTimeout, on a context
+// that survives a cancel), a 10s folder check, and unbounded final directory
+// work. The margin covers those bounds plus a minute of slack.
+//
+// Limit, stated honestly: the deadline covers the run's bounded budget plus the
+// bounded post-timeout invalidations. A hard-stalled mount blocks the migration
+// itself (the raw Lstat, ReadDir and Rmdir calls take no deadline), and no write
+// deadline can deliver a receipt for a run that never returns. That is a
+// pre-existing property of those filesystem calls and out of scope here.
+func extraFanartWriteDeadline(now time.Time) time.Time {
+	return now.Add(extraFanartRunTimeout + 2*extraFanartInvalidateTimeout + 10*time.Second + time.Minute)
+}
+
+// extraFanartHTTPStatus derives the response code from the run's outcome, never
+// from recomputed counts: 409 while another run holds the slot, 500 when the run
+// stopped early (err), 207 when a LIVE run finished but some files did not move
+// (status partial or failed), and 200 otherwise. A finished preview is always
+// 200, even when it reports blocked files: it changed nothing.
+func extraFanartHTTPStatus(res *extraFanartRunResult, err error) int {
+	switch {
+	case errors.Is(err, errExtraFanartRunning):
+		return http.StatusConflict
+	case err != nil:
+		return http.StatusInternalServerError
+	case !res.DryRun && (res.Status == "partial" || res.Status == "failed"):
+		return http.StatusMultiStatus
+	}
+	return http.StatusOK
+}
+
 // handleExtraFanartMigrationRun runs the migration. POST
 // /api/v1/reports/extrafanart-migration. Admin-gated; singleton (409).
 //
@@ -547,16 +579,25 @@ func (r *Router) handleExtraFanartMigrationRun(w http.ResponseWriter, req *http.
 		defer r.webhookWg.Done()
 		runCtx = r.webhookShutdownCtx
 	}
+	// The server's WriteTimeout (180s) is shorter than a run may legitimately take
+	// (extraFanartRunTimeout), and a run that finishes after it would lose its
+	// receipt. Extend the deadline for this response only; never fail silently.
+	if err := http.NewResponseController(w).SetWriteDeadline(extraFanartWriteDeadline(time.Now())); err != nil {
+		r.logger.Warn("extrafanart migration: could not extend the write deadline; a long run may lose its response",
+			slog.Bool("dry_run", dryRun), slog.String("error", err.Error()))
+	}
 	res, err := r.runExtraFanartMigration(runCtx, dryRun)
-	status := http.StatusOK
+	status := extraFanartHTTPStatus(res, err)
 	switch {
 	case errors.Is(err, errExtraFanartRunning):
-		status = http.StatusConflict
 		res.Error = "an extrafanart migration is already in progress"
 	case err != nil:
 		r.logger.Error("extrafanart migration failed", slog.Bool("dry_run", dryRun), slog.String("error", err.Error()))
-		status = http.StatusInternalServerError
 		res.Error = "extrafanart migration failed"
+	case status == http.StatusMultiStatus:
+		r.logger.Warn("extrafanart migration finished with files that did not move",
+			slog.String("status", res.Status), slog.Int("moved", res.Moved),
+			slog.Int("failed", res.Failed), slog.Int("problems", res.Problems))
 	}
 
 	writeJSON(w, status, res)

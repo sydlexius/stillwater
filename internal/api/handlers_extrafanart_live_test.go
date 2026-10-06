@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -275,9 +277,10 @@ func TestExtraFanartMigration_LiveIndexRefreshFailureIsReported(t *testing.T) {
 	r, svc := testRouterForBackdrops(t)
 	seedExtraFanartArtist(t, svc, "Alpha", 2)
 	r.fanartInvalidator = hookInvalidator{fn: func(context.Context) error { return errors.New("hash store unavailable") }}
-	res := decodeRun(t, postExtraFanart(r, adminContext(), `{"dry_run": false}`, "application/json"))
-	if res.Status != "partial" || res.Moved != 2 || res.Problems != 1 || res.Artists[0].Error != reasonIndexRefresh {
-		t.Fatalf("want partial, 2 moved, 1 problem, %s; got %+v", reasonIndexRefresh, res)
+	w := postExtraFanart(r, adminContext(), `{"dry_run": false}`, "application/json")
+	res := decodeRun(t, w)
+	if w.Code != http.StatusMultiStatus || res.Status != "partial" || res.Moved != 2 || res.Problems != 1 || res.Artists[0].Error != reasonIndexRefresh {
+		t.Fatalf("want 207 partial, 2 moved, 1 problem, %s; got %d %+v", reasonIndexRefresh, w.Code, res)
 	}
 }
 
@@ -299,8 +302,8 @@ func TestExtraFanartMigration_LiveMidPlanFolderLossIsReportedPerArtist(t *testin
 
 	w := postExtraFanart(r, adminContext(), `{"dry_run": false}`, "application/json")
 	res := decodeRun(t, w)
-	if res.Status != "partial" || res.Moved != 2 || res.Failed != 3 || res.ArtistsSkippedMissing != 0 || res.Problems != 1 {
-		t.Fatalf("want partial: 2 moved, 3 failed, none skipped-as-missing, 1 problem; got %+v", res)
+	if w.Code != http.StatusMultiStatus || res.Status != "partial" || res.Moved != 2 || res.Failed != 3 || res.ArtistsSkippedMissing != 0 || res.Problems != 1 {
+		t.Fatalf("want 207 partial: 2 moved, 3 failed, none skipped-as-missing, 1 problem; got %d %+v", w.Code, res)
 	}
 	var sawB bool
 	for _, ar := range res.Artists {
@@ -347,13 +350,14 @@ func TestExtraFanartMigration_LiveOccupiedDestinationIsFailureNotOverwrite(t *te
 			t.Errorf("seeding occupant: %v", err)
 		}
 	}
-	res := decodeRun(t, postExtraFanart(r, adminContext(), `{"dry_run": false}`, "application/json"))
+	w := postExtraFanart(r, adminContext(), `{"dry_run": false}`, "application/json")
+	res := decodeRun(t, w)
 	b, err := os.ReadFile(occupied)
 	if err != nil || string(b) != "operator-file" {
 		t.Fatalf("the operator's file was overwritten or removed: %q %v", b, err)
 	}
-	if res.Failed != 1 || res.Moved != 1 || res.Status != "partial" {
-		t.Errorf("want 1 moved and 1 failed (occupied destination), partial; got %+v", res)
+	if w.Code != http.StatusMultiStatus || res.Failed != 1 || res.Moved != 1 || res.Status != "partial" {
+		t.Errorf("want 207 with 1 moved and 1 failed (occupied destination), partial; got %d %+v", w.Code, res)
 	}
 }
 
@@ -494,5 +498,188 @@ func TestExtraFanartMigration_LiveStopKeepsEntryDispositions(t *testing.T) {
 	}
 	if res.Moved != 0 || res.Failed != 2 || res.SkippedIdentical != 1 || res.Problems != 1 {
 		t.Errorf("want 0 moved, 2 failed, 1 identical, 1 problem; got %+v", res)
+	}
+}
+
+// The status code is derived from the outcome, never from recomputed counts.
+func TestExtraFanartHTTPStatus(t *testing.T) {
+	t.Parallel()
+	boom := errors.New("stopped")
+	cases := []struct {
+		name   string
+		dryRun bool
+		status string
+		err    error
+		want   int
+	}{
+		{"preview planned", true, "planned", nil, http.StatusOK},
+		{"preview blocked is not a failure", true, "blocked", nil, http.StatusOK},
+		{"preview nothing_checked", true, "nothing_checked", nil, http.StatusOK},
+		{"preview nothing_to_do", true, "nothing_to_do", nil, http.StatusOK},
+		{"live migrated", false, "migrated", nil, http.StatusOK},
+		{"live nothing_to_do", false, "nothing_to_do", nil, http.StatusOK},
+		{"live nothing_checked", false, "nothing_checked", nil, http.StatusOK},
+		{"live partial", false, "partial", nil, http.StatusMultiStatus},
+		{"live failed", false, "failed", nil, http.StatusMultiStatus},
+		{"live stopped early", false, "partial", boom, http.StatusInternalServerError},
+		{"preview stopped early", true, "failed", boom, http.StatusInternalServerError},
+		{"busy live", false, "running", errExtraFanartRunning, http.StatusConflict},
+		{"busy preview", true, "running", errExtraFanartRunning, http.StatusConflict},
+	}
+	for _, tc := range cases {
+		res := &extraFanartRunResult{DryRun: tc.dryRun, Status: tc.status}
+		if got := extraFanartHTTPStatus(res, tc.err); got != tc.want {
+			t.Errorf("%s: want %d, got %d", tc.name, tc.want, got)
+		}
+	}
+}
+
+// hashesOf returns every file's content hash in an inventory, so a test can show
+// no file vanished wherever it moved to.
+func hashesOf(inv map[string]string) map[string]bool {
+	out := map[string]bool{}
+	for _, h := range inv {
+		if h != "dir" && !strings.HasPrefix(h, "symlink->") {
+			out[h] = true
+		}
+	}
+	return out
+}
+
+// lockDir makes the artist folder refuse writes and PROVES it did, so the test
+// cannot pass against a lock that silently bound nothing.
+func lockDir(t *testing.T, a efArtist) {
+	t.Helper()
+	t.Cleanup(func() { _ = os.Chmod(a.dir, 0o755) })
+	if err := os.Chmod(a.dir, 0o555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	probe := filepath.Join(a.dir, "probe.tmp")
+	if err := os.WriteFile(probe, []byte("x"), 0o644); err == nil {
+		_ = os.Remove(probe)
+		t.Fatalf("precondition: the locked folder %s still accepts writes", a.name)
+	}
+}
+
+// A finished live run where one artist's folder refuses the move is 207
+// partial: the other artist moved, the locked one is named, nothing vanished.
+func TestExtraFanartMigration_PartialRunAnswers207(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("permission bits do not bind root")
+	}
+	r, svc := testRouterForBackdrops(t)
+	a := seedExtraFanartArtist(t, svc, "Alpha", 2)
+	b := seedExtraFanartArtist(t, svc, "Bravo", 3)
+	before := inventory(t, a, b)
+	lockDir(t, b)
+
+	w := postExtraFanart(r, adminContext(), `{"dry_run": false}`, "application/json")
+	res := decodeRun(t, w)
+	if w.Code != http.StatusMultiStatus || res.Status != "partial" || res.Moved != 2 || res.Failed != 3 {
+		t.Fatalf("want 207 partial with 2 moved, 3 failed; got %d %+v", w.Code, res)
+	}
+	var named int
+	for _, ar := range res.Artists {
+		for _, f := range ar.Files {
+			if ar.ArtistID == b.id && f.Outcome == "failed" && f.File != "" {
+				named++
+			}
+		}
+	}
+	if named != 3 {
+		t.Errorf("want the 3 locked files named under the failed artist, got %d", named)
+	}
+	if _, extra := rootHashes(t, a.dir); len(extra) != 0 {
+		t.Error("Alpha should have moved")
+	}
+	afterHashes := hashesOf(inventory(t, a, b))
+	for h := range hashesOf(before) {
+		if !afterHashes[h] {
+			t.Errorf("a file vanished (hash %s)", h)
+		}
+	}
+}
+
+// Every due file failing is 207 failed (the run finished), not 200.
+func TestExtraFanartMigration_AllFailedAnswers207(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("permission bits do not bind root")
+	}
+	r, svc := testRouterForBackdrops(t)
+	a := seedExtraFanartArtist(t, svc, "Alpha", 2)
+	lockDir(t, a)
+	w := postExtraFanart(r, adminContext(), `{"dry_run": false}`, "application/json")
+	if res := decodeRun(t, w); w.Code != http.StatusMultiStatus || res.Status != "failed" || res.Moved != 0 {
+		t.Fatalf("want 207 failed with 0 moved; got %d %+v", w.Code, res)
+	}
+}
+
+// A clean run is 200 migrated; repeat runs are 200 nothing_to_do and change nothing.
+func TestExtraFanartMigration_CleanRunAnswers200ThenIdempotent(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForBackdrops(t)
+	a := seedExtraFanartArtist(t, svc, "Alpha", 2)
+	w := postExtraFanart(r, adminContext(), `{"dry_run": false}`, "application/json")
+	if res := decodeRun(t, w); w.Code != http.StatusOK || res.Status != "migrated" || res.Moved != 2 {
+		t.Fatalf("want 200 migrated with 2 moved; got %d %+v", w.Code, res)
+	}
+	settled := inventory(t, a)
+	for i := 0; i < 3; i++ {
+		w := postExtraFanart(r, adminContext(), `{"dry_run": false}`, "application/json")
+		if res := decodeRun(t, w); w.Code != http.StatusOK || res.Status != "nothing_to_do" {
+			t.Fatalf("repeat %d: want 200 nothing_to_do; got %d %+v", i, w.Code, res)
+		}
+		if d := diffInventory(settled, inventory(t, a)); len(d) != 0 {
+			t.Fatalf("repeat %d changed the library: %v", i, d)
+		}
+	}
+}
+
+// A live run that outlives the server's WriteTimeout still delivers its receipt,
+// because the handler extends the write deadline.
+func TestExtraFanartMigration_ReceiptSurvivesWriteTimeout(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForBackdrops(t)
+	seedExtraFanartArtist(t, svc, "Alpha", 2)
+	r.extraFanartBeforeApply = func(string) { time.Sleep(600 * time.Millisecond) }
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		r.handleExtraFanartMigrationRun(w, req.WithContext(adminContext()))
+	}))
+	srv.Config.WriteTimeout = 200 * time.Millisecond
+	srv.Start()
+	t.Cleanup(srv.Close)
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, srv.URL, strings.NewReader(`{"dry_run": false}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("the receipt was lost to the write timeout: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil || !strings.Contains(string(body), `"status":"migrated"`) {
+		t.Fatalf("want the full migrated body, got %q (err %v)", body, err)
+	}
+}
+
+// The write deadline must outlast the run limit plus the run's bounded tail, yet
+// stay finite (a zero time would mean no deadline at all).
+func TestExtraFanartWriteDeadline(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	d := extraFanartWriteDeadline(now)
+	if d.IsZero() {
+		t.Fatal("deadline must be set")
+	}
+	if min := now.Add(extraFanartRunTimeout + 2*extraFanartInvalidateTimeout); d.Before(min) {
+		t.Errorf("deadline %v is shorter than the run limit plus two invalidations (%v)", d.Sub(now), min.Sub(now))
+	}
+	if max := now.Add(extraFanartRunTimeout + 10*time.Minute); d.After(max) {
+		t.Errorf("deadline %v exceeds the sane cap %v", d.Sub(now), max.Sub(now))
 	}
 }
