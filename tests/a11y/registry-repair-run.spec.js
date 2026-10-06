@@ -121,11 +121,23 @@ test('idle: one run button, labelled, 24px target, confirm dialog can be cancell
   await page.route(`**${REMEDIATE_API}`, (route) => { posts += 1; return route.abort(); });
   await page.locator(RUN).click();
   await expect(page.locator('#confirm-modal-message')).toContainText('no image files are changed');
+  // Language tags (#2678): the root is never tagged (its message is caller text);
+  // the template-translated chrome carries the render locale; the banner passes its own lang.
+  await expect(page.locator('#confirm-modal')).toBeVisible();
+  await expect(page.locator('#confirm-modal')).not.toHaveAttribute('lang', /.*/);
+  for (const id of ['title', 'cancel', 'accept', 'message']) {
+    await expect(page.locator(`#confirm-modal-${id}`)).toHaveAttribute('lang', 'en');
+  }
   // The dialog is open and nothing was accepted: no POST may have been sent.
   await page.waitForTimeout(300);
   expect(posts, 'no POST may be sent while the confirm dialog is open').toBe(0);
   await page.locator('#confirm-modal-cancel').click();
   await page.waitForTimeout(300);
+  // hideModal ran to the end: chrome lang restored and focus back on the opener.
+  await expect(page.locator('#confirm-modal')).toBeHidden();
+  await expect(page.locator('#confirm-modal-title')).toHaveAttribute('lang', 'en');
+  await expect(page.locator('#confirm-modal-accept')).toHaveAttribute('lang', 'en');
+  await expect(page.locator(RUN)).toBeFocused();
   expect(posts, 'cancelling the confirmation must not start a repair').toBe(0);
   await expect(page.locator(RUN)).toBeEnabled();
   expect(errors).toEqual([]);
@@ -136,22 +148,26 @@ test('running: button disabled and aria-busy until the job completes, then succe
   const { context, page, errors } = await openBanner(browser);
   let release;
   const gate = new Promise((r) => { release = r; });
-  const body = {};
-  await page.route(`**${REMEDIATE_API}`, (route) => {
-    Object.assign(body, route.request().postDataJSON());
-    return route.fulfill({ status: 202, json: { running: true, status: 'running' } });
-  });
+  await page.route(`**${REMEDIATE_API}`, (route) => route.fulfill({ status: 202, json: { running: true, status: 'running' } }));
   await page.route(`**${STATUS_API}`, async (route) => {
     await gate;
     await route.fulfill({ json: DONE_REPORT });
   });
   await page.route(`**${BANNER_API}`, (route) => route.fulfill({ json: { ok: true, needs_repair: false, count: 0 } }));
+  // Arm the request wait BEFORE the click: the POST is sent asynchronously after accept,
+  // so reading a handler-filled variable right after the click raced the request.
+  const postSent = page.waitForRequest((r) => r.url().endsWith(REMEDIATE_API) && r.method() === 'POST');
   await confirmRun(page);
-  expect(body, 'the POST body must be an explicit commit').toEqual({ commit: true });
+  expect((await postSent).postDataJSON(), 'the POST body must be an explicit commit').toEqual({ commit: true });
   await expect(page.locator(RUN)).toBeDisabled();
   await expect(page.locator(RUN)).toHaveAttribute('aria-busy', 'true');
   await expect(page.locator(RUN)).toHaveText('Repairing...');
   await expect(page.locator(TOASTS)).toContainText('Image registry repair started');
+  // The banner's toast message and the shared dismiss button are language-tagged.
+  const toastEl = page.locator(`${TOASTS} > div`, { hasText: 'Image registry repair started' });
+  await expect(toastEl).toHaveCount(1);
+  await expect(toastEl.locator('span').first()).toHaveAttribute('lang', 'en');
+  await expect(toastEl.locator('button')).toHaveAttribute('lang', 'en');
   await shot(page, 'running', 'dark');
   release();
   await expect(page.locator(TOASTS)).toContainText('Image registry repaired: 3 rebuilt, 2 restored.');
@@ -182,6 +198,11 @@ test('incomplete: write failures give a warning toast and the banner stays', asy
   await page.route(`**${STATUS_API}`, (route) => route.fulfill({ json: { status: 'completed', report: { rebuilt: 1, restored: 0, write_failures: 4 } } }));
   await confirmRun(page);
   await expect(page.locator(TOASTS)).toContainText('4 changes could not be saved');
+  // The warning helper forwards the banner's language like the other toast helpers (#2678).
+  const warnToast = page.locator(`${TOASTS} > div`, { hasText: '4 changes could not be saved' });
+  await expect(warnToast).toHaveCount(1);
+  await expect(warnToast.locator('span').first()).toHaveAttribute('lang', 'en');
+  await expect(warnToast.locator('button')).toHaveAttribute('lang', 'en');
   await expect(page.locator(BANNER)).toBeVisible();
   await expect(page.locator(RUN)).toBeEnabled();
   await context.close();

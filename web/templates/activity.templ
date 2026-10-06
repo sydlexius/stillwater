@@ -379,7 +379,7 @@ templ activityRow(c artist.MetadataChangeWithArtist, basePath string) {
 					hx-disabled-elt="this"
 					hx-confirm={ tf(ctx, "history.undo_confirm", historyFieldLabel(ctx, c.Field)) }
 					hx-vals={ `js:{"showing": document.querySelectorAll("#activity-entries > [id^='activity-change-']").length}` }
-					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					title={ t(ctx, "history.undo_title") }
 				>
 					{ t(ctx, "history.undo") }
