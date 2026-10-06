@@ -106,8 +106,7 @@ func attachRecordingOrchestrator(t *testing.T, r *Router, result *provider.Fetch
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	rec := &recordingScraperExecutor{result: result, err: err}
-	orch := provider.NewOrchestrator(nil, nil, logger, nil)
-	orch.SetExecutor(rec)
+	orch := provider.NewOrchestrator(nil, nil, logger, nil, rec)
 	r.orchestrator = orch
 	return rec
 }

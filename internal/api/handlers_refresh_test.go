@@ -628,8 +628,7 @@ func TestExecuteRefreshAndPostHook_ResolvesBioViolation(t *testing.T) {
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(nil, nil, logger, nil)
-	orch.SetExecutor(stub)
+	orch := provider.NewOrchestrator(nil, nil, logger, nil, stub)
 	r.orchestrator = orch
 
 	// Execute the same sequence the HTTP handler runs: refresh -> post-hook.
@@ -687,8 +686,7 @@ func TestExecuteRefreshCtx_MBSnapshotUsesMusicBrainzGenres(t *testing.T) {
 			if err := artistSvc.Create(ctx, a); err != nil {
 				t.Fatalf("creating artist: %v", err)
 			}
-			orch := provider.NewOrchestrator(nil, nil, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil)
-			orch.SetExecutor(&stubScraperExecutor{result: &provider.FetchResult{
+			orch := provider.NewOrchestrator(nil, nil, slog.New(slog.NewTextHandler(os.Stderr, nil)), nil, &stubScraperExecutor{result: &provider.FetchResult{
 				Metadata: &provider.ArtistMetadata{Name: "Snapshot Artist", Genres: []string{"Rock", "Folk"}},
 				Sources: []provider.FieldSource{
 					{Field: "name", Provider: provider.NameMusicBrainz},
@@ -798,8 +796,7 @@ func TestExecuteRefreshCtx_AppliesMemberRefresh(t *testing.T) {
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(nil, nil, logger, nil)
-	orch.SetExecutor(stub)
+	orch := provider.NewOrchestrator(nil, nil, logger, nil, stub)
 	r.orchestrator = orch
 
 	a := addTestArtist(t, artistSvc, "Orchestrate Refresh Artist")
@@ -858,8 +855,7 @@ func TestExecuteRefreshCtx_PreservesTagsWhenProviderReturnsNoData(t *testing.T) 
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(nil, nil, logger, nil)
-	orch.SetExecutor(stub)
+	orch := provider.NewOrchestrator(nil, nil, logger, nil, stub)
 	r.orchestrator = orch
 
 	if _, err := r.executeRefreshCtx(context.Background(), a); err != nil {
@@ -907,8 +903,7 @@ func TestExecuteRefreshCtx_OverwritesTagsWhenProviderReturnsData(t *testing.T) {
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(nil, nil, logger, nil)
-	orch.SetExecutor(stub)
+	orch := provider.NewOrchestrator(nil, nil, logger, nil, stub)
 	r.orchestrator = orch
 
 	if _, err := r.executeRefreshCtx(context.Background(), a); err != nil {
@@ -1047,8 +1042,7 @@ func lockedRefreshFetchResult() *provider.FetchResult {
 func attachSentinelOrchestrator(t *testing.T, r *Router) {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(nil, nil, logger, nil)
-	orch.SetExecutor(&stubScraperExecutor{result: lockedRefreshFetchResult()})
+	orch := provider.NewOrchestrator(nil, nil, logger, nil, &stubScraperExecutor{result: lockedRefreshFetchResult()})
 	r.orchestrator = orch
 }
 
@@ -1400,8 +1394,7 @@ func TestRefreshArtistForBulk_RepairsMalformedOrigin(t *testing.T) {
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(nil, nil, logger, nil)
-	orch.SetExecutor(stub)
+	orch := provider.NewOrchestrator(nil, nil, logger, nil, stub)
 	r.orchestrator = orch
 
 	if got := r.refreshArtistForBulk(ctx, a); got != bulkOutcomeSucceeded {
@@ -1450,8 +1443,7 @@ func TestRefreshArtistForBulk_HonoursOriginLock(t *testing.T) {
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(nil, nil, logger, nil)
-	orch.SetExecutor(stub)
+	orch := provider.NewOrchestrator(nil, nil, logger, nil, stub)
 	r.orchestrator = orch
 
 	if got := r.refreshArtistForBulk(ctx, a); got != bulkOutcomeSucceeded {

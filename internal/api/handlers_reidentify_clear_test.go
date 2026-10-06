@@ -570,8 +570,7 @@ func steeringRouter(t *testing.T, rec *steeringRecorder) (*Router, *artist.Servi
 	t.Helper()
 	r, artistSvc := testRouterWithStubPipeline(t, &stubPipeline{})
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(nil, nil, logger, nil)
-	orch.SetExecutor(rec)
+	orch := provider.NewOrchestrator(nil, nil, logger, nil, rec)
 	r.orchestrator = orch
 	return r, artistSvc
 }

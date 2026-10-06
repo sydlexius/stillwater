@@ -56,7 +56,7 @@ func newImageHandlerTestServer(t *testing.T) (*Router, *artist.Service) {
 	// non-error path for the test.
 	emptyRegistry := provider.NewRegistry()
 	settings := provider.NewSettingsService(r.db, nil)
-	r.orchestrator = provider.NewOrchestrator(emptyRegistry, settings, r.logger, nil)
+	r.orchestrator = provider.NewOrchestrator(emptyRegistry, settings, r.logger, nil, noopScraperExecutor{})
 	r.providerSettings = settings
 
 	// handleWebImageSearch ranges r.webSearchRegistry.All(); a nil registry
