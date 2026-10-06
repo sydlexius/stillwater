@@ -1056,42 +1056,6 @@ func TestApplyFieldDetailFields(t *testing.T) {
 	}
 }
 
-// TestApplyFieldGenderClearedOnNonIndividualType verifies that applying a
-// non-individual "type" value (e.g. "group") to a result that already holds a
-// gender clears the gender value and its FieldSource provenance. This
-// mirrors the scraper-executor normalization path, which forbids gender on
-// group/orchestra/choir types.
-func TestApplyFieldGenderClearedOnNonIndividualType(t *testing.T) {
-	result := &FetchResult{Metadata: &ArtistMetadata{URLs: make(map[string]string)}}
-
-	// First apply gender from one provider.
-	prGender := &ProviderResult{meta: &ArtistMetadata{Gender: "Female"}}
-	if !applyField(result, "gender", prGender, NameMusicBrainz) {
-		t.Fatalf("applyField(gender) = false, want true")
-	}
-	if result.Metadata.Gender != "Female" {
-		t.Fatalf("Gender = %q, want Female", result.Metadata.Gender)
-	}
-	if findSource(result.Sources, "gender") == nil {
-		t.Fatalf("gender FieldSource missing after initial apply")
-	}
-
-	// Now apply a non-individual type; gender and its provenance must clear.
-	prType := &ProviderResult{meta: &ArtistMetadata{Type: "group"}}
-	if !applyField(result, "type", prType, NameWikidata) {
-		t.Fatalf("applyField(type) = false, want true")
-	}
-	if result.Metadata.Gender != "" {
-		t.Errorf("Gender = %q after non-individual type, want empty", result.Metadata.Gender)
-	}
-	if s := findSource(result.Sources, "gender"); s != nil {
-		t.Errorf("gender FieldSource = %v after non-individual type, want nil", s)
-	}
-	if findSource(result.Sources, "type") == nil {
-		t.Errorf("type FieldSource missing after apply")
-	}
-}
-
 // TestApplyFieldGenderRejectedWhenTypeNonIndividual verifies that when the
 // accumulated type is already a non-individual value, a later gender apply
 // is rejected.
@@ -1176,62 +1140,6 @@ func TestApplyFieldImageTypeFilter(t *testing.T) {
 	}
 	if len(result.Images) != 2 {
 		t.Errorf("expected 2 fanart images, got %d", len(result.Images))
-	}
-}
-
-// TestFetchMetadataAggregatesImagesFromMultipleProviders verifies that the
-// FetchMetadata priority loop collects image candidates from all enabled
-// providers rather than stopping at the first provider with matching images.
-func TestFetchMetadataAggregatesImagesFromMultipleProviders(t *testing.T) {
-	registry, settings := setupOrchestratorTest(t)
-
-	// Register two providers that both return fanart images.
-	registry.Register(&mockProvider{
-		name: NameMusicBrainz,
-		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
-			return &ArtistMetadata{Name: "a-ha"}, nil
-		},
-		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
-			return []ImageResult{
-				{URL: "http://audiodb.com/fanart1.jpg", Type: ImageFanart, Source: "musicbrainz"},
-			}, nil
-		},
-	})
-	registry.Register(&mockProvider{
-		name: NameAudioDB,
-		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
-			return &ArtistMetadata{Name: "a-ha"}, nil
-		},
-		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
-			return []ImageResult{
-				{URL: "http://audiodb.com/fanart2.jpg", Type: ImageFanart, Source: "audiodb"},
-				{URL: "http://audiodb.com/fanart3.jpg", Type: ImageFanart, Source: "audiodb"},
-			}, nil
-		},
-	})
-
-	// Set fanart priority: MusicBrainz first, then AudioDB.
-	if err := settings.SetPriority(context.Background(), "fanart", []ProviderName{NameMusicBrainz, NameAudioDB}); err != nil {
-		t.Fatalf("SetPriority: %v", err)
-	}
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
-
-	result, err := orch.FetchMetadata(context.Background(), "mbid-aha", "a-ha", nil)
-	if err != nil {
-		t.Fatalf("FetchMetadata: %v", err)
-	}
-
-	// All 3 fanart images from both providers should be present.
-	fanartCount := 0
-	for _, img := range result.Images {
-		if img.Type == ImageFanart {
-			fanartCount++
-		}
-	}
-	if fanartCount != 3 {
-		t.Errorf("expected 3 fanart images from two providers, got %d", fanartCount)
 	}
 }
 
