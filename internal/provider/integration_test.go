@@ -18,6 +18,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider/lastfm"
 	"github.com/sydlexius/stillwater/internal/provider/musicbrainz"
 	"github.com/sydlexius/stillwater/internal/provider/wikidata"
+	"github.com/sydlexius/stillwater/internal/scraper"
 
 	_ "modernc.org/sqlite"
 )
@@ -246,6 +247,26 @@ func TestIntegration_Orchestrator_AHa(t *testing.T) {
 	}
 
 	orch := provider.NewOrchestrator(registry, settings, logger, nil)
+
+	// FetchMetadata only delegates, so run the production executor against a
+	// seeded default scraper config in its own in-memory DB.
+	scraperDB, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("opening scraper db: %v", err)
+	}
+	scraperDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { scraperDB.Close() })
+	if _, err := scraperDB.ExecContext(context.Background(), `CREATE TABLE scraper_config (
+		id TEXT PRIMARY KEY, scope TEXT NOT NULL UNIQUE, config_json TEXT NOT NULL DEFAULT '{}',
+		overrides_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		updated_at TEXT NOT NULL DEFAULT (datetime('now')))`); err != nil {
+		t.Fatalf("creating scraper_config: %v", err)
+	}
+	scraperSvc := scraper.NewService(scraperDB, logger)
+	if err := scraperSvc.SeedDefaults(context.Background()); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+	orch.SetExecutor(scraper.NewExecutor(scraperSvc, registry, settings, logger, nil))
 
 	result, err := orch.FetchMetadata(testCtx(t), aHaMBID, aHaName, nil)
 	if err != nil {

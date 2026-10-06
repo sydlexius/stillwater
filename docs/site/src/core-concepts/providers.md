@@ -2,7 +2,7 @@
 description: How Stillwater queries metadata providers, the per-field priority chain, and how results merge.
 ---
 
-<!-- code: internal/provider/provider.go (AllProviderNames, ProviderCapabilities, ProviderName constants), internal/provider/orchestrator.go (FetchMetadata, FetchImages, EnrichProviderIDs, fieldProviderExclusions, isAggregatedField, image-attempt gating), internal/provider/registry.go -->
+<!-- code: internal/provider/provider.go (AllProviderNames, ProviderCapabilities, ProviderName constants), internal/provider/orchestrator.go (FetchMetadata, FetchImages, EnrichProviderIDs, fieldProviderExclusions, image-attempt gating), internal/provider/registry.go -->
 <!-- displaced developer detail: per-fetch caching mechanism (one request per provider per fetch even when many fields ask for it), id-propagation extracting Discogs ID from MusicBrainz URL responses, image-error transient vs terminal distinction (preserves existing artwork on 5xx/timeout), fieldProviderExclusions map. These belong in godoc on internal/provider or a developer guide, not in this page. -->
 
 # Providers
