@@ -496,9 +496,6 @@ func ApplyMetadata(a *Artist, u *MetadataUpdate, strategy MergeStrategy, opts Me
 
 	changed := applyFields(a, u, strategy, locked, attempted, populated, clobber)
 
-	// Deliberately NOT folded into `changed`: see applyTypeConsistency.
-	applyTypeConsistency(a, locked, opts.FilterDatesByType)
-
 	if len(opts.Sources) > 0 {
 		if a.MetadataSources == nil {
 			a.MetadataSources = make(map[string]string)
@@ -511,6 +508,11 @@ func ApplyMetadata(a *Artist, u *MetadataUpdate, strategy MergeStrategy, opts Me
 			}
 		}
 	}
+
+	// Runs AFTER the supplied sources are applied so its gender-source cleanup
+	// wins over a supplied gender entry. Deliberately NOT folded into
+	// `changed`: see applyTypeConsistency.
+	applyTypeConsistency(a, locked, opts.FilterDatesByType)
 
 	return changed
 }
@@ -769,7 +771,9 @@ func applyTypeConsistency(a *Artist, locked map[string]struct{}, filterDates boo
 	}
 	// A cleared gender has no provider behind it; drop the stored provenance
 	// too. Like the clear itself this does not set changed (see above).
-	if beforeGender != "" && a.Gender == "" {
+	// Keyed on the resulting state (not on a before/after diff) so a supplied
+	// gender source for an already-empty gender is dropped as well.
+	if a.Gender == "" && IsGenderlessType(a.Type) {
 		delete(a.MetadataSources, "gender")
 	}
 
