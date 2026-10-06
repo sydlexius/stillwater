@@ -56,7 +56,7 @@ func searchFailureExecutor(t *testing.T) (*BulkExecutor, *bytes.Buffer) {
 	logger := slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	return &BulkExecutor{
-		orchestrator: provider.NewOrchestrator(registry, settings, logger, nil),
+		orchestrator: provider.NewOrchestrator(registry, settings, logger, nil, &stubScrapeAll{}),
 		logger:       logger,
 	}, buf
 }
@@ -132,7 +132,7 @@ func TestSelfHealMBID_EmptySearchResultsLogNoFailure(t *testing.T) {
 	buf := &bytes.Buffer{}
 	logger := slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	e := &BulkExecutor{
-		orchestrator: provider.NewOrchestrator(registry, provider.NewSettingsService(db, enc), logger, nil),
+		orchestrator: provider.NewOrchestrator(registry, provider.NewSettingsService(db, enc), logger, nil, &stubScrapeAll{}),
 		logger:       logger,
 	}
 	a := &artist.Artist{Name: gateArtistName}

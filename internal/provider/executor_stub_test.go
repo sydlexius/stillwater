@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"os"
 	"sync"
 	"testing"
 )
@@ -18,7 +17,7 @@ type scrapeAllCall struct {
 // stubExecutor fakes the production scraper executor
 // (internal/scraper.Executor) for tests in this package. It implements the same
 // ScraperExecutor interface the production path uses, so
-// Orchestrator.SetExecutor accepts it exactly as it accepts the real thing.
+// NewOrchestrator accepts it exactly as it accepts the real thing.
 //
 // It answers with a fixed (result, err) pair and records every call. That is
 // only a faithful stand-in when the fixture hands back what the REAL executor
@@ -103,20 +102,8 @@ func TestFetchMetadata_DelegatesToExecutor(t *testing.T) {
 	}
 }
 
-// TestFetchMetadata_NoExecutorReturnsError verifies FetchMetadata no longer has
-// a legacy loop to fall back on: without an executor it fails with the sentinel.
-func TestFetchMetadata_NoExecutorReturnsError(t *testing.T) {
-	registry, settings := setupOrchestratorTest(t)
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
-
-	if _, err := orch.FetchMetadata(context.Background(), "mbid-1", "Artist", nil); !errors.Is(err, ErrNoScraperExecutor) {
-		t.Errorf("err = %v, want ErrNoScraperExecutor", err)
-	}
-}
-
 // TestNewOrchestrator_ExecutorArg verifies the constructor-supplied executor is
-// the one FetchMetadata uses, an untyped-nil element leaves it unset, and two panic.
+// the one FetchMetadata uses.
 func TestNewOrchestrator_ExecutorArg(t *testing.T) {
 	registry, settings := setupOrchestratorTest(t)
 	logger := slog.New(slog.DiscardHandler)
@@ -126,16 +113,16 @@ func TestNewOrchestrator_ExecutorArg(t *testing.T) {
 	if _, err := orch.FetchMetadata(context.Background(), "m", "n", nil); err != nil || len(stub.Calls()) != 1 {
 		t.Fatalf("ctor executor not used: err=%v calls=%d", err, len(stub.Calls()))
 	}
+}
 
-	orch = NewOrchestrator(registry, settings, logger, nil, nil)
-	if _, err := orch.FetchMetadata(context.Background(), "m", "n", nil); !errors.Is(err, ErrNoScraperExecutor) {
-		t.Errorf("nil executor: err = %v, want ErrNoScraperExecutor", err)
-	}
-
+// TestNewOrchestrator_NilExecutorPanics pins that the executor is required: a
+// nil one fails at construction, not on the first FetchMetadata call.
+func TestNewOrchestrator_NilExecutorPanics(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
 	defer func() {
 		if recover() == nil {
-			t.Error("two executors did not panic")
+			t.Error("nil executor did not panic")
 		}
 	}()
-	NewOrchestrator(registry, settings, logger, nil, stub, stub)
+	NewOrchestrator(registry, settings, slog.New(slog.DiscardHandler), nil, nil)
 }

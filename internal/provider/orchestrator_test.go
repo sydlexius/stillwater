@@ -98,7 +98,7 @@ func TestOrchestratorSearch(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
+	orch := NewOrchestrator(registry, settings, logger, nil, &stubExecutor{})
 
 	results, err := orch.Search(context.Background(), "Radiohead")
 	if err != nil {
@@ -202,7 +202,7 @@ func TestFetchFieldFromProviders_ErrNotFoundSuppressed(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
+	orch := NewOrchestrator(registry, settings, logger, nil, &stubExecutor{})
 
 	results, err := orch.FetchFieldFromProviders(context.Background(), "mbid-1234", "Test Artist", "styles", nil)
 	if err != nil {
@@ -633,7 +633,7 @@ func TestFetchImagesCollectsFromAllProviders(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
+	orch := NewOrchestrator(registry, settings, logger, nil, &stubExecutor{})
 
 	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
 	if err != nil {
@@ -704,7 +704,7 @@ func TestFetchImagesRespectsProviderPriority(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
+	orch := NewOrchestrator(registry, settings, logger, nil, &stubExecutor{})
 
 	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
 	if err != nil {
@@ -781,7 +781,7 @@ func TestFetchImages_CrossFieldPriorityConflict(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
+	orch := NewOrchestrator(registry, settings, logger, nil, &stubExecutor{})
 
 	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
 	if err != nil {
@@ -854,7 +854,7 @@ func TestFetchImagesDefaultOrderWithoutCustomPriority(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
+	orch := NewOrchestrator(registry, settings, logger, nil, &stubExecutor{})
 
 	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
 	if err != nil {
@@ -922,7 +922,7 @@ func TestFetchImagesQueriesAllProviders(t *testing.T) {
 	})
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
+	orch := NewOrchestrator(registry, settings, logger, nil, &stubExecutor{})
 
 	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
 	if err != nil {
@@ -1678,7 +1678,7 @@ func newTestOrchWithAIMD(t *testing.T) (*Orchestrator, *AIMDController, *Registr
 	rlm := NewRateLimiterMap()
 	ctrl := NewAIMDController(rlm, clk)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, ctrl)
+	orch := NewOrchestrator(registry, settings, logger, ctrl, &stubExecutor{})
 	return orch, ctrl, registry, settings
 }
 
@@ -1925,7 +1925,7 @@ func TestAIMDSearchForLinkingRateLimitSignal(t *testing.T) {
 		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 		reg2 := NewRegistry()
 		_, settings2 := setupOrchestratorTest(t)
-		orch2 := NewOrchestrator(reg2, settings2, logger, ctrl2)
+		orch2 := NewOrchestrator(reg2, settings2, logger, ctrl2, &stubExecutor{})
 
 		reg2.Register(&mockProvider{
 			name: prov,
@@ -2012,7 +2012,7 @@ func TestFetchFieldFromProviders_AudioDBSynthesizesYearsActive(t *testing.T) {
 	// DefaultPriorities() via GetPriorities' empty-row fallback, so this test
 	// exercises the real default chain rather than one pinned by the test.
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
+	orch := NewOrchestrator(registry, settings, logger, nil, &stubExecutor{})
 
 	results, err := orch.FetchFieldFromProviders(context.Background(), "mbid-1234", "Test Artist", "years_active", nil)
 	if err != nil {

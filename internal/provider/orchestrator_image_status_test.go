@@ -49,7 +49,7 @@ func newImageStatusOrchestrator(t *testing.T) (*Orchestrator, map[ProviderName]s
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	return NewOrchestrator(registry, settings, logger, nil), calls
+	return NewOrchestrator(registry, settings, logger, nil, &stubExecutor{}), calls
 }
 
 // TestFetchImagesAudioDBFallsBackToMBID is the acceptance test for the AudioDB
@@ -173,7 +173,7 @@ func TestFetchImagesErroredProviderScrubbed(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
+	orch := NewOrchestrator(registry, settings, logger, nil, &stubExecutor{})
 
 	result, err := orch.FetchImages(context.Background(), "mbid", BuildProviderIDMap("", "", "", ""))
 	if err != nil {
@@ -303,7 +303,7 @@ func TestFetchImagesNotFoundCountsAsQueried(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger, nil)
+	orch := NewOrchestrator(registry, settings, logger, nil, &stubExecutor{})
 
 	result, err := orch.FetchImages(context.Background(), mbid, BuildProviderIDMap("", "", "", ""))
 	if err != nil {

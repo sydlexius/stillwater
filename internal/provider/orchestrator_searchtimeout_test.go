@@ -21,7 +21,7 @@ func newTimeoutTestOrchestrator(t *testing.T, aimd *AIMDController, provs ...Pro
 		registry.Register(p)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
-	return NewOrchestrator(registry, nil, logger, aimd)
+	return NewOrchestrator(registry, nil, logger, aimd, &stubExecutor{})
 }
 
 // TestSearchForLinking_ProvidersRunConcurrently pins the fan-out. Sequentially
