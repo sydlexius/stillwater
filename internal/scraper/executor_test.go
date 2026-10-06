@@ -1993,3 +1993,144 @@ func containsProvider(list []provider.ProviderName, want provider.ProviderName) 
 	}
 	return false
 }
+
+// longBio clears the IsJunkBiography length filter.
+const longBio = "A biography long enough to clear the junk filter so applyFieldValue accepts it as real data."
+
+// saveBiographyConfig saves a one-field (biography) global config whose chain
+// is the given providers, primary first.
+func saveBiographyConfig(t *testing.T, svc *Service, chain ...provider.ProviderName) {
+	t.Helper()
+	cfg := &ScraperConfig{
+		Scope: ScopeGlobal,
+		Fields: []FieldConfig{
+			{Field: FieldBiography, Primary: chain[0], Enabled: true, Category: CategoryMetadata},
+		},
+		FallbackChains: []FallbackChain{{Category: CategoryMetadata, Providers: chain}},
+	}
+	if err := svc.SaveConfig(context.Background(), ScopeGlobal, cfg, nil); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+}
+
+// TestScrapeAll_CarriesProviderIDFromEarlierProviderURLs verifies the ID
+// carry-forward between providers: MusicBrainz returns no biography but a
+// Discogs URL, so Discogs, queried next, must receive the numeric ID from that
+// URL and not the MBID (which would always 404 there). Ported from the legacy
+// orchestrator-loop test of the same behavior (#3292).
+func TestScrapeAll_CarriesProviderIDFromEarlierProviderURLs(t *testing.T) {
+	registry, settings, svc, logger := setupExecutorTest(t)
+	ctx := context.Background()
+
+	if err := settings.SetAPIKey(ctx, provider.NameDiscogs, "test-token"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+	registry.Register(&mockProvider{
+		name: provider.NameMusicBrainz,
+		getArtFn: func(context.Context, string) (*provider.ArtistMetadata, error) {
+			return &provider.ArtistMetadata{
+				Name: "A-ha",
+				URLs: map[string]string{"discogs": "https://www.discogs.com/artist/24941-a-ha"},
+			}, nil
+		},
+	})
+	var discogsID string
+	registry.Register(&mockProvider{
+		name:    provider.NameDiscogs,
+		authReq: true,
+		getArtFn: func(_ context.Context, id string) (*provider.ArtistMetadata, error) {
+			discogsID = id
+			return &provider.ArtistMetadata{Name: "A-ha", Biography: longBio}, nil
+		},
+	})
+	if err := settings.SetPriority(ctx, "biography", []provider.ProviderName{provider.NameMusicBrainz, provider.NameDiscogs}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+	saveBiographyConfig(t, svc, provider.NameMusicBrainz, provider.NameDiscogs)
+
+	exec := NewExecutor(svc, registry, settings, logger, nil)
+	if _, err := exec.ScrapeAll(ctx, "cc2c9c3c-b7bc-4b8b-84d8-4fbd8779e493", "A-ha", ScopeGlobal, nil); err != nil {
+		t.Fatalf("ScrapeAll: %v", err)
+	}
+	if discogsID != "24941" {
+		t.Errorf("Discogs received %q, want the numeric ID 24941 from MusicBrainz's URL", discogsID)
+	}
+}
+
+// TestScrapeAll_TransientProviderErrorFallsThrough verifies that a provider
+// failing transiently is skipped: the next provider supplies the field, and the
+// failed provider contributes nothing to the merged Name. Ported from the
+// legacy orchestrator-loop provider-error and MB-error-does-not-clobber tests
+// (#3292).
+func TestScrapeAll_TransientProviderErrorFallsThrough(t *testing.T) {
+	registry, settings, svc, logger := setupExecutorTest(t)
+	ctx := context.Background()
+
+	registry.Register(&mockProvider{
+		name: provider.NameMusicBrainz,
+		getArtFn: func(context.Context, string) (*provider.ArtistMetadata, error) {
+			return nil, fmt.Errorf("musicbrainz timeout")
+		},
+	})
+	registry.Register(&mockProvider{
+		name: provider.NameWikipedia,
+		getArtFn: func(context.Context, string) (*provider.ArtistMetadata, error) {
+			return &provider.ArtistMetadata{Name: "Wikipedia Name", Biography: longBio}, nil
+		},
+	})
+	if err := settings.SetPriority(ctx, "biography", []provider.ProviderName{provider.NameMusicBrainz, provider.NameWikipedia}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+	saveBiographyConfig(t, svc, provider.NameMusicBrainz, provider.NameWikipedia)
+
+	exec := NewExecutor(svc, registry, settings, logger, nil)
+	result, err := exec.ScrapeAll(ctx, "mbid-1", "Whatever", ScopeGlobal, nil)
+	if err != nil {
+		t.Fatalf("ScrapeAll: %v", err)
+	}
+	if result.Metadata.Biography != longBio {
+		t.Errorf("biography = %q, want Wikipedia's after MusicBrainz failed", result.Metadata.Biography)
+	}
+	if result.Metadata.Name != "Wikipedia Name" {
+		t.Errorf("Name = %q, want Wikipedia's (the failed provider must not clobber it)", result.Metadata.Name)
+	}
+}
+
+// TestApplyMergeableFields_MusicBrainzEmptyNameDoesNotClobber verifies that
+// MusicBrainz's authority over Name/SortName does not extend to blanking them:
+// an empty MusicBrainz value leaves an earlier provider's value in place.
+func TestApplyMergeableFields_MusicBrainzEmptyNameDoesNotClobber(t *testing.T) {
+	result := &provider.FetchResult{Metadata: &provider.ArtistMetadata{
+		Name: "Wikipedia Name", SortName: "Wikipedia Sort", URLs: map[string]string{},
+	}}
+	applyMergeableFields(result, &provider.ArtistMetadata{Genres: []string{"rock"}}, provider.NameMusicBrainz)
+
+	if result.Metadata.Name != "Wikipedia Name" || result.Metadata.SortName != "Wikipedia Sort" {
+		t.Errorf("empty MusicBrainz values clobbered Name/SortName: %q / %q", result.Metadata.Name, result.Metadata.SortName)
+	}
+}
+
+// TestApplyMergeableFields_GenderOnlyForIndividualTypes verifies the gender
+// guard: gender merges when the accumulated type is individual or still
+// unknown, and is dropped for a group. Ported from the legacy applyField gender
+// tests (#3292), which pinned the same rule on the loop's helper.
+func TestApplyMergeableFields_GenderOnlyForIndividualTypes(t *testing.T) {
+	cases := []struct {
+		name       string
+		typ        string
+		wantGender string
+	}{
+		{"unknown type accepts gender", "", "Female"},
+		{"individual accepts gender", "person", "Female"},
+		{"group rejects gender", "group", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := &provider.FetchResult{Metadata: &provider.ArtistMetadata{Type: tc.typ, URLs: map[string]string{}}}
+			applyMergeableFields(result, &provider.ArtistMetadata{Gender: "Female"}, provider.NameAudioDB)
+			if result.Metadata.Gender != tc.wantGender {
+				t.Errorf("Type %q: Gender = %q, want %q", tc.typ, result.Metadata.Gender, tc.wantGender)
+			}
+		})
+	}
+}
