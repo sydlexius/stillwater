@@ -13,6 +13,19 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
+// noopScraperExecutor is a provider.ScraperExecutor that scrapes nothing: it
+// returns a zero result and no error. Tests that need a constructed
+// orchestrator but never exercise FetchMetadata pass it so the executor
+// argument is always present.
+type noopScraperExecutor struct{}
+
+// ScrapeAll returns an empty result and no error. It is for tests where the
+// orchestrator needs an executor but the handler never fetches metadata; a test
+// that starts reaching FetchMetadata sees an empty result, not ErrNoScraperExecutor.
+func (noopScraperExecutor) ScrapeAll(_ context.Context, _, _, _ string, _ map[provider.ProviderName]string) (*provider.FetchResult, error) {
+	return &provider.FetchResult{}, nil
+}
+
 // A user-initiated request that reaches a provider is attributed to the user
 // and to the route that was hit (#2784). Driven through a real ServeMux and
 // each production auth wrapper into a real handler and a real orchestrator, so
@@ -41,7 +54,7 @@ func TestUserRequest_AttributesProviderFetchToRoute(t *testing.T) {
 			logger, logs := logtest.NewJSONLogger()
 			r := &Router{
 				logger:       logger,
-				orchestrator: provider.NewOrchestrator(registry, provider.NewSettingsService(newTestDB(t), nil), logger, nil),
+				orchestrator: provider.NewOrchestrator(registry, provider.NewSettingsService(newTestDB(t), nil), logger, nil, noopScraperExecutor{}),
 			}
 			passthrough := func(next http.Handler) http.Handler { return next }
 			mux := http.NewServeMux()

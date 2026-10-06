@@ -31,8 +31,7 @@ func bulkRefreshRouter(t *testing.T, fetchResult *provider.FetchResult) (*Router
 	t.Helper()
 	r, artistSvc := testRouterWithStubPipeline(t, &stubPipeline{})
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(nil, nil, logger, nil)
-	orch.SetExecutor(&stubScraperExecutor{result: fetchResult})
+	orch := provider.NewOrchestrator(nil, nil, logger, nil, &stubScraperExecutor{result: fetchResult})
 	r.orchestrator = orch
 	return r, artistSvc
 }
@@ -442,8 +441,7 @@ func TestBulkAction_RefreshMetadata_ProviderErrorFails(t *testing.T) {
 	t.Parallel()
 	r, artistSvc := testRouterWithStubPipeline(t, &stubPipeline{})
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := provider.NewOrchestrator(nil, nil, logger, nil)
-	orch.SetExecutor(&stubScraperExecutor{err: errBulkRefreshProviderTest})
+	orch := provider.NewOrchestrator(nil, nil, logger, nil, &stubScraperExecutor{err: errBulkRefreshProviderTest})
 	r.orchestrator = orch
 
 	a := addRefreshableArtist(t, artistSvc, "Provider Error Artist")
