@@ -20,7 +20,6 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -80,13 +79,15 @@ type extraFanartRunResult struct {
 	// ArtistsSkippedMissing counts artists whose folder was not found (an
 	// unmounted share, a stale row). Not a problem, but never invisible: the
 	// response reports it, so an unreachable library cannot read as migrated.
-	ArtistsSkippedMissing int                       `json:"artists_skipped_missing"`
-	ArtistsWithFiles      int                       `json:"artists_with_files"`
-	Planned               int                       `json:"planned"` // files a dry run would move
-	SkippedIdentical      int                       `json:"skipped_identical"`
-	Problems              int                       `json:"problems"` // blocked files and planning errors
-	Artists               []extraFanartArtistResult `json:"artists"`
-	Error                 string                    `json:"error,omitempty"`
+	ArtistsSkippedMissing int `json:"artists_skipped_missing"`
+	// ArtistsWithFiles counts artists with files in extrafanart/, plus artists whose
+	// plan failed (their files could not be listed, so they are counted too).
+	ArtistsWithFiles int                       `json:"artists_with_files"`
+	Planned          int                       `json:"planned"` // files a dry run would move
+	SkippedIdentical int                       `json:"skipped_identical"`
+	Problems         int                       `json:"problems"` // blocked files and planning errors
+	Artists          []extraFanartArtistResult `json:"artists"`
+	Error            string                    `json:"error,omitempty"`
 
 	// aborted is set when the run stopped early (a lookup failed or the context
 	// ended) rather than finishing. Not part of the body; it only steers Status.
@@ -206,11 +207,17 @@ func (r *Router) extraFanartConvention(ctx context.Context) (names []string, kod
 // an unreadable extrafanart/ inside a folder that EXISTS, which stays a real
 // problem, as do permission errors and everything else. os.Stat follows
 // symlinks, so an artist path that is a dangling link counts as missing.
-func artistFolderMissing(planErr error, artistPath string) bool {
+//
+// The stat is BOUNDED by ctx (img.StatBounded): on a hard-mounted share that has
+// stopped answering, a raw os.Stat would hang past the run timeout and the
+// request context. A context error from it is not ErrNotExist, so a canceled or
+// timed-out check is never counted as "missing": the artist falls through to the
+// plan-failure path, and the ctx check after each artist ends the run 500 failed.
+func artistFolderMissing(ctx context.Context, planErr error, artistPath string) bool {
 	if !errors.Is(planErr, fs.ErrNotExist) {
 		return false
 	}
-	_, err := os.Stat(artistPath)
+	_, err := img.StatBounded(ctx, artistPath)
 	return errors.Is(err, fs.ErrNotExist)
 }
 
@@ -219,7 +226,7 @@ func artistFolderMissing(planErr error, artistPath string) bool {
 func (r *Router) migrateOneArtist(ctx context.Context, a *artist.Artist, names []string, kodi, dryRun bool, res *extraFanartRunResult) {
 	plan, err := img.PlanExtraFanartMigration(ctx, a.Path, names, kodi)
 	if err != nil {
-		if artistFolderMissing(err, a.Path) {
+		if artistFolderMissing(ctx, err, a.Path) {
 			r.logger.Info("extrafanart migration: artist folder does not exist; skipping",
 				slog.String("artist_id", a.ID), slog.String("artist", a.Name))
 			res.ArtistsSkippedMissing++

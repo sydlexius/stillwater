@@ -57,7 +57,9 @@ components:
             unreachable library is never mistaken for a migrated one.
         artists_with_files:
           type: integer
-          description: Artists that have files in an extrafanart folder, or whose plan failed.
+          description: >-
+            Artists that have files in an extrafanart folder, plus artists whose
+            plan failed (their files could not be listed, so they are counted too).
         planned:
           type: integer
           description: Files that would move.

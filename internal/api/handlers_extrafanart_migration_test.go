@@ -406,6 +406,24 @@ func TestExtraFanartMigration_AllSkippedIsNothingChecked(t *testing.T) {
 	}
 }
 
+// The folder check is bounded by the run context. With a canceled context and a
+// plan error that says "not found", a folder that really is missing must NOT be
+// counted as skipped: a context error is not "missing". (This proves the check
+// honors ctx; it cannot model a mount that hangs, since a stat that blocks until
+// cancel needs a stubbed filesystem the repo's helper does not offer.)
+func TestExtraFanartMigration_CanceledFolderCheckIsNotMissing(t *testing.T) {
+	t.Parallel()
+	ghost := filepath.Join(t.TempDir(), "unmounted")
+	if !artistFolderMissing(context.Background(), fs.ErrNotExist, ghost) {
+		t.Fatal("precondition: with a live context a missing folder counts as missing")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if artistFolderMissing(ctx, fs.ErrNotExist, ghost) {
+		t.Error("a canceled folder check must not count the artist as skipped")
+	}
+}
+
 // An artist whose Path is a symlink to a target that does not exist counts as
 // missing: os.Stat follows the link, so the folder it names is not there.
 func TestExtraFanartMigration_DanglingSymlinkArtistFolderIsSkipped(t *testing.T) {
