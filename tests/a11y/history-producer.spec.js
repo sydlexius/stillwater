@@ -153,6 +153,19 @@ for (const route of ['/activity', '/next/activity']) {
   }
 }
 
+test('an ordinary hx-confirm message is not tagged with the page language', async ({ page }) => {
+  await page.goto(`/activity?artist_id=${artistId}`);
+  const undo = page.locator(`#activity-change-${rows.bioNew.id} button[hx-post$="/revert"]`);
+  // Precondition: a real hx-confirm trigger whose only lang ancestor is <html>.
+  await expect(undo).toHaveCount(1);
+  expect(await undo.evaluate((el) => el.hasAttribute('hx-confirm') && el.closest('[lang]') === document.documentElement)).toBe(true);
+  await undo.click();
+  await expect(page.locator('#confirm-modal')).toBeVisible();
+  await expect(page.locator('#confirm-modal-message')).not.toBeEmpty();
+  await expect(page.locator('#confirm-modal-message')).not.toHaveAttribute('lang', /.*/);
+  await page.locator('#confirm-modal-cancel').click();
+});
+
 test('the value-source help opens from the keyboard and says what it means', async ({ page }) => {
   await page.goto(`/activity?artist_id=${artistId}`);
   const btn = page.locator('#help-activity-value-source button');

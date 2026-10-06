@@ -314,6 +314,9 @@ test('restore confirm dialog is keyboard-safe (focus in, trapped, Escape out, fo
   // The dialog only appears after the commit:false preview round-trip
   // resolves, so allow for a server hop.
   await page.waitForSelector('#confirm-modal:not(.hidden)', { timeout: 15_000 });
+  // Caller-supplied text is untagged (inherits the page language), unlike the translated chrome (#2678).
+  await expect(page.locator('#confirm-modal-message')).not.toHaveAttribute('lang', /.*/);
+  await expect(page.locator('#confirm-modal-cancel')).toHaveAttribute('lang', 'en');
 
   // (a) ROLE. Without a dialog role, assistive tech announces the content as
   // ordinary page text and the destructive framing is lost.

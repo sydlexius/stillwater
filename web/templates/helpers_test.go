@@ -809,3 +809,23 @@ func TestDisambiguationHxVals_ClearIDsOnEveryCardThatCanReplace(t *testing.T) {
 		})
 	}
 }
+
+// TestLayoutI18nNode_CarriesRenderLocale pins the lang the toast JS copies
+// onto the chrome it builds. <html lang> is hardcoded "en", so without it
+// fr/ja aria-labels would be announced with the English voice (#2678).
+func TestLayoutI18nNode_CarriesRenderLocale(t *testing.T) {
+	bundle, err := i18n.LoadEmbedded()
+	if err != nil {
+		t.Fatalf("loading i18n bundle: %v", err)
+	}
+	for _, loc := range []string{"en", "fr", "ja"} {
+		ctx := i18n.WithTranslator(context.Background(), bundle.Translator(loc))
+		var buf strings.Builder
+		if err := LayoutGlobalChrome(AssetPaths{}).Render(ctx, &buf); err != nil {
+			t.Fatalf("%s: render: %v", loc, err)
+		}
+		if want := `id="layout-i18n" hidden lang="` + loc + `"`; !strings.Contains(buf.String(), want) {
+			t.Errorf("%s: #layout-i18n missing %s", loc, want)
+		}
+	}
+}
