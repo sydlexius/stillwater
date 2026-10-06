@@ -124,7 +124,11 @@ templ RegistryRepairBanner() {
 				// Prefer the browser's regional variant of the page language (en-GB
 				// over en) so en keeps its regional date format; else the page language.
 				function dateLocale() {
-					var langs = navigator.languages || [];
+					// Same fallback order as the language picker: navigator.languages,
+					// else navigator.language, so a region survives when the list is empty.
+					var langs = (Array.isArray(navigator.languages) && navigator.languages.length > 0)
+						? navigator.languages
+						: (navigator.language ? [navigator.language] : []);
 					for (var i = 0; i < langs.length; i++) {
 						if (langs[i].split('-')[0].toLowerCase() === el.lang) return langs[i];
 					}

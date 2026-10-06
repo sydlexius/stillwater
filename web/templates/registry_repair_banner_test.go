@@ -161,3 +161,13 @@ func TestRegistryRepairBanner_Localized(t *testing.T) {
 		t.Error("en banner still has the broken singular")
 	}
 }
+
+// The last-checked date locale must fall back to navigator.language when
+// navigator.languages is absent or empty (same order as the language picker),
+// so a regional format such as en-GB survives.
+func TestRegistryRepairBanner_DateLocaleFallsBackToNavigatorLanguage(t *testing.T) {
+	html := renderBannerFor(t, "en")
+	if !strings.Contains(html, "navigator.language ?") {
+		t.Error("dateLocale does not fall back to navigator.language when navigator.languages is empty")
+	}
+}

@@ -197,6 +197,23 @@ test('incomplete: a single write failure uses the singular wording', async ({ br
   await context.close();
 });
 
+test('last-checked time keeps the regional format when navigator.languages is empty (navigator.language fallback)', async ({ browser }) => {
+  const context = await browser.newContext({ timezoneId: 'UTC' });
+  await context.addCookies([{ name: 'session', value: server.sessionCookie, url: server.rootURL }]);
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'languages', { get: () => [] });
+    Object.defineProperty(navigator, 'language', { get: () => 'en-GB' });
+  });
+  const page = await context.newPage();
+  await page.route(`**${BANNER_API}`, (route) => route.fulfill({
+    json: { ok: true, needs_repair: true, count: 2, checked_at: '2026-03-25T15:04:05Z' },
+  }));
+  await page.goto(`${server.baseURL}/reports`);
+  // en-GB is day-first and 24-hour; en-US would be 3/25/2026, 3:04:05 PM.
+  await expect(page.locator('#sw-registry-repair-checked')).toContainText('25/03/2026, 15:04:05');
+  await context.close();
+});
+
 for (const theme of ['dark', 'light']) {
   test(`failure: fixed generic message, no server detail leaks, button recovers (${theme})`, async ({ browser }) => {
     const { context, page, errors } = await openBanner(browser, theme);
