@@ -146,7 +146,7 @@ func (p *Publisher) accumulateNeeds(
 //  1. FILE COUNT. A platform holding at least as many backdrops as there are
 //     local files is not short. No read at all, the common case.
 //  2. DISTINCT COUNT (#3144). A platform holding fewer backdrops than the local
-//     set has DISTINCT images is short. Reads the local files only.
+//     set has distinct PUSHABLE images is short. Reads the local files only.
 //  3. IDENTITY (#3147). Left over is a platform whose count sits between the
 //     distinct count and the file count, which only a local set with
 //     byte-identical duplicates can produce. A count cannot tell its two causes
@@ -171,8 +171,13 @@ func (p *Publisher) accumulateNeeds(
 // holding enough backdrops but a different image in place of a local one is
 // still not detected (see ReconcileArtworkToPlatforms).
 //
-// FAIL DIRECTION. A local file that cannot be hashed counts as distinct (tier
-// 2), erring toward repair, never toward leaving a real deficit. A failure to
+// FAIL DIRECTION. A local file the push cannot read (unreadable, or degraded by
+// a snapshot cap) does NOT count toward the deficit (#3200): the push could not
+// carry it, so re-pushing every pass only churns the peer (on Emby each pass
+// replaces the earlier slots in place and leaves a metadata copy; on Jellyfin
+// it is refused). The pushable files are classified by snapshotFanart, the
+// push's own predicate. A snapshot error (cancel, stalled mount) is no deficit
+// this pass, like a platform read failure. A failure to
 // read the PLATFORM's bytes in tier 3 goes the other way: no deficit this pass,
 // logged, retried next pass. Repairing on that error would rebuild a platform
 // the prune had reduced and restore the copies it removed (#3144) every time a
@@ -195,10 +200,32 @@ func (p *Publisher) fanartDeficit(
 	if len(fanartPaths) == 0 || state.BackdropCount >= len(fanartPaths) {
 		return false
 	}
-	local, unreadable := p.localFanartHashes(ctx, fanartPaths)
-	if state.BackdropCount < len(local)+unreadable {
+	// Classify with the PUSH's own predicate (#3200), so "what the push can
+	// carry" and "what the reconciler thinks is missing" cannot drift apart.
+	// A nil-data slot is a file the push cannot send (unreadable, or over a
+	// snapshot cap); pushing again could never fill it.
+	snapshot, _, snapErr := p.snapshotFanart(ctx, fanartPaths)
+	if snapErr != nil {
+		// A cancel or stalled mount: a push would abort on the same error.
+		p.logger.Warn("artwork reconciler: reading local fanart to check for missing fanart; retrying next pass",
+			slog.String("artist_id", artistID), slog.Any("error", snapErr))
+		return false
+	}
+	local := make(map[string]bool, len(snapshot))
+	unpushable := 0
+	for _, sf := range snapshot {
+		if sf.data == nil {
+			unpushable++
+			continue
+		}
+		local[img.ContentHash(sf.data)] = true
+	}
+	if state.BackdropCount < len(local) {
 		return true
 	}
+	// reader == nil means the check is count-only. Every platform client
+	// implements BackdropReader today, so the stale-replacement edge this leaves
+	// (right count, wrong bytes) is unreachable in production.
 	if reader == nil {
 		return false
 	}
@@ -217,6 +244,10 @@ func (p *Publisher) fanartDeficit(
 		if !held[h] {
 			return true
 		}
+	}
+	if unpushable > 0 {
+		p.logger.Info("artwork reconciler: fanart deficit is explained by local file(s) the push cannot read; not re-pushing",
+			slog.String("artist_id", artistID), slog.Int("unpushable", unpushable))
 	}
 	return false
 }
@@ -292,9 +323,10 @@ func (p *Publisher) syncMissingArtwork(ctx context.Context, a *artist.Artist, ne
 //   - when it fires, Emby replaces in place below its count and appends the
 //     rest, and Jellyfin clears and rebuilds the whole list (#3145), so a push
 //     that lands in full ends at or above the distinct count and the next
-//     pass writes nothing. A push that does NOT land in full (an unreadable
-//     local file, a failed upload) leaves the deficit open, and every pass
-//     retries it, as before #3144;
+//     pass writes nothing. A failed upload leaves the deficit open and every
+//     pass retries it, as before #3144. A local file the push cannot read
+//     (unreadable, or over a snapshot cap) is NOT a deficit (#3200): the push
+//     could never carry it, so retrying would only churn the peer;
 //   - thumb/logo/banner fire only when the platform lacks the image outright.
 //
 // Two limits, stated so nobody reads more into it. The deficit check does not
