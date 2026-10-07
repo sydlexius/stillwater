@@ -15,6 +15,13 @@ contributing/architecture/index#architecture-overview
 contributing/architecture/index#how-a-typical-scan-flows-end-to-end
 contributing/architecture/index#package-map
 contributing/architecture/index#system-topology
+contributing/architecture/metadata-history#add-a-write-path
+contributing/architecture/metadata-history#guardrails
+contributing/architecture/metadata-history#how-history-displays-it
+contributing/architecture/metadata-history#metadata-history
+contributing/architecture/metadata-history#the-empty-string-contract
+contributing/architecture/metadata-history#the-two-column-model
+contributing/architecture/metadata-history#vocabulary
 contributing/architecture/providers-and-coalesce#adapter-contract
 contributing/architecture/providers-and-coalesce#fan-out-and-coalesce-flow
 contributing/architecture/providers-and-coalesce#image-bridge

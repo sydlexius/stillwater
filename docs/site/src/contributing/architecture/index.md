@@ -132,3 +132,4 @@ For deeper dives into individual subsystems see the pages in this section:
 - [Rule engine](rule-engine.md) -- how violations are detected and fixed
 - [Scanner pipeline](scanner-pipeline.md) -- watcher, scanner, event bus, and publisher topology
 - [Conflict gate](conflict-gate.md) -- how write-back conflicts are detected and enforced
+- [Metadata history](metadata-history.md) -- what triggered a change versus what supplied its value, and how to stamp a new write path
