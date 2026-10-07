@@ -783,3 +783,181 @@ func TestUploadFanartSet_NextSyncRetriesAfterCacheLoadFailure(t *testing.T) {
 		t.Fatalf("peer = %v, want the pending bytes at index 3", peer.data)
 	}
 }
+
+// flappingCountPeer is a fakeEmbyPeer whose backdrop COUNT keeps moving after
+// the seed read and cache load (the first three reads): it alternates len and len+1 and never
+// holds still, the "verify budget spent without settling" peer (#3200). Writes
+// and backdrop fetches are the embedded peer's own.
+type flappingCountPeer struct {
+	*fakeEmbyPeer
+	reads int
+}
+
+func (f *flappingCountPeer) GetArtistDetail(ctx context.Context, id string) (*connection.ArtistPlatformState, error) {
+	st, err := f.fakeEmbyPeer.GetArtistDetail(ctx, id)
+	f.reads++
+	if err == nil && f.reads > 3 {
+		st.BackdropCount += f.reads % 2
+	}
+	return st, err
+}
+
+// shrinkPollTiming makes a verify budget run out in milliseconds, so a test
+// can spend the whole budget without real multi-second sleeps.
+func shrinkPollTiming(t *testing.T) {
+	t.Helper()
+	setBudget(t, 150*time.Millisecond)
+	old := indexedUploadPollInterval
+	indexedUploadPollInterval = time.Millisecond
+	t.Cleanup(func() { indexedUploadPollInterval = old })
+}
+
+// #3200 slice D: slot 4's upload 500s past a nil gap and the verify count then
+// flaps for the whole budget. Whether it landed is unknown, so slot 5 must be
+// withheld and reported "not synced", not uploaded on a guess.
+func TestUploadFanartSet_UnsettledVerifyWithholdsLaterSlot(t *testing.T) {
+	shrinkPollTiming(t)
+	peer := newFakeEmbyPeer()
+	p, u := harness(peer, connection.TypeEmby, slot{3, 0}, slot{4, 1}, slot{5, 2})
+	u.reader = &flappingCountPeer{fakeEmbyPeer: peer}
+	w := p.uploadFanartSet(context.Background(), u)
+	joined := strings.Join(w, "|")
+	if peer.ups != 1 {
+		t.Fatalf("ups = %d, want 1 (slot 4 only): slot 5 was uploaded on an unverified guess", peer.ups)
+	}
+	if len(w) != 2 || !strings.Contains(joined, "fanart 4 upload failed") || !strings.Contains(joined, "fanart 5 not synced") {
+		t.Fatalf("warnings = %v, want slot 4 upload failed and slot 5 not synced", w)
+	}
+}
+
+// The two-sided half: a count that SETTLES below want is a genuine failure (the
+// peer took nothing). It is reported as failed but the peer was readable, so a
+// later slot still uploads; unverifiable must not swallow every failure.
+func TestUploadFanartSet_SettledBelowWantIsAFailureNotUnverifiable(t *testing.T) {
+	shrinkPollTiming(t)
+	peer := newFakeEmbyPeer()
+	peer.dropCalls = map[int]bool{0: true} // slot 4's write errors and is NOT applied
+	p, u := harness(peer, connection.TypeEmby, slot{3, 0}, slot{4, 1}, slot{5, 2})
+	w := p.uploadFanartSet(context.Background(), u)
+	joined := strings.Join(w, "|")
+	if peer.ups != 2 {
+		t.Fatalf("ups = %d, want 2: a readable peer with a settled count must not withhold slot 5", peer.ups)
+	}
+	if !strings.Contains(joined, "fanart 4 upload failed") || strings.Contains(joined, "not synced") {
+		t.Fatalf("warnings = %v, want slot 4 upload failed and no not-synced", w)
+	}
+}
+
+// settlesOnLastReadPeer serves its second count read only once the budget has
+// expired (it blocks on ctx), then returns normally: the count settles on the
+// last read the budget allowed. The fake ignores the deadline and returns
+// success, which no real client does; a read cut by the deadline is unsettled
+// (covered by TestPollCount_SettledIsTheLastTwoCompletedReads).
+type settlesOnLastReadPeer struct {
+	*fakeEmbyPeer
+	reads int
+}
+
+func (s *settlesOnLastReadPeer) GetArtistDetail(ctx context.Context, id string) (*connection.ArtistPlatformState, error) {
+	s.reads++
+	if s.reads == 2 {
+		<-ctx.Done()
+	}
+	return &connection.ArtistPlatformState{BackdropCount: s.count()}, nil
+}
+
+// Boundary: two equal reads at want, the second arriving as the budget ends,
+// is landed, not unverifiable.
+func TestPeerCacheLandedSince_SettlesOnLastAllowedRead(t *testing.T) {
+	setBudget(t, 150*time.Millisecond)
+	peer := newFakeEmbyPeer()
+	peer.data = append(peer.data, []byte{0x41}) // the write landed: 4 backdrops
+	cache := &peerCache{reader: &settlesOnLastReadPeer{fakeEmbyPeer: peer}, id: "p1", loaded: true}
+	for i := 0; i < 3; i++ {
+		cache.hashes = append(cache.hashes, img.ContentHash(peer.data[i]))
+	}
+	added, count, err := cache.landedSince(context.Background())
+	if err != nil || count != 4 || len(added) != 1 {
+		t.Fatalf("got (%d hashes, count %d, err %v), want (1, 4, nil)", len(added), count, err)
+	}
+}
+
+// blockAfterReads serves seq, then blocks until the budget ends and returns the
+// ctx error, which is what a real HTTP client does when the deadline cuts a read.
+type blockAfterReads struct {
+	seq   []int
+	calls int
+}
+
+func (b *blockAfterReads) GetArtistDetail(ctx context.Context, _ string) (*connection.ArtistPlatformState, error) {
+	if b.calls < len(b.seq) {
+		b.calls++
+		return &connection.ArtistPlatformState{BackdropCount: b.seq[b.calls-1]}, nil
+	}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+// "Settled" is the LAST two completed reads being equal, read when the budget
+// cuts a read mid-flight. The same expression at the select site (budget ends
+// between reads) is pinned by TestPollCount_SettledWhenDeadlineWinsTheTimer.
+func TestPollCount_SettledIsTheLastTwoCompletedReads(t *testing.T) {
+	shrinkPollTiming(t)
+	for _, c := range []struct {
+		seq     []int
+		settled bool
+	}{
+		{nil, false},
+		{[]int{3}, false},
+		{[]int{3, 3}, true},
+		{[]int{3, 3, 4}, false},
+		{[]int{3, 4, 3, 3}, true},
+	} {
+		_, ok, settled, err := pollCount(context.Background(), &blockAfterReads{seq: c.seq}, "p1", 5)
+		if ok || err != nil || settled != c.settled {
+			t.Errorf("seq %v: got (ok %v, settled %v, err %v), want (false, %v, nil)", c.seq, ok, settled, err, c.settled)
+		}
+	}
+}
+
+// seqCounts is an instant reader that serves seq in order (then repeats the
+// last value) and never blocks, so the budget can only end in pollCount's timer
+// wait between reads, not mid-read.
+type seqCounts struct {
+	seq   []int
+	calls int
+}
+
+func (s *seqCounts) GetArtistDetail(context.Context, string) (*connection.ArtistPlatformState, error) {
+	i := min(s.calls, len(s.seq)-1)
+	s.calls++
+	return &connection.ArtistPlatformState{BackdropCount: s.seq[i]}, nil
+}
+
+// Pins `settled` at the select site where the deadline wins the timer wait:
+// with a 150 ms budget and a 100 ms poll interval, reads land at 0 and 100 ms
+// and the deadline fires before the 200 ms tick, so exactly two reads complete.
+// The call count proves the timer branch was taken after two reads, not three.
+func TestPollCount_SettledWhenDeadlineWinsTheTimer(t *testing.T) {
+	shrinkPollTiming(t) // 150 ms budget; restores both timing vars on cleanup
+	indexedUploadPollInterval = 100 * time.Millisecond
+	for _, c := range []struct {
+		name    string
+		seq     []int
+		settled bool
+	}{
+		{"two equal reads", []int{3}, true},
+		{"two differing reads", []int{3, 4}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := &seqCounts{seq: c.seq}
+			count, ok, settled, err := pollCount(context.Background(), r, "p1", 5)
+			if r.calls != 2 {
+				t.Fatalf("reads = %d, want exactly 2: the deadline did not win the timer wait after two reads", r.calls)
+			}
+			if count != c.seq[len(c.seq)-1] || ok || settled != c.settled || err != nil {
+				t.Fatalf("got (count %d, ok %v, settled %v, err %v), want (%d, false, %v, nil)", count, ok, settled, err, c.seq[len(c.seq)-1], c.settled)
+			}
+		})
+	}
+}

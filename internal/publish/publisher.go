@@ -3067,8 +3067,12 @@ var (
 // peer read never causes MORE uploads than a clean run: past a nil slot an
 // unverifiable slot is reported, not uploaded.
 //
-// The first read error or confirmed not-landed result disarms recovery for the
-// rest of the call, so a failing peer costs one poll budget, not one per slot.
+// The first read error, unsettled count or confirmed not-landed result disarms
+// recovery for the rest of the call, so a failing peer costs one poll budget,
+// not one per slot. A verify whose count never SETTLED (errVerifyUnsettled)
+// counts as a read failure: the write may have landed unseen, so later slots
+// past a nil gap are withheld. A count that settled BELOW the target is a
+// confirmed not-landed result and does not withhold.
 // Disarming re-exposes the original false failure for LATER slots in the same
 // call (a landed 500 is reported); a retry then recovers it through the guard.
 // Past a nil slot those later slots are not uploaded at all once the peer cannot
@@ -3192,7 +3196,7 @@ func (p *Publisher) skipPastNilSlot(u fanartUpload, cache *peerCache, canRead, s
 	case !canRead && u.reader != nil && u.conn.Type == connection.TypeEmby:
 		p.logger.Warn("skipping fanart upload: the peer could not be read to check for a duplicate past an unreadable slot",
 			slog.String("artist", u.artist.Name), slog.String("connection", u.conn.Name), slog.Int("index", idx))
-		return []string{truncateWarning(fmt.Sprintf("%s (%s): fanart %d not synced: the platform could not be read to check for a duplicate; the next sync retries", u.conn.Name, u.conn.Type, idx))}, true
+		return []string{truncateWarning(fmt.Sprintf("%s (%s): fanart %d not synced: the platform could not be read reliably to check for a duplicate; the next sync retries", u.conn.Name, u.conn.Type, idx))}, true
 	}
 	return nil, false
 }
