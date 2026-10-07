@@ -170,7 +170,7 @@ never gets scheduled. This is not a nicety to add later -- "later" does not happ
 
 ## PR Workflow
 
-Repo-specific delta on top of the global PR workflow (`/prep-pr` to open, `/handle-review`, `/merge-pr`): the pre-push git hook runs `scripts/pre-push-gate.sh` automatically on every push, so do **not** invoke it manually as a standalone pre-push step -- the manual call duplicates the hook's work without adding signal. Manual `bash scripts/pre-push-gate.sh` invocations are appropriate only inside `/handle-review` and `/merge-pr` (verifying fixes before commit, gating a merge).
+Repo-specific delta on top of the global PR workflow (`/prep-pr` to open, `/handle-review`, `/merge-pr`): the pre-push git hook runs `scripts/pre-push-gate.sh` automatically on every push (it skips the run only when a valid gate receipt and stamp cover the exact pushed tree, #3436; `PRE_PUSH_FORCE_GATE=1` forces it), so do **not** invoke it manually as a standalone pre-push step -- the manual call duplicates the hook's work without adding signal. Manual `bash scripts/pre-push-gate.sh` invocations are appropriate only inside `/handle-review` and `/merge-pr` (verifying fixes before commit, gating a merge).
 
 See `docs/pr-workflow.md` for full details including the gh `!=` bash history workaround and Copilot policy.
 

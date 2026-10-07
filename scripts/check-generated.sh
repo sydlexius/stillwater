@@ -2,6 +2,11 @@
 # check-generated.sh -- verify *_templ.go files were regenerated after .templ changes
 set -euo pipefail
 
+# gate_skip classifies every skip so the pre-push gate can refuse to stamp a run
+# that skipped a check for a host-dependent reason (#3436).
+# shellcheck source=scripts/lib/gate-stamp.sh
+. "$(dirname "$0")/lib/gate-stamp.sh"
+
 # Plain `git diff` for the dirty checks below (#3446).
 # shellcheck source=scripts/lib/git-plain.sh
 . "$(dirname "$0")/lib/git-plain.sh"
@@ -59,7 +64,7 @@ if command -v tailwindcss >/dev/null 2>&1; then
     exit 1
   fi
 else
-  echo "WARNING: tailwindcss not found on PATH; skipping Tailwind CSS freshness check locally (CI's Generated Files job in gate.yml enforces this unconditionally)."
+  gate_skip blocking "WARNING: tailwindcss not found on PATH; skipping Tailwind CSS freshness check locally (CI's Generated Files job in gate.yml enforces this unconditionally)."
 fi
 
 # Wholesale dirty-check: the two targeted diffs above (`git diff --name-only

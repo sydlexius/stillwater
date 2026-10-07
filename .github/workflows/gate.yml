@@ -789,6 +789,11 @@ jobs:
       - name: RUN_* flag resolution self-test
         run: bash scripts/test-run-flag-resolution.sh
 
+      # The pre-push hook skips the gate only when a receipt proves it already
+      # passed for the pushed tree (#3436); this asserts every doubt runs it.
+      - name: Gate receipt decision self-test
+        run: bash scripts/test-gate-receipt-valid.sh
+
       # An inherited GIT_DIR makes `git init <path>` re-initialize GIT_DIR and
       # ignore <path>. Run from a worktree by the pre-push hook, that wrote
       # core.bare=true into the MAIN repository's shared config and silently

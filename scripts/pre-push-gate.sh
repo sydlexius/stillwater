@@ -56,6 +56,17 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# #3436: the proof-of-pass stamp. Deleted FIRST, before flag resolution or any
+# check, so an early exit (bad RUN_* value, failed check) cannot leave an older
+# stamp behind (GATE_STAMP_DIR, a self-test override, redirects it). Rewritten at the very end only when nothing was skipped or
+# weakened: skip arms print through gate_skip (deterministic or blocking), and
+# a blocking one means no stamp. See scripts/lib/gate-stamp.sh. The temporary
+# blocker file is removed on any exit; the later `trap cleanup EXIT` replaces
+# this trap and removes it too (cleanup is NOT moved up: it deletes the lock dir).
+. "$SCRIPT_DIR/lib/gate-stamp.sh"
+gate_stamp_begin
+trap 'rm -f "${GATE_STAMP_BLOCK_FILE:-}"' EXIT
+
 # --- RUN_* flag resolution ----------------------------------------------------
 # Every RUN_* tier below is three-state: truthy => RUN (blocking), falsy =>
 # explicit SKIP, UNSET => the tier's documented default. A fourth state exists
@@ -162,7 +173,7 @@ COVER_OUT="$SW_RUN_DIR/cover.out"
 tmp_openapi=""
 cleanup() {
   gate_timing_summary || true  # a failing run still shows where the time went
-  rm -f "${COVER_OUT:-}" "${tmp_openapi:-}"
+  rm -f "${COVER_OUT:-}" "${tmp_openapi:-}" "${GATE_STAMP_BLOCK_FILE:-}"
   rm -rf "${LOCK_DIR:-}"
 }
 trap cleanup EXIT
@@ -385,7 +396,7 @@ run_full_race_suite() {
 
 run_changed_pkgs_test() {
   if [ -z "$MODIFIED_GO_PKGS" ]; then
-    echo "tests: skipped (no Go files changed since BASE)"
+    gate_skip deterministic "tests: skipped (no Go files changed since BASE)"
     return 0
   fi
   # Clear any stale profile before running. A profile left behind by a prior
@@ -414,8 +425,8 @@ SKIP_PATCH_COVERAGE=0
 SKIP_PATCH_COVERAGE_REASON=""
 case "$RACE_MODE" in
   off)
-    echo "tests: skipped (RUN_RACE=${RUN_RACE} forces opt-out; CI still runs the full race suite)"
-    echo "tests: no coverage profile generated -- patch coverage also skipped for this push"
+    gate_skip deterministic "tests: skipped (RUN_RACE=${RUN_RACE} forces opt-out; CI still runs the full race suite)"
+    gate_skip deterministic "tests: no coverage profile generated -- patch coverage also skipped for this push"
     SKIP_PATCH_COVERAGE_REASON="RUN_RACE=${RUN_RACE} skipped the test run, so no profile is available; CI's Coverage Floor / codecov still gate this"
     SKIP_PATCH_COVERAGE=1
     ;;
@@ -456,7 +467,7 @@ case "$RACE_MODE" in
       # patch-coverage.sh treats an empty profile as "no executable lines,
       # nothing to enforce" and exits 0, which would read identically to a
       # real, passing coverage check for genuine Go changes.
-      echo "SKIP: no coverage profile produced by the changed-packages test run -- patch coverage skipped (nothing to measure for this push)"
+      gate_skip deterministic "SKIP: no coverage profile produced by the changed-packages test run -- patch coverage skipped (nothing to measure for this push)"
       SKIP_PATCH_COVERAGE_REASON="changed-packages test run produced no coverage profile (no Go packages changed since BASE, or the changed packages have nothing testable)"
       SKIP_PATCH_COVERAGE=1
     fi
@@ -488,13 +499,13 @@ gate_step "Vulnerability scan (govulncheck)"
 run_vuln=0
 case "$VULN_MODE" in
   off)
-    echo "vuln: skipped (RUN_VULN=${RUN_VULN} forces opt-out; CI still runs govulncheck)"
+    gate_skip deterministic "vuln: skipped (RUN_VULN=${RUN_VULN} forces opt-out; CI still runs govulncheck)"
     ;;
   on)
     run_vuln=1
     ;;
   *)
-    echo "vuln: skipped by default -- CI's required 'Go Vulnerability Check' job (security.yml) is authoritative; set RUN_VULN=1 for a blocking local run"
+    gate_skip deterministic "vuln: skipped by default -- CI's required 'Go Vulnerability Check' job (security.yml) is authoritative; set RUN_VULN=1 for a blocking local run"
     ;;
 esac
 
@@ -658,6 +669,7 @@ gate_step "RUN_* flag resolution (#2983)"
 # tier ran is a message saying it did not. Nothing else in the gate can
 # observe that, which is why it gets its own check.
 bash "$SCRIPT_DIR/test-run-flag-resolution.sh"
+bash "$SCRIPT_DIR/test-gate-receipt-valid.sh"
 
 echo ""
 gate_step "git-clean-env behavior (#3051)"
@@ -753,13 +765,15 @@ PY
             fi
             echo "OK"
         else
-            echo "SKIP: PyYAML not installed (pip install pyyaml -- runs only on demand)"
+            gate_skip blocking "SKIP: PyYAML not installed (pip install pyyaml -- runs only on demand)"
         fi
     else
-        echo "SKIP: python3 not in PATH"
+        # Unreachable in a passing gate (check-zizmor-suppressions.sh hard-fails
+        # without python3 first); classified blocking anyway, fail closed.
+        gate_skip blocking "SKIP: python3 not in PATH"
     fi
 else
-    echo "SKIP: docs/site/properdocs.yml not present"
+    gate_skip deterministic "SKIP: docs/site/properdocs.yml not present"
 fi
 
 echo ""
@@ -815,7 +829,7 @@ gate_step "OpenAPI breaking changes"
 openapi_skip_flag="$(printf '%s' "${SKIP_OPENAPI_BREAKING:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 case "$openapi_skip_flag" in
   1 | true | yes | on)
-    echo "Skipped (SKIP_OPENAPI_BREAKING is set; CI does not gate breaking OpenAPI changes, so verify intentional breaks manually)"
+    gate_skip blocking "Skipped (SKIP_OPENAPI_BREAKING is set; CI does not gate breaking OpenAPI changes, so verify intentional breaks manually)"
     ;;
   *)
 if command -v go &>/dev/null; then
@@ -861,7 +875,7 @@ if command -v go &>/dev/null; then
     echo "FAIL: reading openapi.yaml from main failed although the file exists" >&2
     exit 1
   else
-    echo "Skipped (openapi.yaml not yet on main)."
+    gate_skip deterministic "Skipped (openapi.yaml not yet on main)."
   fi
 else
   echo "FAIL: go not installed -- oasdiff (go install github.com/oasdiff/oasdiff@v1.25.1) requires the Go toolchain; breaking-change detection is unavailable" >&2
@@ -878,7 +892,7 @@ if [ "$SKIP_PATCH_COVERAGE" -eq 1 ]; then
   # profile) -- report the actual reason set alongside the flag rather than
   # hard-coding the RUN_RACE explanation, which would misreport why coverage
   # wasn't enforced for the other paths.
-  echo "SKIP: patch coverage (${SKIP_PATCH_COVERAGE_REASON:-no coverage profile available for this push})"
+  gate_skip deterministic "SKIP: patch coverage (${SKIP_PATCH_COVERAGE_REASON:-no coverage profile available for this push})"
 else
   # Matches codecov.yml's 78% patch threshold (codecov.yml:14).
   #
@@ -896,12 +910,12 @@ else
   # an `if` here (rather than calling the script bare under `set -e`) lets
   # us capture the exit code without the shell bailing out first.
   #
-  # BASE is intentionally not forwarded: patch-coverage.sh has its own
-  # resolution that errors out if `main` is missing, which is stricter than
-  # this script's silent HEAD~1 fallback. Letting the child resolve BASE
-  # avoids narrowing patch coverage to only the tip commit on a branch
-  # whose base ref isn't reachable.
-  #
+  # BASE is passed EXPLICITLY, as the stamp's patch base (the origin/main-first
+  # ladder in gate_patch_base). That is what the helper picked by itself when no
+  # BASE was inherited, so normal behavior is unchanged, but an exported BASE in
+  # the environment can no longer make it compare against a different commit
+  # than the one the stamp records. This script's own BASE (merge-base with
+  # local main, silent HEAD~1 fallback) is not used here on purpose.
   # This helper lives only in the orchestrate plugin (~/.claude/scripts/),
   # not vendored in-repo: a prior repo-vendored copy carried a silent
   # wrong-number bug (summed nstmts across duplicate coverage blocks under
@@ -912,7 +926,11 @@ else
     echo "pre-push-gate: patch-coverage.sh not found at ~/.claude/scripts/patch-coverage.sh (ships with the orchestrate plugin)" >&2
     exit 1
   fi
-  if COVER_OUT="$COVER_OUT" PATCH_COVERAGE_THRESHOLD=78 \
+  if [ -z "${GATE_STAMP_START_PBASE:-}" ] || [ "$GATE_STAMP_START_PBASE" = none ]; then
+    echo "FAIL: no patch-coverage base (none of origin/main, main, origin/master, master resolves)" >&2
+    exit 1
+  fi
+  if BASE="$GATE_STAMP_START_PBASE" COVER_OUT="$COVER_OUT" PATCH_COVERAGE_THRESHOLD=78 \
       PATCH_COVERAGE_EXCLUDE="*_templ.go cmd/stillwater/main.go scripts/" \
       bash "$PATCH_COVERAGE_HELPER"; then
     :
@@ -964,13 +982,13 @@ SMOKE_FAILURE_SCRIPT="$SCRIPT_DIR/smoke-provider-failure.sh"
 run_provider_smoke=0
 case "$PROVIDER_SMOKE_MODE" in
   off)
-    echo "provider-smoke: skipped (RUN_PROVIDER_SMOKE=${RUN_PROVIDER_SMOKE} forces opt-out; CI still runs the provider failure smoke)"
+    gate_skip deterministic "provider-smoke: skipped (RUN_PROVIDER_SMOKE=${RUN_PROVIDER_SMOKE} forces opt-out; CI still runs the provider failure smoke)"
     ;;
   on)
     run_provider_smoke=1
     ;;
   *)
-    echo "provider-smoke: skipped by default -- CI's required 'Provider Failure Smoke' job (gate.yml) is authoritative; set RUN_PROVIDER_SMOKE=1 for a blocking local run"
+    gate_skip deterministic "provider-smoke: skipped by default -- CI's required 'Provider Failure Smoke' job (gate.yml) is authoritative; set RUN_PROVIDER_SMOKE=1 for a blocking local run"
     ;;
 esac
 
@@ -1022,13 +1040,13 @@ gate_step "Accessibility (axe-core)"
 run_a11y=0
 case "$A11Y_MODE" in
   off)
-    echo "a11y: skipped (RUN_A11Y=${RUN_A11Y} forces opt-out; CI still gates a11y)"
+    gate_skip deterministic "a11y: skipped (RUN_A11Y=${RUN_A11Y} forces opt-out; CI still gates a11y)"
     ;;
   on)
     run_a11y=1
     ;;
   *)
-    echo "a11y: skipped by default -- CI's required 'A11y Smoke Tests (Playwright + axe-core)' check (ci.yml) is authoritative; set RUN_A11Y=1 for a blocking local run (needs 'npx playwright install chromium firefox')"
+    gate_skip deterministic "a11y: skipped by default -- CI's required 'A11y Smoke Tests (Playwright + axe-core)' check (ci.yml) is authoritative; set RUN_A11Y=1 for a blocking local run (needs 'npx playwright install chromium firefox')"
     ;;
 esac
 
@@ -1079,9 +1097,11 @@ if [ ! -f "$PREFS_COVERAGE_HELPER" ]; then
   echo "FAIL: prefs-coverage.py not found in scripts/ or ~/.claude/scripts/ -- the repo-vendored copy is missing (broken checkout?)" >&2
   exit 1
 elif ! command -v python3 >/dev/null 2>&1; then
-  echo "pre-push-gate: python3 not found -- skipping prefs-coverage (install python3.11+ to enable locally; CI still gates this)"
+  # Unreachable in a passing gate (check-zizmor-suppressions.sh hard-fails
+  # without python3 first); classified blocking anyway, fail closed.
+  gate_skip blocking "pre-push-gate: python3 not found -- skipping prefs-coverage (install python3.11+ to enable locally; CI still gates this)"
 elif ! python3 -c 'import tomllib' >/dev/null 2>&1; then
-  echo "pre-push-gate: python3 lacks tomllib (need 3.11+) -- skipping prefs-coverage (CI still gates this)"
+  gate_skip blocking "pre-push-gate: python3 lacks tomllib (need 3.11+) -- skipping prefs-coverage (CI still gates this)"
 else
   prefs_status=0
   BASE="$BASE" python3 "$PREFS_COVERAGE_HELPER" || prefs_status=$?
@@ -1107,6 +1127,13 @@ fi
 # scripts/check-bruno-parity.sh, and the local copy cost ~7s of the gate to
 # reproduce a verdict a required check already produces. The script itself is
 # retained because that job invokes it.
+
+# #3436: record what this PASSING run covered so .githooks/pre-push can skip a
+# second identical run (scripts/gate-receipt-valid.sh reads this). Written only
+# when the tree was clean and unchanged across the run, main and the
+# patch-coverage base did not move, and no arm was classified blocking; otherwise one NOTE line names why, and the hook runs the
+# gate itself. Best effort: failing to write only costs the hook a gate run.
+gate_stamp_write "$BASE" "$RACE_MODE" "$VULN_MODE" "$PROVIDER_SMOKE_MODE" "$A11Y_MODE"
 
 echo ""
 # EVERY STEP ABOVE EITHER BLOCKS OR IS EXPLICITLY SKIPPED -- no step in this

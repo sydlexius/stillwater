@@ -185,7 +185,7 @@ grep -q 'ls-tree' "$W/oa.sh" || fail "openapi arm cut is wrong"
 printf '#!/bin/sh\nexit 0\n' > "$W/oasdiff"; chmod +x "$W/oasdiff"
 R3="$W/repo3"; git -c init.defaultBranch=main init -q "$R3"; git -C "$R3" config user.name T; git -C "$R3" config user.email t@localhost
 oarun() { # <expect-rc> <expect-text> <name> <prelude>
-  { echo 'set -euo pipefail'; echo "tmp_openapi=$W/o.yaml oasdiff_err=$W/oerr oasdiff_bin=$W/oasdiff"; echo "$4"; cat "$W/oa.sh"; } > "$W/oa-run.sh"
+  { echo 'set -euo pipefail'; echo ". $REPO_ROOT/scripts/lib/gate-stamp.sh"; echo "tmp_openapi=$W/o.yaml oasdiff_err=$W/oerr oasdiff_bin=$W/oasdiff"; echo "$4"; cat "$W/oa.sh"; } > "$W/oa-run.sh"
   local o r=0; o=$(cd "$R3" && bash "$W/oa-run.sh" 2>&1) || r=$?
   [ "$r" -eq "$1" ] && grep -q "$2" <<<"$o" && pass "$3" || fail "$3 (exit $r): $o"
 }

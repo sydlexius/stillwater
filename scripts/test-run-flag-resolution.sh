@@ -131,6 +131,11 @@ fi
 # safety, so it is ASSERTED rather than assumed -- an exit 2 caused by lock
 # contention would otherwise be indistinguishable from the refusal, and this
 # test would report green over a deleted feature.
+# The gate deletes its stamp before resolving flags; keep these runs off the
+# worktree's real one (GATE_STAMP_DIR is honored only by gate_stamp_begin).
+GATE_STAMP_DIR=$(mktemp -d)
+export GATE_STAMP_DIR
+trap 'rm -rf "$GATE_STAMP_DIR"' EXIT
 for spec in "RUN_RACE:truee" "RUN_VULN:yess" "RUN_PROVIDER_SMOKE:offf" "RUN_A11Y:onnn"; do
   var="${spec%%:*}"
   bad="${spec##*:}"
