@@ -334,13 +334,17 @@ func TestRegistryRepairCache_PlanClearedByRepairErrorAndStaleScan(t *testing.T) 
 }
 
 // Snapshot is one consistent read: with a writer alternating two plans that
-// share a total but differ in split, every snapshot's split must be the one
-// stored with its checked_at. A Get-then-Plan pair tears under this load.
+// share a total but differ in split, EVERY snapshot's split must be the one
+// stored with its checked_at. This pins the accessor's atomicity only; it does
+// not pin that the banner handler reads through Snapshot (the cache is a
+// concrete type, so no cheap fake can fail a handler that went back to Get
+// plus Plan).
 func TestRegistryRepairCache_SnapshotIsConsistent(t *testing.T) {
 	cache := &RegistryRepairCache{}
 	plans := [2]RegistryRepairPlan{{Rebuild: 1, Restore: 2}, {Rebuild: 2, Restore: 1}}
 	stop := make(chan struct{})
 	done := make(chan struct{})
+	recorded := map[time.Time]RegistryRepairPlan{} // written only by the writer, read after <-done
 	go func() {
 		defer close(done)
 		for i := 0; ; i++ {
@@ -355,26 +359,28 @@ func TestRegistryRepairCache_SnapshotIsConsistent(t *testing.T) {
 			}
 			gen, _ := cache.begin()
 			cache.finish(gen, plans[i%2], nil)
+			recorded[cache.Snapshot().CheckedAt] = plans[i%2]
 		}
 	}()
-	// The writer stamps time.Now() inside finish, so tie plan to timestamp by
-	// recording each timestamp's plan parity: consecutive writes alternate, and
-	// a consistent read pairs the plan with the write that produced its time.
-	seen := map[time.Time]RegistryRepairPlan{}
-	torn := 0
+	// The writer's timestamp is stamped inside finish, so the pair is recorded
+	// right after the store; the reader only collects observations, and every
+	// one is checked against the record once the writer has stopped. A
+	// timestamp with no record is a failure, not a skip.
+	observed := map[RegistryRepairSnapshot]struct{}{} // distinct snapshots only
 	for deadline := time.Now().Add(300 * time.Millisecond); time.Now().Before(deadline); {
-		s := cache.Snapshot()
-		if !s.PlanKnown {
-			continue
+		if s := cache.Snapshot(); s.PlanKnown {
+			observed[s] = struct{}{}
 		}
-		if prev, ok := seen[s.CheckedAt]; ok && prev != s.Plan {
-			torn++
-		}
-		seen[s.CheckedAt] = s.Plan
 	}
 	close(stop)
 	<-done
-	if torn != 0 {
-		t.Fatalf("%d torn reads: a plan was served with another write's checked_at", torn)
+	if len(observed) == 0 {
+		t.Fatal("reader never observed a known plan")
+	}
+	for o := range observed {
+		want, ok := recorded[o.CheckedAt]
+		if !ok || want != o.Plan {
+			t.Fatalf("snapshot at %v has plan %+v; recorded %+v (found=%v)", o.CheckedAt, o.Plan, want, ok)
+		}
 	}
 }

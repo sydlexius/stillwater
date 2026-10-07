@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -1312,10 +1313,15 @@ func TestRegistryRepairBanner_ServesPlan(t *testing.T) {
 		t.Fatalf("after detector: %v; want count 3, plan {rebuild 2, restore 1}", m)
 	}
 
-	startRepair(t, f.router, `{"commit":true,"artist_id":"`+f.presentID+`"}`)
-	waitRepairDone(t, f.router)
-	if got := bannerBody(t, f.router); got["plan"] == nil || got["count"] != float64(3) {
-		t.Fatalf("scoped commit changed the banner: %v", got)
+	before := bannerBody(t, f.router)
+	if w := startRepair(t, f.router, `{"commit":true,"artist_id":"`+f.presentID+`"}`); w.Code != http.StatusAccepted {
+		t.Fatalf("scoped commit start = %d, want 202; body: %s", w.Code, w.Body.String())
+	}
+	if st := waitRepairDone(t, f.router); st.Status != "completed" || st.ArtistID != f.presentID {
+		t.Fatalf("scoped repair did not complete: %+v", st)
+	}
+	if got := bannerBody(t, f.router); !reflect.DeepEqual(got, before) {
+		t.Fatalf("scoped commit changed the banner:\n before %v\n after  %v", before, got)
 	}
 
 	startRepair(t, f.router, `{"commit":true}`)
