@@ -1257,3 +1257,68 @@ func TestStartRegistryRepair_RefusedWhileDetectorClaimed(t *testing.T) {
 		t.Fatal("user repair refused after the claim was released")
 	}
 }
+
+// bannerBody decodes the banner response generically so an ABSENT key is
+// distinguishable from a zero value.
+func bannerBody(t *testing.T, r *Router) map[string]any {
+	t.Helper()
+	w := getBanner(t, r, adminContext())
+	var m map[string]any
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &m) != nil {
+		t.Fatalf("banner = %d %s", w.Code, w.Body.String())
+	}
+	return m
+}
+
+// The banner serves the split a real detector run cached, withholds it when it
+// is unknown (never checked, or a commit left only a failed-write count), and
+// is untouched by a scoped commit.
+func TestRegistryRepairBanner_ServesPlan(t *testing.T) {
+	t.Parallel()
+	f := newRegistryRepairFixture(t)
+	cache := &maintenance.RegistryRepairCache{}
+	f.router.registryRepairCache = cache
+	// Restore's UPDATE aborts, so a later commit reports write failures. The
+	// detector's dry run never writes, so it is unaffected.
+	if _, err := f.db.Exec(`CREATE TRIGGER fail_restore BEFORE UPDATE ON artist_images
+		BEGIN SELECT RAISE(ABORT, 'forced'); END`); err != nil {
+		t.Fatalf("trigger: %v", err)
+	}
+
+	if m := bannerBody(t, f.router); m["plan"] != nil || m["ok"] != false {
+		t.Fatalf("never checked: %v; want ok=false and no plan", m)
+	}
+
+	// A real detector pass over the fixture: one unregistered image (rebuild)
+	// and one stale-flag row whose file is present (restore).
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go f.router.maintenanceService.StartRegistryRepairCheck(ctx, cache,
+		f.router.TryClaimRegistryRepairCheck, time.Hour, time.Millisecond)
+	var m map[string]any
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if m = bannerBody(t, f.router); m["ok"] == true {
+			break
+		}
+	}
+	plan, _ := m["plan"].(map[string]any)
+	if m["ok"] != true || plan["rebuild"] != float64(1) || plan["restore"] != float64(1) || m["count"] != float64(2) {
+		t.Fatalf("after detector: %v; want count 2, plan {rebuild 1, restore 1}", m)
+	}
+
+	startRepair(t, f.router, `{"commit":true,"artist_id":"`+f.presentID+`"}`)
+	waitRepairDone(t, f.router)
+	if got := bannerBody(t, f.router); got["plan"] == nil || got["count"] != float64(2) {
+		t.Fatalf("scoped commit changed the banner: %v", got)
+	}
+
+	startRepair(t, f.router, `{"commit":true}`)
+	st := waitRepairDone(t, f.router)
+	if st.Report == nil || st.Report.WriteFailures == 0 {
+		t.Fatalf("expected write failures, got %+v", st.Report)
+	}
+	got := bannerBody(t, f.router)
+	if _, has := got["plan"]; has || got["count"] != float64(st.Report.WriteFailures) {
+		t.Fatalf("after failing commit: %v; want no plan, count %d", got, st.Report.WriteFailures)
+	}
+}

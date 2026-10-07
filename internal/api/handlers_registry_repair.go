@@ -427,6 +427,15 @@ type registryRepairBanner struct {
 	Count       int       `json:"count"`
 	CheckedAt   time.Time `json:"checked_at,omitzero"`
 	OK          bool      `json:"ok"`
+	// Plan splits Count into rows to rebuild and flags to restore. Present only
+	// when ok and the cache holds a detector scan's split (not after a commit,
+	// where Count is failed writes); then Rebuild + Restore == Count.
+	Plan *registryRepairBannerPlan `json:"plan,omitempty"`
+}
+
+type registryRepairBannerPlan struct {
+	Rebuild int `json:"rebuild"`
+	Restore int `json:"restore"`
 }
 
 // handleRegistryRepairBanner serves the cached detector result. GET
@@ -438,9 +447,15 @@ func (r *Router) handleRegistryRepairBanner(w http.ResponseWriter, req *http.Req
 		return
 	}
 	count, checkedAt, ok := r.registryRepairCache.Get()
-	writeJSON(w, http.StatusOK, &registryRepairBanner{
+	body := &registryRepairBanner{
 		NeedsRepair: ok && count > 0, Count: count, CheckedAt: checkedAt, OK: ok,
-	})
+	}
+	// Two separate locked reads: a scan finishing between them could pair a new
+	// split with an old count, so only serve the split when it sums to count.
+	if plan, known := r.registryRepairCache.Plan(); ok && known && plan.Rebuild+plan.Restore == count {
+		body.Plan = &registryRepairBannerPlan{Rebuild: plan.Rebuild, Restore: plan.Restore}
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 // cmpOrNewRegistryRepairCache returns c, or a fresh never-checked cache.

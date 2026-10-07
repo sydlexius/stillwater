@@ -18,6 +18,9 @@ docs {
   Cached "needs image registry repair" state (#2678 slice 2a). Reads the
   background detector's cache only; never starts a scan. ok=false means never
   checked or the last check failed (needs_repair is then false). Admin-only.
+  plan {rebuild, restore} splits count; it is omitted when ok is false and after
+  a library-wide repair finished (count is then failed writes), until the next
+  background check. When present, rebuild + restore equals count.
 }
 
 tests {
@@ -31,5 +34,11 @@ tests {
     expect(res.body.count).to.be.a("number");
     expect(res.body.ok).to.be.a("boolean");
     if (!res.body.ok) { expect(res.body.needs_repair).to.equal(false); }
+  });
+
+  test("banner plan, when present, sums to count", function() {
+    if (res.body.plan === undefined) { return; }
+    expect(res.body.ok).to.equal(true);
+    expect(res.body.plan.rebuild + res.body.plan.restore).to.equal(res.body.count);
   });
 }

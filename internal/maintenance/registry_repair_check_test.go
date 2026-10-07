@@ -5,6 +5,7 @@ package maintenance
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -16,7 +17,7 @@ func noClaim() (func(), bool) { return func() {}, true }
 
 func TestRegistryRepairCheck_CachesCount(t *testing.T) {
 	svc := newDupCountService(t)
-	svc.registryScan = func(context.Context) (int, error) { return 7, nil }
+	svc.registryScan = func(context.Context) (RegistryRepairPlan, error) { return RegistryRepairPlan{Rebuild: 7}, nil }
 	cache := &RegistryRepairCache{}
 	if _, _, ok := cache.Get(); ok {
 		t.Fatal("a fresh cache must report ok=false")
@@ -32,7 +33,7 @@ func TestRegistryRepairCheck_FailureMarksNotOK(t *testing.T) {
 	svc := newDupCountService(t)
 	cache := &RegistryRepairCache{}
 	cache.SetFromRepair(3)
-	svc.registryScan = func(context.Context) (int, error) { return 0, errors.New("boom") }
+	svc.registryScan = func(context.Context) (RegistryRepairPlan, error) { return RegistryRepairPlan{}, errors.New("boom") }
 	svc.checkRegistryRepair(context.Background(), cache, noClaim, time.Second)
 	if count, _, ok := cache.Get(); ok || count != 0 {
 		t.Fatalf("after a failed check Get() = %d, ok=%v; want 0, false", count, ok)
@@ -43,11 +44,11 @@ func TestRegistryRepairCheck_SingleFlight(t *testing.T) {
 	svc := newDupCountService(t)
 	var calls atomic.Int32
 	entered, release := make(chan struct{}), make(chan struct{})
-	svc.registryScan = func(context.Context) (int, error) {
+	svc.registryScan = func(context.Context) (RegistryRepairPlan, error) {
 		calls.Add(1)
 		close(entered)
 		<-release
-		return 1, nil
+		return RegistryRepairPlan{Rebuild: 1}, nil
 	}
 	cache := &RegistryRepairCache{}
 	done := make(chan struct{})
@@ -68,7 +69,10 @@ func TestRegistryRepairCheck_SingleFlight(t *testing.T) {
 func TestRegistryRepairCheck_SkipsWhileRepairRuns(t *testing.T) {
 	svc := newDupCountService(t)
 	var calls atomic.Int32
-	svc.registryScan = func(context.Context) (int, error) { calls.Add(1); return 1, nil }
+	svc.registryScan = func(context.Context) (RegistryRepairPlan, error) {
+		calls.Add(1)
+		return RegistryRepairPlan{Rebuild: 1}, nil
+	}
 	cache := &RegistryRepairCache{}
 	svc.checkRegistryRepair(context.Background(), cache, func() (func(), bool) { return nil, false }, time.Second)
 	if calls.Load() != 0 {
@@ -81,14 +85,14 @@ func TestRegistryRepairCheck_SkipsWhileRepairRuns(t *testing.T) {
 
 func TestRegistryRepairCheck_DeadlineRespected(t *testing.T) {
 	svc := newDupCountService(t)
-	svc.registryScan = func(ctx context.Context) (int, error) {
+	svc.registryScan = func(ctx context.Context) (RegistryRepairPlan, error) {
 		// Exits on its own after 5s so an ignored deadline fails with a named
 		// --- FAIL (the 1s bound below) instead of hanging to the package timeout.
 		select {
 		case <-ctx.Done():
 		case <-time.After(5 * time.Second):
 		}
-		return 0, ctx.Err()
+		return RegistryRepairPlan{}, ctx.Err()
 	}
 	cache := &RegistryRepairCache{}
 	start := time.Now()
@@ -110,9 +114,9 @@ func TestRegistryRepairCheck_DeadlineRespected(t *testing.T) {
 func TestRegistryRepairCheck_RepairResultBeatsStaleScan(t *testing.T) {
 	svc := newDupCountService(t)
 	cache := &RegistryRepairCache{}
-	svc.registryScan = func(context.Context) (int, error) {
+	svc.registryScan = func(context.Context) (RegistryRepairPlan, error) {
 		cache.SetFromRepair(0)
-		return 9, nil
+		return RegistryRepairPlan{Rebuild: 9}, nil
 	}
 	svc.checkRegistryRepair(context.Background(), cache, noClaim, time.Second)
 	if count, _, ok := cache.Get(); !ok || count != 0 {
@@ -127,7 +131,7 @@ func TestRegistryRepairCheck_RepairResultBeatsStaleScan(t *testing.T) {
 // must free the single-flight latch.
 func TestRegistryRepairCheck_PanicFreesLatch(t *testing.T) {
 	svc := newDupCountService(t)
-	svc.registryScan = func(context.Context) (int, error) { panic("boom") }
+	svc.registryScan = func(context.Context) (RegistryRepairPlan, error) { panic("boom") }
 	cache := &RegistryRepairCache{}
 	cache.SetFromRepair(3)
 	svc.checkRegistryRepair(context.Background(), cache, noClaim, time.Second)
@@ -159,8 +163,8 @@ func TestScanRegistryRepair_MatchesDryRunPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := rebuild.RowsPlanned + restore.Restored; got != want || got == 0 {
-		t.Fatalf("scan = %d, want %d (non-zero: fixture needs repair)", got, want)
+	if want := (RegistryRepairPlan{Rebuild: rebuild.RowsPlanned, Restore: restore.Restored}); got != want || got.Rebuild+got.Restore == 0 {
+		t.Fatalf("scan = %+v, want %+v (non-zero: fixture needs repair)", got, want)
 	}
 	if after := fullRows(t, db); strings.Join(after, "\n") != strings.Join(before, "\n") {
 		t.Fatal("the detector wrote to artist_images")
@@ -172,7 +176,10 @@ func TestScanRegistryRepair_MatchesDryRunPlan(t *testing.T) {
 func TestStartRegistryRepairCheck_LoopAndGuards(t *testing.T) {
 	svc := newDupCountService(t)
 	var calls atomic.Int32
-	svc.registryScan = func(context.Context) (int, error) { calls.Add(1); return 1, nil }
+	svc.registryScan = func(context.Context) (RegistryRepairPlan, error) {
+		calls.Add(1)
+		return RegistryRepairPlan{Rebuild: 1}, nil
+	}
 	idle := noClaim
 
 	svc.StartRegistryRepairCheck(context.Background(), nil, idle, time.Millisecond, time.Millisecond)
@@ -211,7 +218,10 @@ func TestStartRegistryRepairCheck_LoopAndGuards(t *testing.T) {
 func TestRegistryRepairCheck_RefusedClaimDoesNotScan(t *testing.T) {
 	svc := newDupCountService(t)
 	var calls atomic.Int32
-	svc.registryScan = func(context.Context) (int, error) { calls.Add(1); return 1, nil }
+	svc.registryScan = func(context.Context) (RegistryRepairPlan, error) {
+		calls.Add(1)
+		return RegistryRepairPlan{Rebuild: 1}, nil
+	}
 	cache := &RegistryRepairCache{}
 	svc.checkRegistryRepair(context.Background(), cache, func() (func(), bool) { return nil, false }, time.Second)
 	if calls.Load() != 0 {
@@ -233,12 +243,12 @@ func TestRegistryRepairCheck_ClaimHeldDuringScanAndReleased(t *testing.T) {
 			return func() { held.Add(-1); releases.Add(1) }, true
 		}
 		var heldDuring int32
-		svc.registryScan = func(context.Context) (int, error) {
+		svc.registryScan = func(context.Context) (RegistryRepairPlan, error) {
 			heldDuring = held.Load()
 			if panics {
 				panic("boom")
 			}
-			return 1, nil
+			return RegistryRepairPlan{Rebuild: 1}, nil
 		}
 		svc.checkRegistryRepair(context.Background(), &RegistryRepairCache{}, claim, time.Second)
 		if heldDuring != 1 {
@@ -247,5 +257,78 @@ func TestRegistryRepairCheck_ClaimHeldDuringScanAndReleased(t *testing.T) {
 		if held.Load() != 0 || releases.Load() != 1 {
 			t.Fatalf("panics=%v: held=%d releases=%d after the check, want 0 and 1", panics, held.Load(), releases.Load())
 		}
+	}
+}
+
+// The detector keeps the two halves apart. The fixture is asymmetric on
+// purpose: two fanart files with no row (rebuild) and one stale-flag thumb row
+// whose file is present (restore), so swapped or summed halves go red.
+func TestScanRegistryRepair_ReturnsSplit(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	svc := newRepairService(t, db, dbPath, "")
+	dir := filepath.Join(t.TempDir(), "artist")
+	writeImage(t, filepath.Join(dir, "folder.jpg"), 100, 100)
+	writeImage(t, filepath.Join(dir, "backdrop.jpg"), 100, 100)
+	writeImage(t, filepath.Join(dir, "backdrop2.jpg"), 100, 100)
+	const id = "88888888-0000-0000-0000-000000000001"
+	seedArtist(t, db, id, dir)
+	seedImageRow(t, db, id, "thumb", 0, 0, 0) // file present, flag 0 -> restore
+
+	got, err := svc.scanRegistryRepair(context.Background())
+	if err != nil {
+		t.Fatalf("scanRegistryRepair: %v", err)
+	}
+	if want := (RegistryRepairPlan{Rebuild: 2, Restore: 1}); got != want {
+		t.Fatalf("scan = %+v, want %+v", got, want)
+	}
+}
+
+func TestRegistryRepairCache_KeepsSplitAndTimestamp(t *testing.T) {
+	cache := &RegistryRepairCache{}
+	if _, known := cache.Plan(); known {
+		t.Fatal("a fresh cache must not know a plan")
+	}
+	gen, _ := cache.begin()
+	cache.finish(gen, RegistryRepairPlan{Rebuild: 2, Restore: 3}, nil)
+	plan, known := cache.Plan()
+	count, at, ok := cache.Get()
+	if !known || plan != (RegistryRepairPlan{Rebuild: 2, Restore: 3}) {
+		t.Fatalf("Plan() = %+v, %v; want {2 3}, true", plan, known)
+	}
+	if !ok || count != 5 || at.IsZero() {
+		t.Fatalf("Get() = %d, %v, %v; want 5 (the sum), non-zero, true", count, at, ok)
+	}
+}
+
+// Anything that is not a finished scan must drop the plan, and an older scan
+// finishing after a commit must not bring a stale plan back.
+func TestRegistryRepairCache_PlanClearedByRepairErrorAndStaleScan(t *testing.T) {
+	seeded := func() *RegistryRepairCache {
+		c := &RegistryRepairCache{}
+		gen, _ := c.begin()
+		c.finish(gen, RegistryRepairPlan{Rebuild: 4, Restore: 1}, nil)
+		return c
+	}
+	c := seeded()
+	c.SetFromRepair(2)
+	if p, known := c.Plan(); known || p != (RegistryRepairPlan{}) {
+		t.Fatalf("after SetFromRepair Plan() = %+v, %v; want none", p, known)
+	}
+	c = seeded()
+	gen, _ := c.begin()
+	c.finish(gen, RegistryRepairPlan{}, errors.New("boom"))
+	if _, known := c.Plan(); known {
+		t.Fatal("a failed scan left the plan known")
+	}
+	// An older scan (begun before the commit) finishing after it.
+	c = &RegistryRepairCache{}
+	gen, _ = c.begin()
+	c.SetFromRepair(0)
+	c.finish(gen, RegistryRepairPlan{Rebuild: 9, Restore: 9}, nil)
+	if p, known := c.Plan(); known {
+		t.Fatalf("stale scan restored plan %+v after a commit", p)
+	}
+	if count, _, _ := c.Get(); count != 0 {
+		t.Fatalf("stale scan overwrote the commit's count: %d", count)
 	}
 }
