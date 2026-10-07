@@ -23,9 +23,27 @@
 
 import { reportStaleAllowances, KNOWN_VIOLATIONS } from './helpers/known-violations.js';
 
-export default async function globalTeardown() {
+export default async function globalTeardown(config) {
   // An empty list is the steady state and is trivially not stale.
   if (KNOWN_VIOLATIONS.length === 0) return;
+
+  // SHARDED RUNS (#3442): CI splits each engine's suite across runners with
+  // `--shard`, and each shard's teardown sees only the seen-marks of the spec
+  // files IT ran. An entry whose spec ran in another shard would look dead
+  // here, so a verdict would be a false "stale" failure. KNOWN_VIOLATIONS
+  // entries carry no spec file, so which shard owns an entry cannot be decided
+  // from the data at hand; the verdict is skipped, loudly, not silently. The
+  // unsharded run sees every scan, but it only happens locally (`make
+  // test-a11y`, or the opt-in RUN_A11Y=1 gate); the default gate skips the tier
+  // and CI is sharded, so CI does NOT run this check. tests/unit/
+  // a11y-known-violations-tripwire.test.js keeps the list empty until a
+  // fan-in staleness check exists (#3442).
+  if (config && config.shard) {
+    console.warn(`known-violations: staleness check skipped in sharded run `
+      + `(shard ${config.shard.current}/${config.shard.total}): this shard saw only `
+      + 'its own scans; an unsharded run (make test-a11y) is authoritative.');
+    return;
+  }
 
   const stale = reportStaleAllowances();
 

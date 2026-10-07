@@ -25,7 +25,8 @@
 // ship broken. An allowance that outlives its defect is how a suite silently
 // stops testing something.
 //
-// It is delivered by reportStaleAllowances() below, called from
+// It is delivered, in UNSHARDED runs only (local `make test-a11y`, RUN_A11Y=1;
+// CI is sharded and skips it, #3442), by reportStaleAllowances() below, called from
 // tests/a11y/global-teardown.js. That wiring is load-bearing: the function
 // existed here, exported and NEVER CALLED, while this header claimed the
 // guarantee was in force (#2875). It was not.
@@ -57,6 +58,8 @@
  * issue number, and `assertOnlyKnownViolations` fails when an entry stops
  * matching so the debt cannot be forgotten.
  */
+// Guarded by tests/unit/a11y-known-violations-tripwire.test.js: the list must
+// stay empty until CI can evaluate staleness across shards (#3442).
 export const KNOWN_VIOLATIONS = [
   // EMPTY, and that is the steady state. #2875 was the sole entry and is fixed:
   // --swd-ink-3 was retuned in design-tokens.css so the quiet ink clears 4.5:1

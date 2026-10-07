@@ -74,6 +74,11 @@ jobs:
             js:
               - 'web/static/js/**'
               - 'tests/unit/**'
+              # The non-spec a11y files tests/unit imports (global-teardown.js,
+              # helpers/known-violations.js): editing only them must run the
+              # unit tests that guard them (#3442).
+              - 'tests/a11y/global-teardown.js'
+              - 'tests/a11y/helpers/**'
               # templ `script` blocks ARE client-side JS: templ inlines the body
               # verbatim into the page. tests/unit exercises those emitted
               # functions by extracting them from the generated *_templ.go, so a
@@ -487,20 +492,22 @@ jobs:
         run: scripts/stylelint-diff-gate.sh "${{ github.event_name == 'push' && github.event.before || github.event.pull_request.base.sha }}"
 
   # Worker job: does the real a11y work, gated on tests/a11y/** changes.
-  # Sharded by Playwright project (#3183) -- firefox-a11y and chromium-a11y
-  # each get their OWN ephemeral server, so the two engines never touch one
-  # another's server-side state (the cross-talk hazard playwright.config.js's
-  # `workers: 1` comment describes is a property of ONE shared server, not of
-  # parallelism -- see that file for the full reasoning). The always-running
-  # a11y-summary wrapper below owns the required "A11y Smoke Tests (Playwright
-  # + axe-core)" check name so non-a11y PRs report success rather than a
-  # permanently-skipped required context, and now also fans in both shards.
+  # Sharded by Playwright project (#3183) and then by Playwright --shard
+  # (#3442): firefox-a11y runs as 3 shards, chromium-a11y as 2, every shard on
+  # its OWN runner with its OWN ephemeral server, so no two shards (of one
+  # engine or of both) ever touch one another's server-side state (the
+  # cross-talk hazard playwright.config.js's `workers: 1` comment describes is a
+  # property of ONE shared server, not of parallelism -- see that file for the
+  # full reasoning). fullyParallel is off, so --shard splits by spec FILE.
+  # The always-running a11y-summary wrapper below owns the required "A11y Smoke
+  # Tests (Playwright + axe-core)" check name so non-a11y PRs report success
+  # rather than a permanently-skipped required context, and fans in every shard.
   a11y-test:
     # Per-shard display names render as "A11y Smoke Tests Check
-    # (firefox-a11y)" / "(chromium-a11y)". The bare name is owned by
-    # a11y-summary below so the required check stays satisfied without a
-    # branch-protection update.
-    name: A11y Smoke Tests Check (${{ matrix.project }})
+    # (firefox-a11y 1/3)" ... "(chromium-a11y 2/2)". None of them is a required
+    # check: the bare name is owned by a11y-summary below, so the required
+    # check stays satisfied without a branch-protection update.
+    name: A11y Smoke Tests Check (${{ matrix.project }} ${{ matrix.shard }}/${{ matrix.shards }})
     runs-on: ubuntu-latest
     needs: [changes]
     # harness_touched covers a change to ci.yml itself, which DEFINES this job.
@@ -519,25 +526,43 @@ jobs:
     permissions:
       contents: read
     strategy:
-      # One engine's failure should not cancel the other -- a flake in one
-      # shard hides a real failure in the other if fail-fast is on. Mirrors
+      # One shard's failure should not cancel the others -- a flake in one
+      # shard hides a real failure in another if fail-fast is on. Mirrors
       # the Test Shard / Build Matrix jobs above.
       fail-fast: false
       matrix:
         include:
-          # Authoritative leg: Firefox is the target browser. Both legs are
-          # REQUIRED -- a11y-summary's verdict is GitHub's own aggregate
-          # across the whole matrix (see a11y-summary below), so a
+          # Authoritative leg: Firefox is the target browser. Every shard of
+          # both legs is REQUIRED -- a11y-summary's verdict is GitHub's own
+          # aggregate across the whole matrix (see a11y-summary below), so a
           # chromium-only failure fails the required check exactly like a
           # firefox-only one. "Authoritative" governs how to INTERPRET a
           # violation (see playwright.config.js), not whether it fails CI.
+          # `shards` must equal the number of entries for that project: a
+          # missing entry silently drops that slice of specs.
           - project: firefox-a11y
             engine: firefox
+            shard: 1
+            shards: 3
+          - project: firefox-a11y
+            engine: firefox
+            shard: 2
+            shards: 3
+          - project: firefox-a11y
+            engine: firefox
+            shard: 3
+            shards: 3
           # Compatibility leg: a violation here still fails the required
           # check (see a11y-summary below) -- "compatibility" describes how
           # to read the finding, not a pass it gets on the CI verdict.
           - project: chromium-a11y
             engine: chromium
+            shard: 1
+            shards: 2
+          - project: chromium-a11y
+            engine: chromium
+            shard: 2
+            shards: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -560,7 +585,7 @@ jobs:
       # matrix engine and package-lock.json (which pins the exact
       # @playwright/* version).
       #
-      # Scoped per matrix leg by matrix.engine (#3183): each shard installs
+      # Scoped per matrix leg by matrix.engine (#3183): each leg installs
       # only its OWN engine now, so a shared key would let whichever leg
       # saves first claim that key for this lockfile hash -- GitHub Actions
       # cache entries are IMMUTABLE, so the other leg's save at the end of
@@ -591,7 +616,7 @@ jobs:
           restore-keys: |
             playwright-browsers-${{ matrix.engine }}-
 
-      # Only THIS shard's engine (#3183): each matrix leg runs a single
+      # Only THIS shard's engine (#3183): each matrix entry runs a single
       # Playwright project, so installing the other browser would be pure
       # waste. Run unconditionally rather than gating on the cache hit --
       # `install` is a no-op costing well under a second when the binary is
@@ -909,11 +934,11 @@ jobs:
           cat "${{ runner.temp }}/stillwater-a11y.log" || true
           exit 1
 
-      - name: Run Playwright a11y tests (${{ matrix.project }})
+      - name: Run Playwright a11y tests (${{ matrix.project }} ${{ matrix.shard }}/${{ matrix.shards }})
         env:
           SW_PORT: ${{ steps.port.outputs.port }}
           SW_TEST_URL: http://127.0.0.1:${{ steps.port.outputs.port }}
-        run: npx playwright test --config=playwright.config.js --project=${{ matrix.project }}
+        run: npx playwright test --config=playwright.config.js --project=${{ matrix.project }} --shard=${{ matrix.shard }}/${{ matrix.shards }}
 
       - name: Stop Stillwater
         if: always()
@@ -926,9 +951,9 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          # Unique per shard (#3183) so both legs' reports survive side-by-side
-          # instead of the second upload colliding with the first.
-          name: playwright-a11y-report-${{ matrix.project }}
+          # Unique per project AND shard (#3183, #3442) so every shard's report
+          # survives side-by-side instead of a later upload colliding.
+          name: playwright-a11y-report-${{ matrix.project }}-${{ matrix.shard }}
           path: tests/a11y/report/
           retention-days: 7
 
@@ -938,12 +963,13 @@ jobs:
   # itself failed/was cancelled before trusting its `a11y` output.
   #
   # needs.a11y-test.result is GitHub's own aggregate across every matrix leg
-  # (#3183): "success" only if firefox-a11y AND chromium-a11y both succeeded,
-  # "failure" if either did, "skipped" when the job's `if:` condition (the
-  # a11y path filter) skipped it entirely, "cancelled" if fail-fast or a
-  # workflow cancellation stopped a leg mid-run. No matrix-aware code is
-  # needed here -- this mirrors test-summary's needs.test.result against the
-  # Test Shard matrix above.
+  # (#3183, #3442): "success" only if EVERY shard of firefox-a11y AND
+  # chromium-a11y succeeded, "failure" if any failed, "skipped" when the job's
+  # `if:` condition (the a11y path filter or harness_touched) skipped it
+  # entirely, "cancelled" if a workflow cancellation stopped a shard mid-run
+  # (fail-fast is off, so one failing shard does not cancel the others). No
+  # matrix-aware code is needed here -- this mirrors test-summary's
+  # needs.test.result against the Test Shard matrix above.
   a11y-summary:
     name: A11y Smoke Tests (Playwright + axe-core)
     runs-on: ubuntu-latest

@@ -202,6 +202,13 @@ echo "=== Required workflows run on any PR base (#3002) ==="
 bash "$SCRIPT_DIR/check-pr-trigger-scope.sh"
 
 echo ""
+echo "=== a11y shard matrix is complete (#3442) ==="
+# A missing or duplicated shard index silently drops specs. Mirrored by CI's
+# "Gate Invariant" job (gate.yml).
+bash "$SCRIPT_DIR/check-a11y-shards.sh"
+bash "$SCRIPT_DIR/test-check-a11y-shards.sh"
+
+echo ""
 echo "=== release-blockers check self-test (#2905) ==="
 bash "$SCRIPT_DIR/test-check-release-blockers.sh"
 
