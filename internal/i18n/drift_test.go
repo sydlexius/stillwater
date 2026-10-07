@@ -201,3 +201,80 @@ func TestTranslationKeysDefined(t *testing.T) {
 		}
 	}
 }
+
+// braceRE and verbRE match the two interpolation syntaxes locale strings use:
+// {name} (replaced by Translator.TF and by client-side .replace calls) and
+// printf verbs (%s, %d, %v, %.1f, ...). "%%" is a literal percent sign, so it is
+// stripped before the verb scan.
+var (
+	braceRE  = regexp.MustCompile(`\{[A-Za-z_][A-Za-z0-9_]*\}`)
+	verbRE   = regexp.MustCompile(`%[-+# 0]*[0-9]*(?:\.[0-9]+)?[a-zA-Z]`)
+	percentR = strings.NewReplacer("%%", "")
+)
+
+// placeholderSet returns the sorted, de-duplicated {name} and printf-verb tokens in s.
+func placeholderSet(s string) []string {
+	seen := map[string]struct{}{}
+	for _, m := range braceRE.FindAllString(s, -1) {
+		seen[m] = struct{}{}
+	}
+	for _, m := range verbRE.FindAllString(percentR.Replace(s), -1) {
+		seen[m] = struct{}{}
+	}
+	out := make([]string, 0, len(seen))
+	for m := range seen {
+		out = append(out, m)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// TestLocalePlaceholderParity guards a translation that drops, renames or adds a
+// placeholder: the code substitutes values by name, so a fr/ja string missing
+// "{count}" renders the number nowhere, and an extra "{x}" renders literally.
+// For every key a locale shares with en, the set of {name} placeholders and of
+// printf verbs must equal en's. Locales are discovered from the directory so a
+// new one is covered automatically.
+func TestLocalePlaceholderParity(t *testing.T) {
+	root := repoRoot(t)
+	dir := filepath.Join(root, "internal", "i18n", "locales")
+	load := func(loc string) map[string]string {
+		raw, err := os.ReadFile(filepath.Join(dir, loc+".json"))
+		if err != nil {
+			t.Fatalf("reading %s.json: %v", loc, err)
+		}
+		var m map[string]string
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("parsing %s.json: %v", loc, err)
+		}
+		return m
+	}
+	en := load("en")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dir, err)
+	}
+	for _, entry := range entries {
+		loc := strings.TrimSuffix(entry.Name(), ".json")
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" || loc == "en" {
+			continue
+		}
+		t.Run(loc, func(t *testing.T) {
+			var bad []string
+			for key, val := range load(loc) {
+				enVal, ok := en[key]
+				if !ok {
+					continue // orphan keys are TestLocaleCompleteness's concern
+				}
+				want, got := placeholderSet(enVal), placeholderSet(val)
+				if strings.Join(want, " ") != strings.Join(got, " ") {
+					bad = append(bad, key+": en has "+strings.Join(want, " ")+", "+loc+" has "+strings.Join(got, " "))
+				}
+			}
+			sort.Strings(bad)
+			if len(bad) > 0 {
+				t.Errorf("%s.json has %d key(s) whose placeholders differ from en.json:\n  %s", loc, len(bad), strings.Join(bad, "\n  "))
+			}
+		})
+	}
+}
