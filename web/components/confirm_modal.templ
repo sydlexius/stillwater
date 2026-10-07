@@ -25,9 +25,9 @@ templ ConfirmModal() {
 		<div class="fixed inset-0 flex items-center justify-center p-4">
 			<div class="relative w-full max-w-sm rounded-xl bg-white dark:bg-gray-800 shadow-2xl ring-1 ring-gray-200 dark:ring-gray-700">
 				<div class="p-6">
-					<h3 id="confirm-modal-title" lang={ i18n.TFromCtx(ctx).Locale() } class="text-base font-semibold text-gray-900 dark:text-gray-100">
+					<h2 id="confirm-modal-title" lang={ i18n.TFromCtx(ctx).Locale() } class="text-base font-semibold text-gray-900 dark:text-gray-100">
 						{ t(ctx, "common.confirm") }
-					</h3>
+					</h2>
 					<div id="confirm-modal-message" class="mt-2 text-sm text-gray-600 dark:text-gray-400"></div>
 					<div id="confirm-modal-remember-wrapper" lang={ i18n.TFromCtx(ctx).Locale() } class="mt-4 hidden">
 						@Toggle(

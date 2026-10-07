@@ -35,10 +35,11 @@ const PNG_1X1 = Buffer.from(
 // startRegistryRepairFixture boots the server and seeds the defect. Returns
 // { server, fx, body, stop }: fx(method, path, body?, session?) issues an
 // authenticated request, body is the asserted banner endpoint answer.
-export async function startRegistryRepairFixture(basePath, artistName) {
+// extraEnv adds server environment (e.g. SW_UX=dual so /next/ is served).
+export async function startRegistryRepairFixture(basePath, artistName, extraEnv = {}) {
   let tmpDir;
   const server = await startBasePathServer(basePath, {
-    env: { SW_REGISTRY_REPAIR_CHECK_EVERY: '2s' },
+    env: { SW_REGISTRY_REPAIR_CHECK_EVERY: '2s', ...extraEnv },
     seed: (dir) => { tmpDir = dir; },
   });
   const stop = () => server.stop();
@@ -67,9 +68,33 @@ export async function startRegistryRepairFixture(basePath, artistName) {
     const body = await (await fx('GET', BANNER_API)).json();
     expect(body.ok).toBe(true);
     expect(body.count).toBeGreaterThan(0);
+    // The cached split the confirm dialog shows (#2678 slice 4): present, at least
+    // one row to rebuild (the unregistered file), and summing to the count.
+    expect(body.plan, 'the banner answer must carry the cached plan').toBeTruthy();
+    expect(body.plan.rebuild).toBeGreaterThanOrEqual(1);
+    expect(body.plan.rebuild + body.plan.restore).toBe(body.count);
     return { server, fx, body, stop };
   } catch (err) {
     stop();
     throw err;
   }
+}
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// planDialogPattern builds the regex the confirm dialog text must match for a
+// `confirm_plan` template. The {age} alternatives come from NODE's own
+// Intl.RelativeTimeFormat (never from page code), one per entry of `ages`, each
+// [amount, unit]; whitespace is matched loosely because ICU in Node and in the
+// browser can differ by (narrow) no-break spaces.
+export function planDialogPattern(template, plan, locale, ages) {
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  const age = [...new Set(ages.map(([n, unit]) => rtf.format(-n, unit)))]
+    .map((a) => escapeRe(a).replace(/\s+/g, '\\s+')).join('|');
+  const body = escapeRe(template)
+    .replace(/\\\{age\\\}/g, `(?:${age})`)
+    .replace(/\\\{rebuilt\\\}/g, String(plan.rebuild))
+    .replace(/\\\{restored\\\}/g, String(plan.restore))
+    .replace(/ /g, '\\s+');
+  return new RegExp(`^\\s*${body}\\s*$`);
 }

@@ -74,3 +74,12 @@ func TestConfirmModal_LocalizedChrome(t *testing.T) {
 		})
 	}
 }
+
+// The modal title is an h2: the modal opens over pages whose last heading is an
+// h1 (or h2/h3), and an h3 there skips a level (axe heading-order).
+func TestConfirmModal_TitleIsH2(t *testing.T) {
+	html := confirmModalHTML(t, "en")
+	if !strings.Contains(html, `<h2 id="confirm-modal-title"`) || strings.Contains(html, "<h3") {
+		t.Errorf("confirm modal title must be an h2 (and no h3): %s", html)
+	}
+}

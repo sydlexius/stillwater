@@ -53,6 +53,7 @@
   "banner.registry_repair.body.other": "レジストリの{count}件の行が欠落または古くなっている可能性があります。",
   "banner.registry_repair.checked": "最終確認: {time}",
   "banner.registry_repair.confirm": "画像レジストリを今すぐ修復しますか？ この操作はStillwaterの記録をディスク上のファイルに合わせて修正するだけで、画像ファイルは変更されません。大規模なライブラリでは数分かかることがあります。",
+  "banner.registry_repair.confirm_plan": "画像レジストリを今すぐ修復しますか？ 前回の確認時点（{age}）：再構築する行 {rebuilt} 件、復元する存在フラグ {restored} 件。その後変わっている可能性があります。この操作はStillwaterの記録をディスク上のファイルに合わせて修正するだけで、画像ファイルは変更されません。大規模なライブラリでは数分かかることがあります。",
   "banner.registry_repair.dismiss_aria": "画像レジストリのお知らせを閉じる",
   "banner.registry_repair.run": "今すぐ修復",
   "banner.registry_repair.running": "修復中...",

@@ -23,7 +23,7 @@ import fs from 'node:fs';
 
 import { disableTransitions } from './helpers/settle.js';
 import { buildAxeBuilder, formatViolations, applyTheme } from './helpers/axe.js';
-import { startRegistryRepairFixture } from './helpers/seed-registry-repair.js';
+import { startRegistryRepairFixture, planDialogPattern, BANNER_API } from './helpers/seed-registry-repair.js';
 
 const BANNER = '#sw-registry-repair-banner';
 const LOCALES_DIR = new URL('../../internal/i18n/locales/', import.meta.url);
@@ -41,11 +41,16 @@ const templateRe = (tpl) => new RegExp(`^${escapeRe(tpl).replace(/\\\{([a-z]+)\\
 // cannot drift from what is actually asserted.
 const CHECKED_AT = '2026-03-04T15:06:07Z';
 
+// The cached plan is at most a few minutes old when the dialog opens (the
+// detector re-runs every 2s in the fixture), so accept 0..3 minutes ago.
+const FRESH_AGES = [0, 1, 2, 3].map((n) => [n, 'minute']);
+
 const KEYS = [
   'banner.registry_repair.title',
   'banner.registry_repair.run',
   'banner.registry_repair.running',
   'banner.registry_repair.confirm',
+  'banner.registry_repair.confirm_plan',
   'banner.registry_repair.body.one',
   'banner.registry_repair.body.other',
   'banner.registry_repair.checked',
@@ -86,13 +91,14 @@ for (const [code, region] of [['fr', 'fr-FR'], ['ja', 'ja-JP']]) {
     const L = loadLocale(code);
     const en = loadLocale('en');
     let server;
+    let fx;
     let stopServer;
     let fixtureBody;
 
     test.beforeAll(async () => {
       test.setTimeout(120_000);
       const f = await startRegistryRepairFixture(`/sw-repair-locale-${code}`, `Registry Repair ${code} Fixture`);
-      ({ server, stop: stopServer, body: fixtureBody } = f);
+      ({ server, fx, stop: stopServer, body: fixtureBody } = f);
     });
     test.afterAll(() => { if (stopServer) stopServer(); });
 
@@ -186,14 +192,27 @@ for (const [code, region] of [['fr', 'fr-FR'], ['ja', 'ja-JP']]) {
       });
     }
 
+    // The dialog shows the detector's CACHED plan (#2678 slice 4). The expected
+    // numbers come from an independent read of the endpoint, the template from the
+    // locale file, and the {age} alternatives from Node's own Intl.
+    async function cachedPlan() {
+      const body = await (await fx('GET', BANNER_API)).json();
+      expect(body.plan, 'precondition: the endpoint reports a plan').toBeTruthy();
+      expect(body.plan.rebuild).toBeGreaterThanOrEqual(1);
+      expect(body.plan.rebuild + body.plan.restore).toBe(body.count);
+      return body.plan;
+    }
+
     test('confirm dialog title, buttons and message are localized and tagged', async ({ browser, locale }) => {
+      const plan = await cachedPlan();
       const { context, page } = await openBanner(browser, locale);
       await page.locator('#sw-registry-repair-run').click();
       await expect(page.locator('#confirm-modal')).toBeVisible();
       await expect(page.locator('#confirm-modal-title')).toHaveText(L['common.confirm']);
       await expect(page.locator('#confirm-modal-accept')).toHaveText(L['common.confirm']);
       await expect(page.locator('#confirm-modal-cancel')).toHaveText(L['common.cancel']);
-      await expect(page.locator('#confirm-modal-message')).toHaveText(L['banner.registry_repair.confirm']);
+      await expect(page.locator('#confirm-modal-message'))
+        .toHaveText(planDialogPattern(L['banner.registry_repair.confirm_plan'], plan, locale, FRESH_AGES));
       for (const id of ['title', 'cancel', 'accept', 'message']) {
         await expect(page.locator(`#confirm-modal-${id}`)).toHaveAttribute('lang', code);
       }
@@ -202,11 +221,31 @@ for (const [code, region] of [['fr', 'fr-FR'], ['ja', 'ja-JP']]) {
       await context.close();
     });
 
+    // One test, both themes, soft assertions: a failure in one theme cannot hide the
+    // other (the describe is serial, so a second test would not run after a red).
+    test('open confirm dialog with the cached plan passes a11y (dark and light)', async ({ browser, locale }) => {
+      for (const theme of ['dark', 'light']) {
+        const { context, page } = await openBanner(browser, locale, theme);
+        try {
+          await applyTheme(expect, page, theme);
+          await page.locator('#sw-registry-repair-run').click();
+          await expect(page.locator('#confirm-modal')).toBeVisible();
+          await expect(page.locator('#confirm-modal-message')).toHaveText(/\d/);
+          const results = await buildAxeBuilder(page).analyze();
+          expect.soft(results.violations, `${code} ${theme} dialog violations:\n${formatViolations(results.violations)}`).toHaveLength(0);
+        } finally {
+          await context.close();
+        }
+      }
+    });
+
     // LAST: the one real run. Real POST, job, status poll and cache update.
     test('real run: started and done toasts are localized and tagged', async ({ browser, locale }) => {
+      const plan = await cachedPlan();
       const { context, page } = await openBanner(browser, locale);
       await page.locator('#sw-registry-repair-run').click();
-      await expect(page.locator('#confirm-modal-message')).toHaveText(L['banner.registry_repair.confirm']);
+      await expect(page.locator('#confirm-modal-message'))
+        .toHaveText(planDialogPattern(L['banner.registry_repair.confirm_plan'], plan, locale, FRESH_AGES));
       await page.locator('#confirm-modal-accept').click();
       const doneRe = templateRe(L['banner.registry_repair.toast.done']);
       await expect.poll(() => page.evaluate(() => window.__toasts.map((t) => t.text)), { timeout: 60_000 })

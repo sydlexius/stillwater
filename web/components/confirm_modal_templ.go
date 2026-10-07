@@ -41,7 +41,7 @@ func ConfirmModal() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"confirm-modal\" class=\"fixed inset-0 z-50 hidden\" role=\"alertdialog\" aria-modal=\"true\" aria-labelledby=\"confirm-modal-title\" aria-describedby=\"confirm-modal-message\"><div class=\"fixed inset-0 bg-black/50 transition-opacity\" id=\"confirm-backdrop\"></div><div class=\"fixed inset-0 flex items-center justify-center p-4\"><div class=\"relative w-full max-w-sm rounded-xl bg-white dark:bg-gray-800 shadow-2xl ring-1 ring-gray-200 dark:ring-gray-700\"><div class=\"p-6\"><h3 id=\"confirm-modal-title\" lang=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"confirm-modal\" class=\"fixed inset-0 z-50 hidden\" role=\"alertdialog\" aria-modal=\"true\" aria-labelledby=\"confirm-modal-title\" aria-describedby=\"confirm-modal-message\"><div class=\"fixed inset-0 bg-black/50 transition-opacity\" id=\"confirm-backdrop\"></div><div class=\"fixed inset-0 flex items-center justify-center p-4\"><div class=\"relative w-full max-w-sm rounded-xl bg-white dark:bg-gray-800 shadow-2xl ring-1 ring-gray-200 dark:ring-gray-700\"><div class=\"p-6\"><h2 id=\"confirm-modal-title\" lang=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -67,7 +67,7 @@ func ConfirmModal() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</h3><div id=\"confirm-modal-message\" class=\"mt-2 text-sm text-gray-600 dark:text-gray-400\"></div><div id=\"confirm-modal-remember-wrapper\" lang=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</h2><div id=\"confirm-modal-message\" class=\"mt-2 text-sm text-gray-600 dark:text-gray-400\"></div><div id=\"confirm-modal-remember-wrapper\" lang=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

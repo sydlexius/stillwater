@@ -570,6 +570,7 @@
   "banner.registry_repair.body.other": "{count} registry rows may be missing or out of date.",
   "banner.registry_repair.checked": "Last checked {time}.",
   "banner.registry_repair.confirm": "Repair the image registry now? This only corrects Stillwater's records to match the files on disk; no image files are changed. It can take several minutes on a large library.",
+  "banner.registry_repair.confirm_plan": "Repair the image registry now? As of the last check ({age}), rows to rebuild: {rebuilt}; existence flags to restore: {restored}. These numbers may have changed since. This only corrects Stillwater's records to match the files on disk; no image files are changed. It can take several minutes on a large library.",
   "banner.registry_repair.dismiss_aria": "Dismiss image registry notice",
   "banner.registry_repair.run": "Repair now",
   "banner.registry_repair.running": "Repairing...",

@@ -45,7 +45,7 @@ let fixtureBody;
 
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  const f = await startRegistryRepairFixture(BASE_PATH, 'Registry Repair Fixture');
+  const f = await startRegistryRepairFixture(BASE_PATH, 'Registry Repair Fixture', { SW_UX: 'dual' }); // dual: /next/ is served (stable-only 404s)
   ({ server, fx, body: fixtureBody, stop: stopServer } = f);
   operatorSession = await makeOperator();
 });
@@ -231,6 +231,74 @@ for (const theme of ['dark', 'light']) {
     await applyTheme(expect, page, theme);
     const results = await buildAxeBuilder(page).analyze();
     expect(results.violations, `${theme} violations:\n${formatViolations(results.violations)}`).toHaveLength(0);
+    await context.close();
+  });
+}
+
+// ---- Layout mount and look parity (#2678 slice 4) ----
+
+// LayoutNext delegates to the shared Layout, so the banner must mount on /next/
+// too. Red if the mount moves out of Layout.
+test('banner also mounts on the /next/ layout', async ({ browser }) => {
+  const live = await (await fx('GET', API)).json();
+  expect(live.needs_repair, 'precondition: the fixture needs repair').toBe(true);
+  expect(live.count).toBeGreaterThan(0);
+  const { context, page } = await openAs(browser, server.sessionCookie);
+  const nav = await page.goto(`${server.baseURL}/next/`);
+  expect(nav.status(), '/next/ must be served (a 404 would read as banner absent)').toBe(200);
+  await expect(page.locator(BANNER)).toHaveCount(1);
+  await expect(page.locator(BANNER)).toBeVisible();
+  await context.close();
+});
+
+// The tokens the repair banner shares with the ConflictBanner warn bar. DUPLICATED
+// from TestRegistryRepairBanner_SharesConflictBannerWarnTokens (web/templates/
+// registry_repair_banner_test.go), which asserts this same list on BOTH components;
+// change them together. The Go test is the real drift guard; this copy can go
+// stale. No real warn ConflictBanner can be produced here (it needs a seeded
+// platform conflict), so the reference is built at runtime from the list.
+const WARN_TOKENS = [
+  'bg-gradient-to-r', 'from-amber-900/60', 'to-yellow-700/50',
+  'dark:from-amber-900/60', 'dark:to-yellow-700/50', 'backdrop-blur-md',
+  'border-b', 'border-amber-300/30', 'px-6', 'py-3',
+];
+const LOOK_PROPS = [
+  'background-image', 'border-bottom-color', 'border-bottom-width',
+  'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+  'backdrop-filter', '-webkit-backdrop-filter',
+];
+
+for (const theme of ['dark', 'light']) {
+  test(`repair banner renders the same warn look as the conflict banner tokens (${theme})`, async ({ browser }) => {
+    const { context, page } = await openAs(browser, server.sessionCookie);
+    await page.goto(`${server.baseURL}/reports`);
+    await expect(page.locator(BANNER)).toHaveCount(1);
+    await expect(page.locator(BANNER)).toBeVisible();
+    await applyTheme(expect, page, theme);
+    const { ref, got } = await page.evaluate(({ tokens, props, sel }) => {
+      const banner = document.querySelector(sel);
+      // Sibling of the banner: same ancestors and theme, so only the classes differ.
+      const el = document.createElement('div');
+      el.className = tokens.join(' ');
+      banner.parentElement.appendChild(el);
+      const read = (node) => {
+        const cs = getComputedStyle(node);
+        return Object.fromEntries(props.map((p) => [p, cs.getPropertyValue(p)]));
+      };
+      const out = { ref: read(el), got: read(banner) };
+      el.remove();
+      return out;
+    }, { tokens: WARN_TOKENS, props: LOOK_PROPS, sel: BANNER });
+    // Preconditions: the Tailwind classes generated, so equality below is not two blanks.
+    expect(ref['background-image'], 'reference gradient').toContain('gradient');
+    // py-3 / px-6 are 0.75rem / 1.5rem: derive px from the page's root font size (14px in the harness).
+    const rootPx = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+    expect(`${ref['padding-top']} ${ref['padding-right']}`, 'reference padding').toBe(`${0.75 * rootPx}px ${1.5 * rootPx}px`);
+    expect(ref['backdrop-filter'] || ref['-webkit-backdrop-filter'], 'reference backdrop blur').not.toMatch(/^(none)?$/);
+    for (const p of LOOK_PROPS) {
+      expect(got[p], `${theme} ${p}`).toBe(ref[p]);
+    }
+    await expect(page.locator(`${BANNER} ~ div[class*="bg-gradient-to-r"]`)).toHaveCount(0);
     await context.close();
   });
 }
