@@ -13,10 +13,11 @@
 
 import { test, expect } from 'playwright/test';
 import path from 'node:path';
+import fs from 'node:fs';
 
 import { disableTransitions } from './helpers/settle.js';
 import { buildAxeBuilder, formatViolations, applyTheme } from './helpers/axe.js';
-import { startRegistryRepairFixture, BANNER_API } from './helpers/seed-registry-repair.js';
+import { startRegistryRepairFixture, planDialogPattern, BANNER_API } from './helpers/seed-registry-repair.js';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -42,13 +43,17 @@ test.afterAll(() => {
   if (stopServer) stopServer();
 });
 
-async function openBanner(browser, theme = 'dark') {
-  const context = await browser.newContext({ colorScheme: theme });
+// openBanner opens /reports as the admin. `stub` (optional) is a banner answer
+// served in place of the real endpoint, registered BEFORE the page loads;
+// `locale` (optional) is the Accept-Language the browser sends.
+async function openBanner(browser, theme = 'dark', stub = undefined, locale = undefined) {
+  const context = await browser.newContext({ colorScheme: theme, locale });
   await context.addCookies([{ name: 'session', value: server.sessionCookie, url: server.rootURL }]);
   const page = await context.newPage();
   await disableTransitions(page);
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error' && m.text().includes('registry repair banner')) errors.push(m.text()); });
+  if (stub) await page.route(`**${BANNER_API}`, (route) => route.fulfill({ json: stub }));
   await page.goto(`${server.baseURL}/reports`);
   await expect(page.locator(BANNER)).toBeVisible();
   return { context, page, errors };
@@ -291,6 +296,145 @@ test('409 that never clears (detector contention): bounded retries, then the gen
   await expect(page.locator(RUN)).toBeEnabled();
   expect(errors.some((e) => e.includes('still refused (409)'))).toBe(true);
   await context.close();
+});
+
+// ---- Cached plan in the confirm dialog (#2678 slice 4) ----
+// The dialog shows what the detector already knows; nothing is fetched on click.
+// Expected text: the template from the locale JSON, the numbers from the endpoint
+// read independently of the page, the {age} alternatives from Node's own Intl.
+const loadLocale = (code) => JSON.parse(fs.readFileSync(new URL(`../../internal/i18n/locales/${code}.json`, import.meta.url), 'utf8'));
+const MSG = '#confirm-modal-message';
+const REGISTRY_API_RE = /\/api\/v1\/reports\/registry-repair\//;
+const FRESH_AGES = [0, 1, 2, 3].map((n) => [n, 'minute']);
+
+test('dialog shows the endpoint\'s cached plan and sends no request on click', async ({ browser }) => {
+  const live = await (await fx('GET', BANNER_API)).json();
+  expect(live.plan, 'precondition: the endpoint reports a plan').toBeTruthy();
+  expect(live.plan.rebuild).toBeGreaterThanOrEqual(1);
+  expect(live.plan.rebuild + live.plan.restore).toBe(live.count);
+  const { context, page, errors } = await openBanner(browser);
+  const seen = [];
+  page.on('request', (r) => { if (REGISTRY_API_RE.test(r.url())) seen.push(`${r.method()} ${r.url()}`); });
+  await page.locator(RUN).click();
+  await expect(page.locator(MSG)).toHaveText(
+    planDialogPattern(loadLocale('en')['banner.registry_repair.confirm_plan'], live.plan, 'en-US', FRESH_AGES),
+  );
+  await expect(page.locator(MSG)).toHaveAttribute('lang', 'en');
+  await page.waitForTimeout(500);
+  expect(seen, 'opening the dialog must not scan, preview or re-read anything').toEqual([]);
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
+test('accepting sends exactly one commit POST; nothing is sent before', async ({ browser }) => {
+  const { context, page } = await openBanner(browser);
+  const posts = [];
+  page.on('request', (r) => { if (r.url().endsWith(REMEDIATE_API) && r.method() === 'POST') posts.push(r.postDataJSON()); });
+  await page.route(`**${REMEDIATE_API}`, (route) => route.fulfill({ status: 202, json: { running: true, status: 'running' } }));
+  await page.route(`**${STATUS_API}`, (route) => route.fulfill({ json: DONE_REPORT }));
+  await page.route(`**${BANNER_API}`, (route) => route.fulfill({ json: { ok: true, needs_repair: false, count: 0 } }));
+  await page.locator(RUN).click();
+  await expect(page.locator('#confirm-modal')).toBeVisible();
+  await page.waitForTimeout(300);
+  expect(posts, 'no POST while the dialog is open').toEqual([]);
+  await page.locator('#confirm-modal-accept').click();
+  await expect.poll(() => posts.length).toBe(1);
+  await page.waitForTimeout(500);
+  expect(posts, 'exactly one POST, explicitly a commit').toEqual([{ commit: true }]);
+  await context.close();
+});
+
+test('cancel and Escape return focus to the run button and send nothing', async ({ browser }) => {
+  const { context, page } = await openBanner(browser);
+  let posts = 0;
+  await page.route(`**${REMEDIATE_API}`, (route) => { posts += 1; return route.abort(); });
+  for (const close of ['cancel', 'escape']) {
+    await page.locator(RUN).click();
+    await expect(page.locator('#confirm-modal')).toBeVisible();
+    if (close === 'cancel') await page.locator('#confirm-modal-cancel').click();
+    else await page.keyboard.press('Escape');
+    await expect(page.locator('#confirm-modal')).toBeHidden();
+    await expect(page.locator(RUN), `focus after ${close}`).toBeFocused();
+    await expect(page.locator(RUN)).toBeEnabled();
+  }
+  expect(posts).toBe(0);
+  await context.close();
+});
+
+test('no plan in the banner answer: the dialog falls back to the generic text', async ({ browser }) => {
+  const en = loadLocale('en');
+  const { context, page, errors } = await openBanner(browser, 'dark', { ok: true, needs_repair: true, count: 2, checked_at: new Date().toISOString() });
+  await page.locator(RUN).click();
+  await expect(page.locator(MSG)).toHaveText(en['banner.registry_repair.confirm']);
+  expect(await page.locator(MSG).innerText()).not.toMatch(/undefined|NaN|\{/);
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
+// The age is computed at CLICK time from the answer's checked_at. The page clock
+// is pinned (Date only, timers keep running) and moved between cases, so one
+// loaded page proves every bucket; the strings come from Node's Intl per locale.
+const AGE_BASE = Date.parse('2026-03-04T12:00:00Z');
+const AGE_CASES = [
+  ['10 minutes', 10 * 60_000, [10, 'minute']],
+  ['90 minutes flips to hours', 90 * 60_000, [1, 'hour']],
+  ['3 hours', 3 * 3600_000, [3, 'hour']],
+  ['3 days', 3 * 86_400_000, [3, 'day']],
+  ['clock skew (checked in the future) shows no negative age', -5 * 60_000, [0, 'minute']],
+];
+for (const [code, region] of [['en', 'en-US'], ['fr', 'fr-FR'], ['ja', 'ja-JP']]) {
+  test(`dialog age is relative, in the page locale, and computed at click time (${code})`, async ({ browser }) => {
+    const L = loadLocale(code);
+    const plan = { rebuild: 3, restore: 2 };
+    const { context, page, errors } = await openBanner(browser, 'dark', {
+      ok: true, needs_repair: true, count: 5, checked_at: new Date(AGE_BASE).toISOString(), plan,
+    }, region);
+    for (const [name, deltaMs, age] of AGE_CASES) {
+      await page.clock.setFixedTime(AGE_BASE + deltaMs);
+      await page.locator(RUN).click();
+      await expect(page.locator(MSG), name).toHaveText(
+        planDialogPattern(L['banner.registry_repair.confirm_plan'], plan, region, [age]),
+      );
+      await page.locator('#confirm-modal-cancel').click();
+      await expect(page.locator('#confirm-modal')).toBeHidden();
+    }
+    expect(errors).toEqual([]);
+    await context.close();
+  });
+}
+
+// One test, both themes, soft assertions: serial mode would skip the second theme after a red.
+test('open confirm dialog with the cached plan passes axe (dark and light)', async ({ browser }) => {
+  for (const theme of ['dark', 'light']) {
+    const { context, page } = await openBanner(browser, theme, {
+      ok: true, needs_repair: true, count: 5, checked_at: new Date().toISOString(), plan: { rebuild: 3, restore: 2 },
+    });
+    try {
+      await applyTheme(expect, page, theme);
+      await page.locator(RUN).click();
+      await expect(page.locator(MSG)).toContainText('rows to rebuild: 3');
+      const results = await buildAxeBuilder(page).analyze();
+      expect.soft(results.violations, `${theme} dialog violations:\n${formatViolations(results.violations)}`).toHaveLength(0);
+    } finally {
+      await context.close();
+    }
+  }
+});
+
+// A plan field that is not a finite number must never render ("null", "undefined"):
+// the dialog takes the generic text and logs loudly.
+test('a malformed plan falls back to the generic text with a console.error', async ({ browser }) => {
+  const en = loadLocale('en');
+  // Both fields are checked: null and a numeric string each, on either side.
+  for (const plan of [{ rebuild: null, restore: 2 }, { rebuild: 3, restore: null }, { rebuild: '3', restore: 2 }, { rebuild: 3, restore: 'x' }]) {
+    const { context, page, errors } = await openBanner(browser, 'dark', {
+      ok: true, needs_repair: true, count: 5, checked_at: new Date().toISOString(), plan,
+    });
+    await page.locator(RUN).click();
+    await expect(page.locator(MSG), JSON.stringify(plan)).toHaveText(en['banner.registry_repair.confirm']);
+    expect(errors.some((e) => e.includes('plan is not a pair of finite numbers')), JSON.stringify(plan)).toBe(true);
+    await context.close();
+  }
 });
 
 test('logged out: the remediate endpoint refuses an unauthenticated POST', async () => {
