@@ -4447,6 +4447,10 @@ paths:
         (or had nothing to do), answer 200. A live run that finished but left
         files unmoved (status partial or failed) answers 207; the body is the
         same, so read status and the counts. A run that stopped early answers 500.
+        A request with the header HX-Request: true gets the same outcome as an
+        HTML fragment (the report page's body) under the same status code, and
+        the response carries Vary: HX-Request; every other request gets the
+        JSON body described here.
       operationId: runExtraFanartMigration
       requestBody:
         required: false
