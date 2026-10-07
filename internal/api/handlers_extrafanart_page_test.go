@@ -46,7 +46,7 @@ func statValue(t *testing.T, body, id string) string {
 const efRowMarker = "border-t border-gray-100" // one per table row
 
 // An admin sees one row per seeded file, naming its artist and file, and the
-// one-way / nothing-deleted paragraph sits above the table with no run button.
+// one-way / nothing-deleted paragraph sits above the table.
 func TestExtraFanartPage_AdminSeesOneRowPerFile(t *testing.T) {
 	t.Parallel()
 	r, svc := testRouterForBackdrops(t)
@@ -102,9 +102,6 @@ func TestExtraFanartPage_AdminSeesOneRowPerFile(t *testing.T) {
 	}
 	if !strings.Contains(body, "one-way operation") || !strings.Contains(body, "Nothing is deleted") {
 		t.Error("the one-way and nothing-deleted copy is missing")
-	}
-	if strings.Contains(body, "extrafanart-migration-run-button") {
-		t.Error("this slice has no run button")
 	}
 	if strings.Contains(body, a.dir) || strings.Contains(body, b.dir) {
 		t.Error("the page leaked an artist path")

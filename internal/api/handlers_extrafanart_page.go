@@ -4,8 +4,9 @@
 //
 //	GET {basePath}/reports/extrafanart-migration    admin; a PREVIEW only
 //
-// The page reads what the migration would do and writes nothing. The move
-// itself stays on the POST endpoint in handlers_extrafanart_migration.go.
+// Loading the page reads what the migration would do and writes nothing. Its Run
+// button posts to the endpoint in handlers_extrafanart_migration.go, which does
+// the move and answers with this page's body as the receipt.
 package api
 
 import (

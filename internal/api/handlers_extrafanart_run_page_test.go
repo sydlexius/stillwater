@@ -18,9 +18,11 @@ import (
 )
 
 const (
+	efPagePath = "/reports/extrafanart-migration"
 	efRunPath  = "/api/v1/reports/extrafanart-migration"
 	efBodyOpen = `<div id="extrafanart-migration-body"`
 	efFocus    = `tabindex="-1" autofocus`
+	efRunBtn   = `id="extrafanart-migration-run-button"`
 )
 
 // efMux serves requests through the REAL mux (auth, i18n and routing included),
@@ -103,8 +105,8 @@ func TestExtraFanartRunFragment_CleanRunThenNothingToDo(t *testing.T) {
 	if got := statValue(t, body, "extrafanart-migration-moved"); got != "2" {
 		t.Errorf("moved tile: got %q, want 2", got)
 	}
-	if strings.Contains(body, "sw-card-accent-amber") {
-		t.Error("a clean receipt has no amber accent")
+	if strings.Contains(body, "sw-card-accent-amber") || strings.Contains(body, efRunBtn) {
+		t.Error("a clean receipt has no amber accent and no Run button")
 	}
 	if _, extra := rootHashes(t, a.dir); len(extra) != 0 {
 		t.Fatalf("the run reported success but %d files are still in extrafanart/", len(extra))
@@ -315,5 +317,128 @@ func TestExtraFanartRunFragment_PlanErrorOnlyShowsProblemCount(t *testing.T) {
 		"no file was moved", `id="extrafanart-migration-problems"`, "1 file or artist has a problem")
 	if got := statValue(t, body, "extrafanart-migration-failed"); got != "0" {
 		t.Errorf("precondition: failed tile %q, want 0 (the planning-error-only state)", got)
+	}
+}
+
+// The Run button is offered only for a finished preview with something to move.
+// When offered it posts a LIVE run to the API route and swaps the page body.
+func TestExtraFanartPage_RunButtonOnlyForAFinishedPlan(t *testing.T) {
+	t.Parallel()
+	t.Run("planned", func(t *testing.T) {
+		t.Parallel()
+		r, svc := testRouterForBackdrops(t)
+		seedExtraFanartArtist(t, svc, "Alpha", 2)
+		body := efMux(t, r)(http.MethodGet, efPagePath, "", false).Body.String()
+		for _, want := range []string{
+			efRunBtn, `hx-post="` + efRunPath + `"`, `hx-vals='{"dry_run": false}'`, `hx-target="#extrafanart-migration-body"`,
+			`hx-swap="outerHTML"`, `hx-confirm="Move the extrafanart files now?`, `hx-disabled-elt="this"`,
+			`hx-on::before-swap="swExtraFanartRun.beforeSwap(event)"`, "window.swExtraFanartRun",
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("the page is missing %q", want)
+			}
+		}
+		if strings.Contains(body, efFocus) || strings.Contains(body, "extrafanart-migration-receipt") {
+			t.Error("a page load is a preview: no receipt, and nothing may take focus")
+		}
+	})
+	t.Run("nothing planned", func(t *testing.T) {
+		t.Parallel()
+		r, svc := testRouterForBackdrops(t)
+		seedExtraFanartArtist(t, svc, "Alpha", 0)
+		body := efMux(t, r)(http.MethodGet, efPagePath, "", false).Body.String()
+		if !strings.Contains(body, `id="extrafanart-migration-empty"`) {
+			t.Fatal("precondition: want the empty preview")
+		}
+		if strings.Contains(body, efRunBtn) {
+			t.Error("nothing is planned, so there must be no Run button")
+		}
+	})
+	t.Run("preview aborted with rows", func(t *testing.T) {
+		t.Parallel()
+		r, svc := testRouterForBackdrops(t)
+		seedExtraFanartArtist(t, svc, "Alpha", 2)
+		seedPlanFailArtist(t, svc, "Broken")
+		filler := seedExtraFanartArtist(t, svc, "Zfiller0", 0)
+		for i := 1; i < 201; i++ { // a second list page, which fails once the database closes
+			n := fmt.Sprintf("Zfiller%03d", i)
+			if err := svc.Create(context.Background(), &artist.Artist{Name: n, SortName: n, Path: filler.dir}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		do := efMux(t, r)
+		var once bool
+		r.logger = slog.New(closeDBOnWarn{Handler: slog.NewTextHandler(&bytes.Buffer{}, nil), db: r.db, once: &once})
+		body := do(http.MethodGet, efPagePath, "", false).Body.String()
+		if !once || !strings.Contains(body, "Will Move") || !strings.Contains(body, `id="extrafanart-migration-error"`) {
+			t.Fatalf("precondition: want a stopped preview that still lists planned rows (closed=%t)", once)
+		}
+		if strings.Contains(body, efRunBtn) {
+			t.Error("a stopped preview is not a complete plan, so there must be no Run button")
+		}
+	})
+}
+
+// The receipt and the running notice hold a focused heading, so the live-region
+// role must sit on the paragraph BESIDE it, never on a card that contains it: a
+// focused element inside a live region is announced twice.
+func TestExtraFanartRunFragment_LiveRegionNeverContainsTheFocusedHeading(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForBackdrops(t)
+	seedExtraFanartArtist(t, svc, "Alpha", 2)
+	do := efMux(t, r)
+
+	receipt := wantFragment(t, do(http.MethodPost, efRunPath, "dry_run=false", true), http.StatusOK, efFocus)
+	if card := tagOf(t, receipt, `id="extrafanart-migration-receipt"`); strings.Contains(card, "role=") {
+		t.Errorf("the receipt card holds the focused heading and must not be a live region: %s", card)
+	}
+	if !strings.Contains(tagOf(t, receipt, `id="extrafanart-migration-receipt-body"`), `role="status"`) {
+		t.Error("the receipt body paragraph must carry the live-region role")
+	}
+
+	r.extraFanartMu.Lock()
+	r.extraFanartRunning = true
+	r.extraFanartMu.Unlock()
+	running := wantFragment(t, do(http.MethodPost, efRunPath, "dry_run=false", true), http.StatusConflict, efFocus)
+	if card := tagOf(t, running, `id="extrafanart-migration-running"`); strings.Contains(card, "role=") {
+		t.Errorf("the running notice holds the focused heading and must not be a live region: %s", card)
+	}
+	if !strings.Contains(running, `role="alert">An extrafanart migration is running`) {
+		t.Error("the running notice's body paragraph must carry the live-region role")
+	}
+}
+
+// tagOf returns the opening tag (through its closing ">") that contains marker.
+func tagOf(t *testing.T, html, marker string) string {
+	t.Helper()
+	at := strings.Index(html, marker)
+	if at < 0 {
+		t.Fatalf("marker %q not found", marker)
+	}
+	start := strings.LastIndex(html[:at], "<")
+	end := strings.Index(html[at:], ">")
+	if start < 0 || end < 0 {
+		t.Fatalf("no tag around %q", marker)
+	}
+	return html[start : at+end+1]
+}
+
+// The browser spec embeds the running notice as a fixture file. The real handler
+// must render exactly that, so the fixture cannot drift from production.
+func TestExtraFanartRunFragment_RunningNoticeMatchesTheSpecFixture(t *testing.T) {
+	t.Parallel()
+	want, err := os.ReadFile(filepath.Join("..", "..", "tests", "a11y", "fixtures", "extrafanart-running-notice.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, svc := testRouterForBackdrops(t)
+	seedExtraFanartArtist(t, svc, "Alpha", 2)
+	do := efMux(t, r)
+	r.extraFanartMu.Lock()
+	r.extraFanartRunning = true
+	r.extraFanartMu.Unlock()
+	got := wantFragment(t, do(http.MethodPost, efRunPath, "dry_run=false", true), http.StatusConflict)
+	if strings.TrimSpace(got) != strings.TrimSpace(string(want)) {
+		t.Errorf("the running notice drifted from tests/a11y/fixtures/extrafanart-running-notice.html\n got: %s\nwant: %s", got, want)
 	}
 }
