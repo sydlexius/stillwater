@@ -221,13 +221,19 @@ var (
 // argument index. tf() is fmt.Sprintf, so count and order matter: an unindexed
 // "%s %d" and a translation "%d %s" differ, while a positional reorder such as
 // "%[2]d %[1]s" (needed by some languages) maps to the same index:verb pairs
-// as en's "%s %d" and is legal.
+// as en's "%s %d" and is legal. A precision or width change on the same verb
+// (%.1f to %.0f) is deliberately allowed: the argument type is unchanged.
+// Stray percent signs left after removing "%%" and the verbs are COUNTED, so a
+// translation that writes "(%d %)" or "(%d%)" for en's "(%d%%)" differs (Sprintf
+// would render %!)(NOVERB)). The count is compared for every string, verbs or
+// not: a correct translation keeps its prose percent signs one for one.
 func placeholderSig(s string) string {
 	braces := braceRE.FindAllString(s, -1)
 	sort.Strings(braces)
 	var verbs []string
 	next := 1
-	for _, m := range verbRE.FindAllStringSubmatch(percentR.Replace(s), -1) {
+	body := percentR.Replace(s)
+	for _, m := range verbRE.FindAllStringSubmatch(body, -1) {
 		idx := next
 		if m[1] != "" {
 			idx, _ = strconv.Atoi(m[1])
@@ -236,7 +242,8 @@ func placeholderSig(s string) string {
 		verbs = append(verbs, fmt.Sprintf("%03d:%s", idx, m[2]))
 	}
 	sort.Strings(verbs)
-	return strings.Join(braces, " ") + " | " + strings.Join(verbs, " ")
+	stray := strings.Count(verbRE.ReplaceAllString(body, ""), "%")
+	return fmt.Sprintf("%s | %s | stray%%=%d", strings.Join(braces, " "), strings.Join(verbs, " "), stray)
 }
 
 // TestPlaceholderSig pins the signature rules the parity guard relies on.
@@ -246,6 +253,8 @@ func TestPlaceholderSig(t *testing.T) {
 		{"Use 85% for readability: %s", "Utilisez 85% pour la lisibilite : %s"},
 		{"%s and %s share %s", "%[3]s, %[1]s, %[2]s"},
 		{"{count} rows", "{count} lignes"},
+		{"%.1f MB", "%.0f Mo"}, // precision change on the same verb is allowed
+		{"100%% sure", "sur a 100%%"},
 	}
 	for _, c := range same {
 		if placeholderSig(c[0]) != placeholderSig(c[1]) {
@@ -257,7 +266,10 @@ func TestPlaceholderSig(t *testing.T) {
 		{"%s has %d", "%d a %s"},            // unindexed order swapped
 		{"{count} rows", "{count} {count}"}, // duplicated token
 		{"%s and %s share %s", "%s et %s"},  // third verb dropped
-		{"%d", "%s"},                        // verb type changed
+		{"%d", "%s"},
+		{"(%d%%)", "(%d %)"},  // stray percent, space before it
+		{"(%d%%)", "(%d%)"},   // unescaped percent
+		{"50% off", "50 off"}, // prose percent dropped                        // verb type changed
 	}
 	for _, c := range differ {
 		if placeholderSig(c[0]) == placeholderSig(c[1]) {

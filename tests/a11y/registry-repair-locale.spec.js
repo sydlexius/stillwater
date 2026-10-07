@@ -39,6 +39,8 @@ const templateRe = (tpl) => new RegExp(`^${escapeRe(tpl).replace(/\\\{([a-z]+)\\
 
 // Every locale key the spec reads. One list, so the differs-from-English guard
 // cannot drift from what is actually asserted.
+const CHECKED_AT = '2026-03-04T15:06:07Z';
+
 const KEYS = [
   'banner.registry_repair.title',
   'banner.registry_repair.run',
@@ -94,8 +96,8 @@ for (const [code, region] of [['fr', 'fr-FR'], ['ja', 'ja-JP']]) {
     });
     test.afterAll(() => { if (stopServer) stopServer(); });
 
-    async function openBanner(browser, locale, theme = 'dark') {
-      const context = await browser.newContext({ colorScheme: theme, locale });
+    async function openBanner(browser, locale, theme = 'dark', timezoneId = undefined) {
+      const context = await browser.newContext({ colorScheme: theme, locale, timezoneId });
       await context.addCookies([{ name: 'session', value: server.sessionCookie, url: server.rootURL }]);
       const page = await context.newPage();
       await disableTransitions(page);
@@ -132,17 +134,26 @@ for (const [code, region] of [['fr', 'fr-FR'], ['ja', 'ja-JP']]) {
 
     // Stubbed count 2: the real fixture has one row, so only a stub renders the
     // plural (.other) string, the one carrying {count}. The time must use the
-    // page language (template comment): expected value is computed in the page.
+    // page language (template comment). The instant, the zone (UTC) and the
+    // expected text are all fixed OUTSIDE the page: the expectation is computed in
+    // Node, so a page that formatted with the wrong locale or zone cannot agree
+    // with itself. Whitespace is normalized on both sides (ICU in Node and in the
+    // browser can differ by narrow no-break spaces).
     test('plural count and the checked time render in the page locale', async ({ browser, locale }) => {
-      const { context, page } = await openBanner(browser, locale);
+      const { context, page } = await openBanner(browser, locale, 'dark', 'UTC');
       await page.route('**/registry-repair/banner', (route) => route.fulfill({
-        json: { ok: true, needs_repair: true, count: 2, checked_at: '2026-03-04T15:06:07Z' },
+        json: { ok: true, needs_repair: true, count: 2, checked_at: CHECKED_AT },
       }));
       await page.goto(`${server.baseURL}/reports`);
       await expect(page.locator(BANNER)).toBeVisible();
       await expect(page.locator('#sw-registry-repair-count')).toContainText(fill(L['banner.registry_repair.body.other'], { count: 2 }));
-      const when = await page.evaluate((r) => new Date('2026-03-04T15:06:07Z').toLocaleString(r), locale);
-      await expect(page.locator('#sw-registry-repair-checked')).toHaveText(fill(L['banner.registry_repair.checked'], { time: when }));
+      const norm = (t) => t.replace(/\s+/g, ' ').trim();
+      const fixed = new Date(CHECKED_AT);
+      const when = fixed.toLocaleString(locale, { timeZone: 'UTC' });
+      const enUS = fixed.toLocaleString('en-US', { timeZone: 'UTC' });
+      expect(norm(when), 'the fixed instant must render differently in en-US').not.toBe(norm(enUS));
+      await expect.poll(async () => norm(await page.locator('#sw-registry-repair-checked').innerText()))
+        .toBe(norm(fill(L['banner.registry_repair.checked'], { time: when })));
       await context.close();
     });
 
