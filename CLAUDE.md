@@ -17,6 +17,7 @@ Stillwater is a containerized, self-hosted web application for managing artist/c
 - Web UI consumes the same API via HTMX
 - Minimal JS dependencies: only vendored libs (HTMX, Cropper.js, Chart.js)
 - Follow coding standards in `.github/instructions/` for error handling, test quality, and concurrency
+- UI/UX redesign and visual-fix work follows the binding UI/UX rules in the user-global instructions. The full playbook is maintainer-local at `~/.claude/plans/milestone-55/UX-REDESIGN-PLAYBOOK.md` (not in the repo); it came out of the post-mortem on the #1773 work.
 
 ## Architecture
 
@@ -38,6 +39,10 @@ comment in the Makefile. Non-obvious ones worth knowing about:
 - `make bruno-ci` - build, run an ephemeral server, execute the Bruno API tests
 - `make audit` - advisory local security pass (govulncheck + gosec + semgrep + syft/grype)
 - `make doctor` - verify git hook wiring without modifying anything
+
+## Production
+
+The maintainer runs a production instance on a remote host. Never ssh to it, run a command on it, or read its logs, shell history, or sessions, and never change anything on it, unless the maintainer explicitly authorized that host in the current session. Read-only is still access. Earlier-session approval does not carry over, and a subagent brief must state "local machine only, no ssh" unless that authorization exists. Build and test locally (`scripts/dev-restart.sh`); the local dev server is UAT, not production.
 
 ## Running Long Tests
 
@@ -172,7 +177,12 @@ never gets scheduled. This is not a nicety to add later -- "later" does not happ
 
 Repo-specific delta on top of the global PR workflow (`/prep-pr` to open, `/handle-review`, `/merge-pr`): the pre-push git hook runs `scripts/pre-push-gate.sh` automatically on every push (it skips the run only when a valid gate receipt and stamp cover the exact pushed tree, #3436; `PRE_PUSH_FORCE_GATE=1` forces it), so do **not** invoke it manually as a standalone pre-push step -- the manual call duplicates the hook's work without adding signal. Manual `bash scripts/pre-push-gate.sh` invocations are appropriate only inside `/handle-review` and `/merge-pr` (verifying fixes before commit, gating a merge).
 
-See `docs/pr-workflow.md` for full details including the gh `!=` bash history workaround and Copilot policy.
+**Review bots (current state, update this when it changes):**
+- Copilot: see the Copilot review policy in `docs/pr-workflow.md` (the single source for it).
+- CodeRabbit's automatic review is off for the organization. Starting a CodeRabbit review is the maintainer's call alone: an agent never posts a review trigger on its own initiative. Replies to CodeRabbit follow the push-first order (fix, commit, push, reply with the commit SHA, resolve the thread).
+- Codoki (a former review bot) is not in service; do not mention it. No bot reviews a fix push automatically.
+
+See `docs/pr-workflow.md` for full details including the gh `!=` bash history workaround.
 
 **Decompose before building.** When the foundation is not known up front, spike a throwaway rough-cut (delegate it to a subagent that returns a "foundation manifest") to discover what needs sharing, then split. If a feature cannot fit under the ~800 hand-written-LOC / 10-file size gate, that is a signal it bundles a foundation refactor that should have landed first. For complex multi-session screens/features, run the main session as an orchestrator (delegate implementation, tests, RCA, and UAT-evidence gathering to subagents), gate per chunk rather than once at the end, and never report work "done" without the verifying evidence in the same message. See the screen-build playbook in the M55 plan and the `feedback_screen_build_playbook` memory.
 
