@@ -189,6 +189,12 @@ mkdir -p "$R3/internal/api"; echo 'openapi: 3.1.0' > "$R3/internal/api/openapi.y
 oarun 0 "No breaking" "present on main: compared" ':'
 oarun 1 "FAIL" "git cannot answer: FAIL, not skip" 'git() { case "$1" in show|ls-tree) return 128;; *) command git "$@";; esac; }'
 oarun 1 "although the file exists" "present but unreadable: FAIL" 'git() { case "$1" in show) return 128;; *) command git "$@";; esac; }'
+# Replace main's tip with the spec-less commit: the real tree still holds the spec, so the arm must
+# still see it (show -> compared; show failing -> ls-tree says present -> FAIL, never "Skipped").
+git -C "$R3" replace -f main "$(git -C "$R3" rev-parse main~1)"
+oarun 0 "No breaking" "replace ref on main: show still reads the real spec" ':'
+oarun 1 "although the file exists" "replace ref on main: ls-tree still says present" 'git() { case "$1" in show) return 128;; *) command git "$@";; esac; }'
+git -C "$R3" replace -d "$(git -C "$R3" rev-parse main)" >/dev/null 2>&1 || true
 
 echo "E. check-plain-git-diff.sh guard"
 guard() { bash "$GUARD_SH" "$1" >"$W/g.out" 2>&1 && return 0 || return 1; }
