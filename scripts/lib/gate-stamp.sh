@@ -56,7 +56,8 @@ gate_patch_base() {
 
 # Environment variables that can change a check's verdict without changing the
 # tree. A KNOWN LIST, not a proof: any of these set non-empty at gate start
-# withholds the stamp (the gate itself still runs normally). Format
+# withholds the stamp (the gate itself still runs normally), and set in a push's
+# environment it makes the receipt validator run the gate. Format
 # name-or-glob|reason. Not listed on purpose: COVER_OUT, PATCH_COVERAGE_THRESHOLD
 # and PATCH_COVERAGE_EXCLUDE (the gate sets them inline for the helper),
 # PATH/HOME/proxy and CACHE-LOCATION variables. GOLANGCI_LINT_CACHE in particular is

@@ -92,7 +92,7 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
   `main` or patch-coverage base (`gate_patch_base`, the one `origin/main`-first
   ladder; the gate hands it to the helper as `BASE`), or when a known list of
   verdict-changing environment variables (`GOFLAGS`, `SKIP_*`, `BASE`, ...) is
-  set. The validator also refuses a stamp older than 4 hours. A new skip arm that
+  set (at gate start, or in the push's own environment: then the gate runs). The validator also refuses a stamp older than 4 hours. A new skip arm that
   prints a skip or warn line must be classified or the test below fails; that
   is a text heuristic, so a skip printing no such word is not caught.
 - `scripts/test-gate-receipt-valid.sh` -- drives the real hook against a stub
