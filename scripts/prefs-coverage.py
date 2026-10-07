@@ -62,10 +62,27 @@ class GitError(Exception):
     """
 
 
-def sh(args, timeout=120):
+# Plain `git diff` for the parsed name-status output (#3446): the developer's
+# external diff tool, textconv, color and rename config must not change it. See
+# scripts/lib/git-plain.sh for the measured effect of each. check-plain-git-diff.sh
+# parses this file and flags any git diff argv not built from this constant, and
+# checks that the constant keeps the hardening flags.
+GIT_PLAIN_DIFF = ["git", "-c", "core.quotePath=false", "diff",
+                  "--no-ext-diff", "--no-textconv", "--no-color", "--text",
+                  "--inter-hunk-context=0", "-M",
+                  "--src-prefix=a/", "--dst-prefix=b/"]
+# Pathspec modes and GIT_DIFF_OPTS are environment, so they ride in env.
+GIT_PLAIN_ENV = {"GIT_DIFF_OPTS": "", "GIT_LITERAL_PATHSPECS": "0",
+                 "GIT_GLOB_PATHSPECS": "0", "GIT_NOGLOB_PATHSPECS": "0",
+                 "GIT_ICASE_PATHSPECS": "0", "GIT_NO_REPLACE_OBJECTS": "1"}
+
+
+def sh(args, timeout=120, env=None):
+    env = env if env is not None else {**os.environ, **GIT_PLAIN_ENV}  # every git read is plain
     # Bounded so a hung git op fails fast (rc 124) instead of burning the job budget.
     try:
-        return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout,
+                              env=env)
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(args, 124, "", f"timed out after {timeout}s")
 
@@ -113,7 +130,7 @@ def changed_files(base):
     # NOT degrade to "0 files changed" (a false PASS that suppresses the whole
     # gate). Only a clean rc==0 with empty output is a legitimate "no changes".
     if base:
-        mb_res = sh(["git", "merge-base", base, "HEAD"])
+        mb_res = sh(["git", "merge-base", base, "HEAD"], env={**os.environ, **GIT_PLAIN_ENV})  # a replace ref empties it
         # rc 1 == no common ancestor (unrelated histories): legitimate, fall
         # back to a working-tree diff. rc 124 (timeout) / 128 (bad rev) / etc.
         # are real failures -> fail closed.
@@ -131,8 +148,8 @@ def changed_files(base):
     # file can't regress a token) and Copies. core.quotePath=false keeps
     # non-ASCII paths literal so the downstream os.path.isfile / git show
     # resolve the real filename instead of a C-quoted octal escape.
-    res = sh(["git", "-c", "core.quotePath=false", "diff",
-              "--name-status", "-M", "--diff-filter=AMR", rng])
+    res = sh(GIT_PLAIN_DIFF + ["--name-status", "--diff-filter=AMR", rng],
+             env={**os.environ, **GIT_PLAIN_ENV})
     if res.returncode != 0:
         raise GitError(f"git diff --name-status {rng} failed "
                        f"(rc={res.returncode}): {res.stderr.strip()}")
@@ -167,7 +184,8 @@ def base_content(base_sha, path):
         return None
     try:
         res = subprocess.run(["git", "show", f"{base_sha}:{path}"],
-                              capture_output=True, timeout=120)
+                              capture_output=True, timeout=120,
+                              env={**os.environ, **GIT_PLAIN_ENV})
     except subprocess.TimeoutExpired:
         raise GitError(f"git show {base_sha}:{path} timed out after 120s")
     if res.returncode == 0:

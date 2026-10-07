@@ -75,6 +75,8 @@ new_repo() {
     local dir="$WORK/$name"
     mkdir -p "$dir/scripts" "$dir/web/static/css"
     cp "$GATE_SCRIPT_SRC" "$dir/scripts/stylelint-diff-gate.sh"
+    mkdir -p "$dir/scripts/lib"
+    cp "$REPO_ROOT/scripts/lib/git-plain.sh" "$dir/scripts/lib/"
     chmod +x "$dir/scripts/stylelint-diff-gate.sh"
     git init -q "$dir"
     git -C "$dir" config user.name "Test"

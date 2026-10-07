@@ -46,6 +46,26 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
   matrix lists shards exactly 1..N with a constant `shards` (#3442), so a dropped
   or duplicated shard cannot silently skip specs; `scripts/test-check-a11y-shards.sh`
   is its mutation test. Run by the gate and the `Gate Invariant` job.
+- `scripts/lib/git-plain.sh` -- `git_plain_diff`, a `git diff` that ignores the
+  developer's `GIT_EXTERNAL_DIFF`/`diff.external`, textconv, color, prefix,
+  `core.quotePath`, binary attributes, inter-hunk context, pathspec modes and
+  `GIT_DIFF_OPTS` (#3446); the header lists what each one does to a parser. Use
+  it for any `git diff` whose output a check reads, and capture its output in an
+  assignment so a failed git is not read as "no diff".
+- `scripts/check-plain-git-diff.sh` -- fail when a common spelling of a
+  patch-producing git command (`diff*`, `log`, `show`, `format-patch`, ...) in
+  `scripts/` (including `lib/`) or `.githooks/` skips the helper; allowed: blob
+  `git show <rev>:<path>` and a trailing `# plain-git-exempt: <reason>` comment.
+  It needs python3 (fails without it) and fails if it scanned nothing. Its header
+  names what it cannot see (variable-held git, composed Python argv, Makefile and
+  workflow blocks, ...). `scripts/test-check-plain-git-diff.sh` drives the real
+  raw-error-leak arm, the stylelint changed-line loop, the fail-closed sites and
+  the OpenAPI base read under each tooling variant (and re-runs itself with
+  caller-exported diff config); `scripts/test-pre-commit-plain-diff.sh` does the
+  same for the pre-commit hook's marker scan and stale-generated checks, and
+  `scripts/test-prefs-coverage.sh` for `prefs-coverage.py`. All run by the gate
+  and the `Gate Invariant` job. (`scripts/test-stylelint-diff-gate.sh` is run by
+  neither: its T3 needs a stylelint install outside the repo.)
 - `scripts/lib/run-flags.sh` -- sourced by the gate; resolves each `RUN_*`
   variable to run / skip / default and REFUSES an unrecognized value (exit 2).
   Without it, a mistyped `RUN_VULN=truee` fell into the default branch, printed

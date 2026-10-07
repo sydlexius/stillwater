@@ -64,6 +64,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # convention. Resolved here, at the top, so a typo costs a second rather than
 # sitting undetected through the tests, lint, and OpenAPI steps.
 . "$SCRIPT_DIR/lib/run-flags.sh"
+# Plain `git diff` for every check that parses it (#3446).
+. "$SCRIPT_DIR/lib/git-plain.sh"
 
 resolve_run_flag RUN_RACE "${RUN_RACE:-}"; RACE_MODE="$RESOLVED_RUN_FLAG"
 resolve_run_flag RUN_VULN "${RUN_VULN:-}"; VULN_MODE="$RESOLVED_RUN_FLAG"
@@ -170,8 +172,9 @@ echo "=== Conflict markers (tracked files) ==="
 # Markers checked: <<<<<<< (start), ======= (separator), >>>>>>> (end), each
 # requiring a trailing space or EOL to avoid matching legitimate content like
 # a markdown ASCII rule of exactly seven equals.
-markers=$(git ls-files -z \
-    | xargs -0 grep -nE '^(<{7}|={7}|>{7})( |$)' 2>/dev/null \
+tracked_z="$SW_RUN_DIR/tracked-files.z"
+git ls-files -z > "$tracked_z" || { echo "FAIL: git could not list tracked files for the conflict-marker scan" >&2; exit 2; }
+markers=$(xargs -0 grep -nE '^(<{7}|={7}|>{7})( |$)' 2>/dev/null < "$tracked_z" \
     | head -50 || true)
 if [ -n "$markers" ]; then
     echo "FAIL: unresolved merge conflict markers in tracked files:"
@@ -207,6 +210,15 @@ echo "=== a11y shard matrix is complete (#3442) ==="
 # "Gate Invariant" job (gate.yml).
 bash "$SCRIPT_DIR/check-a11y-shards.sh"
 bash "$SCRIPT_DIR/test-check-a11y-shards.sh"
+
+echo ""
+echo "=== parsed git diffs use plain output (#3446) ==="
+# A developer's external diff tool, textconv or color config must not change
+# what a check parses. Mirrored by CI's "Gate Invariant" job (gate.yml).
+bash "$SCRIPT_DIR/check-plain-git-diff.sh"
+bash "$SCRIPT_DIR/test-check-plain-git-diff.sh"
+bash "$SCRIPT_DIR/test-pre-commit-plain-diff.sh"
+bash "$SCRIPT_DIR/test-prefs-coverage.sh"
 
 echo ""
 echo "=== release-blockers check self-test (#2905) ==="
@@ -273,8 +285,10 @@ echo "=== Changed Go files/packages ==="
 # of computing it twice. Motivation: M52 PR #1644 bumped
 # SSEHub.SubscribeToEventBus from cog=28 to cog=34 (cap 30); local gate PASS,
 # CI FAIL. Issue #1645.
-MODIFIED_GO_FILES=$(git diff --name-only --diff-filter=ACMR "$BASE" -- '*.go' \
-  | grep -v '_templ\.go$' || true)
+# Captured first: a failed git must stop the gate, not read as "no Go changed".
+changed_go_raw=$(git_plain_diff --name-only --diff-filter=ACMR "$BASE" -- '*.go') \
+  || { echo "FAIL: the diff of changed Go files could not be read" >&2; exit 2; }
+MODIFIED_GO_FILES=$(printf '%s\n' "$changed_go_raw" | grep -v '_templ\.go$' || true)
 # Guard against BSD xargs (macOS) running `dirname` with zero args when the
 # input is empty; GNU xargs has --no-run-if-empty but BSD does not. Empty
 # file list -> empty package list -> callers below skip cleanly.
@@ -745,7 +759,10 @@ echo ""
 echo "=== Raw error leak check ==="
 # Scope to production handler code only: test files legitimately assert on
 # err.Error()/err.String() and never reach a client response.
-error_leaks=$(git diff "$BASE"..HEAD -- 'internal/api/handlers.go' 'internal/api/handlers_*.go' ':(exclude)internal/api/*_test.go' \
+# Diff captured first so a failed git fails the check instead of reading as clean.
+leak_diff=$(git_plain_diff "$BASE"..HEAD -- 'internal/api/handlers.go' 'internal/api/handlers_*.go' ':(exclude)internal/api/*_test.go') \
+  || { echo "FAIL: the diff could not be read in the raw error leak check" >&2; exit 2; }
+error_leaks=$(printf '%s\n' "$leak_diff" \
   | grep '^+' \
   | grep -E 'err\.(Error|String)\(\)' \
   | grep -vE '\bslog\.|\blogger\.|\blog\.' || true)
@@ -811,7 +828,8 @@ if command -v go &>/dev/null; then
     fi
     mv "$SW_RUN_DIR/oasdiff" "$oasdiff_bin"
   fi
-  if git show main:internal/api/openapi.yaml > "$tmp_openapi" 2>/dev/null; then
+  # GIT_NO_REPLACE_OBJECTS: a replace ref would swap main's spec for another blob.
+  if GIT_NO_REPLACE_OBJECTS=1 git show main:internal/api/openapi.yaml > "$tmp_openapi" 2>/dev/null; then
     breaking_out=$("$oasdiff_bin" breaking --fail-on ERR \
       "$tmp_openapi" internal/api/openapi.yaml 2>"$oasdiff_err") && oasdiff_rc=0 || oasdiff_rc=$?
     case "$oasdiff_rc" in
@@ -829,6 +847,12 @@ if command -v go &>/dev/null; then
         exit 1
         ;;
     esac
+  elif ! base_entry=$(GIT_NO_REPLACE_OBJECTS=1 git ls-tree --name-only main -- internal/api/openapi.yaml 2>/dev/null); then
+    echo "FAIL: could not ask git whether main has openapi.yaml" >&2
+    exit 1
+  elif [ -n "$base_entry" ]; then
+    echo "FAIL: reading openapi.yaml from main failed although the file exists" >&2
+    exit 1
   else
     echo "Skipped (openapi.yaml not yet on main)."
   fi

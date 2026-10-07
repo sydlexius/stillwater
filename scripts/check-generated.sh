@@ -2,6 +2,10 @@
 # check-generated.sh -- verify *_templ.go files were regenerated after .templ changes
 set -euo pipefail
 
+# Plain `git diff` for the dirty checks below (#3446).
+# shellcheck source=scripts/lib/git-plain.sh
+. "$(dirname "$0")/lib/git-plain.sh"
+
 # Create temp files for generator logs; clean them up on exit (but after printing
 # on error). Temp files ensure concurrent runs don't collide in /tmp.
 TEMPL_LOG=""
@@ -26,7 +30,7 @@ if ! go tool templ generate 2>"$TEMPL_LOG"; then
   cat "$TEMPL_LOG"
   exit 1
 fi
-dirty_templ=$(git diff --name-only -- '*_templ.go' || true)
+dirty_templ=$(git_plain_diff --name-only -- '*_templ.go') || { echo "FAIL: check-generated: git could not list dirty *_templ.go files" >&2; exit 2; }
 if [ -n "$dirty_templ" ]; then
   echo "ERROR: *_templ.go files are stale or were generated with a different templ version."
   echo "Run: go tool templ generate && git add <generated files>"
@@ -49,7 +53,7 @@ if command -v tailwindcss >/dev/null 2>&1; then
     cat "$TAILWIND_LOG"
     exit 1
   fi
-  dirty_css=$(git diff --name-only -- web/static/css/styles.css || true)
+  dirty_css=$(git_plain_diff --name-only -- web/static/css/styles.css) || { echo "FAIL: check-generated: git could not list dirty styles.css" >&2; exit 2; }
   if [ -n "$dirty_css" ]; then
     echo "ERROR: web/static/css/styles.css is stale. Run: make tailwind && git add web/static/css/styles.css"
     exit 1
@@ -70,12 +74,11 @@ fi
 # earlier version used `git add -N` for this, which did). Scoped to the
 # surfaces this script actually regenerates (templ + Tailwind CSS) so an
 # unrelated dirty working tree does not produce a false positive.
-wholesale_dirty=$(
-  {
-    git diff --name-only -- '*_templ.go' web/static/css/styles.css
-    git ls-files --others --exclude-standard -- '*_templ.go' web/static/css/styles.css
-  } | sort -u
-)
+# Each git call is its own assignment: bash ignores set -e inside a group
+# feeding a pipe, so a failed diff there would read as "nothing dirty".
+dirty_tracked=$(git_plain_diff --name-only -- '*_templ.go' web/static/css/styles.css) || { echo "FAIL: check-generated: git could not list dirty generated files" >&2; exit 2; }
+dirty_untracked=$(GIT_LITERAL_PATHSPECS=0 GIT_GLOB_PATHSPECS=0 GIT_NOGLOB_PATHSPECS=0 GIT_ICASE_PATHSPECS=0 git ls-files --others --exclude-standard -- '*_templ.go' web/static/css/styles.css) || { echo "FAIL: check-generated: git could not list untracked generated files" >&2; exit 2; }
+wholesale_dirty=$(printf '%s\n%s\n' "$dirty_tracked" "$dirty_untracked" | sed '/^$/d' | sort -u)
 if [ -n "$wholesale_dirty" ]; then
   echo "ERROR: generated files are stale or newly untracked after regeneration."
   echo "Run: go tool templ generate && make tailwind, then git add the results."

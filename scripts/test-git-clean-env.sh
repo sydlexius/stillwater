@@ -161,6 +161,9 @@ HELPERS=(
     test-check-commit-signing.sh
     test-link-worktree-settings.sh
     test-check-release-blockers.sh
+    test-check-plain-git-diff.sh
+    test-pre-commit-plain-diff.sh
+    test-prefs-coverage.sh
 )
 
 # check-commit-signing.sh runs `git init` too but is deliberately NOT above: a
@@ -207,7 +210,7 @@ for helper in "${HELPERS[@]}"; do
     # scripts/ directory (a helper run from a tree with no scripts/ dies
     # instantly and looks innocent).
     set +e
-    OUT=$(cd "$REPO_ROOT" && GIT_DIR="$GDIR" bash "scripts/$helper" 2>&1)
+    OUT=$(cd "$REPO_ROOT" && GIT_DIR="$GDIR" SW_PLAIN_SELFCHECK=1 bash "scripts/$helper" 2>&1)
     RC=$?
     set -e
 
