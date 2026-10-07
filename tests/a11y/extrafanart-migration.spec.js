@@ -38,15 +38,15 @@ test.afterAll(async ({ request }) => {
 test.beforeEach(async ({ page }) => { await disableTransitions(page); });
 test.afterEach(async ({ page }) => { await restorePersistedTheme(page); });
 
-// Loads the page and proves the plan rendered: no empty state, no error card, no
-// run button, one "Will Move" row per seeded file naming its artist, and the
-// one-way paragraph above the table.
+// Loads the page and proves the plan rendered: no empty state, no error card, the
+// run button (never clicked here: this spec shares the server), one "Will Move"
+// row per seeded file naming its artist, and the one-way paragraph above the table.
 async function gotoPlan(page) {
   await page.goto(PAGE);
   await page.waitForLoadState('load');
   await expect(page.locator('#extrafanart-migration-empty')).toHaveCount(0);
   await expect(page.locator('#extrafanart-migration-error')).toHaveCount(0);
-  await expect(page.locator('#extrafanart-migration-run-button')).toHaveCount(0);
+  await expect(page.locator('#extrafanart-migration-run-button')).toHaveCount(1);
   const rows = page.locator('#extrafanart-migration-table tbody tr');
   const fixtureRows = rows.filter({ hasText: /Extra Fixture (One|Two)/ });
   await expect(fixtureRows).toHaveCount(ARTISTS.length * FILES_PER_ARTIST);

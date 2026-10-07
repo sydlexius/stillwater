@@ -18,6 +18,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import { BASE_URL, apiFetch, ensureLibrary, runScan, artistIdsByName } from './api.js';
 
@@ -128,4 +129,136 @@ export async function seedExtraFanartFixture(request, fx) {
     throw new Error(`seed: scan did not create fixture artists: ${missing.join(', ')}`);
   }
   return { dir, ids };
+}
+
+// ---- The RUN fixture (extrafanart-migration-run.spec.js) ----
+//
+// A run MOVES files, so it never touches the shared server: the spec boots its
+// own (helpers/base-path-server.js) and these helpers talk to THAT server with
+// plain fetch. One artist migrates cleanly; the other's folder is made
+// read-only AFTER the scan, so its files cannot be renamed out of extrafanart/
+// and the run ends partial (207).
+export const RUN_FIXTURE = {
+  libraryName: 'a11y extrafanart-run fixture',
+  okArtist: 'Run Fixture Ok',
+  lockedArtist: 'Run Fixture Locked',
+};
+
+export function serverFetch(server, method, urlPath, body, extraHeaders = {}) {
+  return fetch(`${server.baseURL}${urlPath}`, {
+    method,
+    headers: {
+      ...extraHeaders,
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': server.csrfToken,
+      Cookie: `session=${server.sessionCookie}; csrf_token=${server.csrfToken}`,
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+/** extraFanartFiles lists an artist's extrafanart/ file names ([] once the folder is gone). */
+export function extraFanartFiles(libDir, artist) {
+  const dir = path.join(libDir, artist, 'extrafanart');
+  return fs.existsSync(dir) ? fs.readdirSync(dir).sort() : [];
+}
+
+/**
+ * cleanupExtraFanartRunFixture unlocks the read-only folder FIRST (a locked
+ * folder cannot be emptied, so the rm below, and the server's own temp-dir
+ * removal, would fail), then removes the library row with its artists and the
+ * files. Safe to call when nothing was seeded.
+ */
+export async function cleanupExtraFanartRunFixture(server, libDir) {
+  try {
+    const locked = path.join(libDir, RUN_FIXTURE.lockedArtist);
+    if (fs.existsSync(locked)) fs.chmodSync(locked, 0o755);
+    const libs = await (await serverFetch(server, 'GET', '/api/v1/libraries')).json();
+    for (const lib of (Array.isArray(libs) ? libs : (libs.libraries || [])).filter(l => l.name === RUN_FIXTURE.libraryName)) {
+      const resp = await serverFetch(server, 'DELETE', `/api/v1/libraries/${lib.id}?deleteArtists=true`);
+      if (!resp.ok) throw new Error(`cleanup: deleting library ${lib.id} failed: ${resp.status} ${await resp.text()}`);
+    }
+  } finally {
+    fs.rmSync(libDir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * seedExtraFanartRunFixture rebuilds the run fixture from nothing under libDir
+ * and proves its defining properties before returning: both artists hold
+ * FILES_PER_ARTIST files in extrafanart/, the server's own PREVIEW plans every
+ * one of them with no problems, and the locked folder really refuses a write.
+ * As root the permission bits bind nothing, so the fixture cannot exist: that
+ * throws, loudly, rather than letting a spec pass against a run that fails nothing.
+ */
+export async function seedExtraFanartRunFixture(server, libDir) {
+  await cleanupExtraFanartRunFixture(server, libDir);
+  const jpeg = Buffer.from(TINY_JPEG_BASE64, 'base64');
+  const names = [RUN_FIXTURE.okArtist, RUN_FIXTURE.lockedArtist];
+  for (const name of names) {
+    const extraDir = path.join(libDir, name, 'extrafanart');
+    fs.mkdirSync(extraDir, { recursive: true });
+    fs.writeFileSync(path.join(libDir, name, 'artist.nfo'),
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<artist><name>${name}</name></artist>\n`);
+    fs.writeFileSync(path.join(libDir, name, 'fanart.jpg'), jpeg);
+    for (let i = 0; i < FILES_PER_ARTIST; i++) {
+      fs.writeFileSync(path.join(extraDir, `extra${i}.jpg`), Buffer.concat([jpeg, Buffer.from(`${name}-${i}`)]));
+    }
+  }
+  const created = await serverFetch(server, 'POST', '/api/v1/libraries', { name: RUN_FIXTURE.libraryName, path: libDir, type: 'regular' });
+  if (!created.ok) throw new Error(`seed: creating the run library failed: ${created.status} ${await created.text()}`);
+  const scan = await serverFetch(server, 'POST', '/api/v1/scanner/run');
+  if (!scan.ok) throw new Error(`seed: scanner run failed: ${scan.status} ${await scan.text()}`);
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    const st = await (await serverFetch(server, 'GET', '/api/v1/scanner/status')).json();
+    if (st.status === 'completed' || st.status === 'idle') break;
+    if (Date.now() > deadline) throw new Error('seed: scan did not complete within 60s');
+    await new Promise(r => setTimeout(r, 250));
+  }
+
+  const preview = await (await serverFetch(server, 'POST', '/api/v1/reports/extrafanart-migration', { dry_run: true })).json();
+  const want = names.length * FILES_PER_ARTIST;
+  if (preview.status !== 'planned' || preview.planned !== want || preview.problems !== 0) {
+    throw new Error(`seed: want a clean plan of ${want} files, got ${JSON.stringify(preview)}`);
+  }
+
+  const locked = path.join(libDir, RUN_FIXTURE.lockedArtist);
+  fs.chmodSync(locked, 0o555);
+  let writable = true;
+  try { fs.writeFileSync(path.join(locked, 'probe.tmp'), 'x'); } catch { writable = false; }
+  if (writable) {
+    fs.rmSync(path.join(locked, 'probe.tmp'), { force: true });
+    throw new Error('seed: the locked artist folder still accepts writes (running as root?). '
+      + 'The unmovable-folder fixture cannot be built, so the run spec cannot prove a partial run.');
+  }
+}
+
+/**
+ * inventory lists every file under libDir as { rel, sha }: the content hash is
+ * what a move preserves (the name changes), so it is what "nothing was deleted"
+ * is measured by.
+ */
+export function inventory(libDir) {
+  const out = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else out.push({ rel: path.relative(libDir, full), sha: crypto.createHash('sha256').update(fs.readFileSync(full)).digest('hex') });
+    }
+  };
+  walk(libDir);
+  return out.sort((a, b) => a.rel.localeCompare(b.rel));
+}
+
+/** missingContent names the files of `before` whose bytes are in no file of `after`. */
+export function missingContent(before, after) {
+  const have = new Set(after.map((f) => f.sha));
+  return before.filter((f) => !have.has(f.sha)).map((f) => f.rel);
+}
+
+/** unlockRunFixture makes the read-only artist folder writable, for the test that needs a fully clean run. */
+export function unlockRunFixture(libDir) {
+  fs.chmodSync(path.join(libDir, RUN_FIXTURE.lockedArtist), 0o755);
 }
