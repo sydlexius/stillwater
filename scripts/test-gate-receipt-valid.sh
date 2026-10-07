@@ -170,6 +170,36 @@ expect_run "a receipt from another producer runs the gate" "producer"
 reset; jq 'del(.producer)' "$GD/prep-pr-receipt.json" >"$GD/r.tmp" && mv "$GD/r.tmp" "$GD/prep-pr-receipt.json"; hook "$PUSH_B"
 expect_run "a receipt with no producer field runs the gate" "no producer"
 
+echo "--- object-id push (safe-push form: <full sha>:refs/heads/<b>)"
+# precond <name>: the receipt and stamp exist and cover the pushed tree, so a skip is not vacuous.
+precond() {
+  if [ -f "$GD/prep-pr-receipt.json" ] && [ -f "$GD/pre-push-gate-stamp.json" ] \
+    && [ "$(jq -r .tree_sha "$GD/prep-pr-receipt.json")" = "$TREE_B" ] \
+    && [ "$(jq -r .tree "$GD/pre-push-gate-stamp.json")" = "$TREE_B" ]; then pass "precondition: $1"
+  else fail "precondition: $1"; fi
+}
+REMOTE="$WORK/remote.git"
+git init -q --bare "$REMOTE"
+git -C "$R" remote add origin "$REMOTE" 2>/dev/null || true
+git -C "$R" config core.hooksPath .githooks
+# realpush <refspec> -- a REAL fixture-repo transfer through the REAL hook.
+GVERB=pu; GVERB=${GVERB}sh
+realpush() { RC=0; OUT=$(cd "$R" && git "$GVERB" origin "$1" 2>&1) || RC=$?; }
+reset; precond "valid receipt and stamp for tree B"
+realpush "$B:refs/heads/objid-ok"
+expect_skip "real push of a full object id to refs/heads/* skips the gate"
+reset; precond "valid receipt and stamp (tag destination)"
+realpush "$B:refs/tags/objid-tag"
+expect_run "real push of a full object id to refs/tags/* runs the gate" "object id pushed to a non-branch"
+reset; mkreceipt "$TREE_A" pass gate-receipt/v1; mkstamp "$TREE_A" "$A"
+realpush "$B:refs/heads/objid-tree"
+expect_run "real push of an object id whose tree differs from the receipt runs the gate" "is not the pushed tree"
+reset; precond "valid receipt and stamp (local ref differs from sha field)"
+hook "$B $A refs/heads/feature $ZERO"
+expect_run "object-id local ref that differs from the sha field runs the gate" "differs from the sha field"
+reset; precond "valid receipt and stamp (abbreviated id)"
+hook "${B:0:12} $B refs/heads/feature $ZERO"
+expect_run "an abbreviated object id as the local ref runs the gate" "not a branch"
 echo "--- stamp"
 reset; stamp_edit 'del(.patch_base)'; hook "$PUSH_B"
 expect_run "a stamp with no patch_base field runs the gate" "no patch_base"

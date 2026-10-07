@@ -15,6 +15,7 @@
 # gate runner's receipt AND the stamp the gate writes (tree, base, tip of main,
 # patch-coverage base, RUN_* modes) both match the pushed tree, the tree is
 # clean, and no base or main moved.
+# A push by full object id (safe-push) counts as a branch push only to refs/heads/*.
 # The decision lives in scripts/gate-receipt-valid.sh; any doubt runs the gate.
 # PRE_PUSH_FORCE_GATE=1 forces the full gate.
 #

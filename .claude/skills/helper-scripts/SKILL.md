@@ -73,7 +73,9 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
   to run.
 - `scripts/gate-receipt-valid.sh` -- the pre-push hook's skip decision (#3436).
   Honors a `gate-receipt/v1` receipt (producer `gate-runner`, result pass, tree
-  equal to every pushed commit's tree, clean tree with untracked counted) only
+  equal to every pushed commit's tree, clean tree with untracked counted; a
+  full object id as the local ref, as safe-push pushes, counts only when it equals
+  the sha and goes to `refs/heads/*`) only
   together with the `pre-push-gate-stamp.json` the gate writes on a passing run
   (same tree, the merge-base of each pushed commit, same tip of local `main`, same patch-coverage base, `RUN_*`
   modes at least as strict). Any doubt, a crash, or an exit 0 without the skip

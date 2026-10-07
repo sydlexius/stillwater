@@ -29,7 +29,9 @@
 # A skip needs ALL of:
 #   1. receipt parses, schema gate-receipt/v1, producer gate-runner, result pass;
 #   2. receipt tree_sha == the tree of EVERY commit being pushed. Each ref line
-#      must be a branch (or HEAD) push of a real commit; a delete (all-zero
+#      must be a branch (or HEAD) push of a real commit, or a full 40/64-hex
+#      object id equal to the line's sha pushed to a refs/heads/* destination
+#      (safe-push's form); a delete (all-zero
 #      sha), a tag push, or no stdin at all means run the gate. Multiple refs
 #      are allowed only when every one has that same tree (simplest correct
 #      option: nothing is skipped on a partial match);
@@ -141,12 +143,21 @@ now_main=$(git rev-parse --verify -q 'main^{commit}' 2>/dev/null || echo none)
 # the receipt and whose merge-base with main is the base the gate compared.
 seen=0
 p_commit=""
-while read -r lref lsha _rref _rsha; do
+while read -r lref lsha rref _rsha; do
   [ -n "${lref:-}" ] || continue
   seen=$((seen + 1))
   case "$lref" in
     refs/heads/* | HEAD) ;;
-    *) refuse "pushed ref '$lref' is not a branch" ;;
+    # safe-push pushes `<full object id>:refs/heads/<b>`, so git hands the hook the
+    # id as the local ref. Honored only when it is a full id equal to the sha
+    # field and the destination is a branch.
+    *[!0-9a-f]* | "") refuse "pushed ref '$lref' is not a branch or a full object id" ;;
+    *)
+      case "${#lref}:$rref" in
+        40:refs/heads/* | 64:refs/heads/*) [ "$lref" = "${lsha:-}" ] || refuse "pushed object id '$lref' differs from the sha field" ;;
+        *) refuse "pushed ref '$lref' is not a branch, or an object id pushed to a non-branch ref" ;;
+      esac
+      ;;
   esac
   case "${lsha:-}" in
     "" | *[!0]*) ;;
