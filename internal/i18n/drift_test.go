@@ -243,7 +243,8 @@ func placeholderSig(s string) string {
 	}
 	sort.Strings(verbs)
 	stray := strings.Count(verbRE.ReplaceAllString(body, ""), "%")
-	return fmt.Sprintf("%s | %s | stray%%=%d", strings.Join(braces, " "), strings.Join(verbs, " "), stray)
+	// Literal "%%" signs are counted too: a dropped one renders a different string.
+	return fmt.Sprintf("%s | %s | stray%%=%d | literal%%=%d", strings.Join(braces, " "), strings.Join(verbs, " "), stray, strings.Count(s, "%%"))
 }
 
 // TestPlaceholderSig pins the signature rules the parity guard relies on.
@@ -268,6 +269,7 @@ func TestPlaceholderSig(t *testing.T) {
 		{"%s and %s share %s", "%s et %s"},  // third verb dropped
 		{"%d", "%s"},
 		{"(%d%%)", "(%d %)"},  // stray percent, space before it
+		{"%d%%", "%d"},        // literal percent dropped
 		{"(%d%%)", "(%d%)"},   // unescaped percent
 		{"50% off", "50 off"}, // prose percent dropped                        // verb type changed
 	}

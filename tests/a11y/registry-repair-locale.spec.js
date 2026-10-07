@@ -170,6 +170,9 @@ for (const [code, region] of [['fr', 'fr-FR'], ['ja', 'ja-JP']]) {
       status = { running: false, status: 'failed', error_code: 'timeout' };
       await expect.poll(() => page.evaluate(() => window.__toasts.map((t) => t.text)), { timeout: 30_000 })
         .toContain(L['banner.registry_repair.toast.failed']);
+      const failed = (await page.evaluate(() => window.__toasts)).find((t) => t.text === L['banner.registry_repair.toast.failed']);
+      expect(failed, 'no failed toast was recorded').toBeTruthy();
+      expect(failed.lang, 'failed toast lang').toBe(code);
       await context.close();
     });
 
