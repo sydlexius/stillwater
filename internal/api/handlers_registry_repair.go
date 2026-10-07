@@ -427,6 +427,15 @@ type registryRepairBanner struct {
 	Count       int       `json:"count"`
 	CheckedAt   time.Time `json:"checked_at,omitzero"`
 	OK          bool      `json:"ok"`
+	// Plan splits Count into rows to rebuild and flags to restore. Present only
+	// when ok and the cache holds a detector scan's split (not after a commit,
+	// where Count is failed writes); then Rebuild + Restore == Count.
+	Plan *registryRepairBannerPlan `json:"plan,omitempty"`
+}
+
+type registryRepairBannerPlan struct {
+	Rebuild int `json:"rebuild"`
+	Restore int `json:"restore"`
 }
 
 // handleRegistryRepairBanner serves the cached detector result. GET
@@ -437,10 +446,14 @@ func (r *Router) handleRegistryRepairBanner(w http.ResponseWriter, req *http.Req
 	if !r.requireForeignAdmin(w, req) {
 		return
 	}
-	count, checkedAt, ok := r.registryRepairCache.Get()
-	writeJSON(w, http.StatusOK, &registryRepairBanner{
-		NeedsRepair: ok && count > 0, Count: count, CheckedAt: checkedAt, OK: ok,
-	})
+	snap := r.registryRepairCache.Snapshot()
+	body := &registryRepairBanner{
+		NeedsRepair: snap.OK && snap.Count > 0, Count: snap.Count, CheckedAt: snap.CheckedAt, OK: snap.OK,
+	}
+	if snap.PlanKnown {
+		body.Plan = &registryRepairBannerPlan{Rebuild: snap.Plan.Rebuild, Restore: snap.Plan.Restore}
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 // cmpOrNewRegistryRepairCache returns c, or a fresh never-checked cache.

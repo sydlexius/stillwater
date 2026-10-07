@@ -4,7 +4,9 @@
 // (#2678, slice 2a). The only honest detector is the repair's own dry run, but
 // a dry run walks the library and fully decodes every candidate image, so it
 // can never be polled on a UI cadence. This file runs it on a slow schedule
-// and caches the answer; the banner endpoint reads the cache and never scans.
+// and caches the answer (the total AND its split into rows to rebuild and
+// existence flags to restore); the banner endpoint reads the cache and never
+// scans.
 //
 // Cadence mirrors StartDuplicateImageCountRefresh: a 2-minute startup delay,
 // then every 12 hours.
@@ -27,15 +29,25 @@ const (
 	registryRepairCheckTimeout = 30 * time.Minute
 )
 
-// RegistryRepairCache holds the last known "rows needing repair" count. The
-// zero value is usable: never checked (ok=false).
+// RegistryRepairPlan is what a dry run says a repair would do: Rebuild rows
+// would be inserted, Restore existence flags would be flipped back on.
+type RegistryRepairPlan struct {
+	Rebuild int
+	Restore int
+}
+
+// RegistryRepairCache holds the last known "rows needing repair" count and,
+// when it came from a detector scan, the plan it sums. The zero value is
+// usable: never checked (ok=false).
 type RegistryRepairCache struct {
 	mu        sync.Mutex
 	count     int
 	checkedAt time.Time
 	ok        bool
-	running   bool   // single-flight latch: one detector scan at a time
-	gen       uint64 // bumped by SetFromRepair so an older in-flight scan cannot overwrite it
+	plan      RegistryRepairPlan // valid only while planKnown
+	planKnown bool               // true only for a finished detector scan
+	running   bool               // single-flight latch: one detector scan at a time
+	gen       uint64             // bumped by SetFromRepair so an older in-flight scan cannot overwrite it
 }
 
 // Get returns the cached count, when it was recorded, and ok=false when the
@@ -46,6 +58,34 @@ func (c *RegistryRepairCache) Get() (count int, checkedAt time.Time, ok bool) {
 	return c.count, c.checkedAt, c.ok
 }
 
+// RegistryRepairSnapshot is one consistent read of the cache.
+type RegistryRepairSnapshot struct {
+	Count     int
+	CheckedAt time.Time
+	OK        bool
+	Plan      RegistryRepairPlan
+	PlanKnown bool
+}
+
+// Snapshot returns count, timestamp, ok and the plan under ONE lock, so the
+// split always belongs to the count and checked_at beside it. Invariant:
+// PlanKnown implies OK, because both a scan error and SetFromRepair clear the
+// plan (the latter's count is failed writes, not a plan).
+func (c *RegistryRepairCache) Snapshot() RegistryRepairSnapshot {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return RegistryRepairSnapshot{c.count, c.checkedAt, c.ok, c.plan, c.planKnown}
+}
+
+// Plan returns the cached rebuild/restore split and whether it is known. It is
+// unknown when never checked, after a failed scan, and after SetFromRepair
+// (there the count is failed writes, not a plan).
+func (c *RegistryRepairCache) Plan() (RegistryRepairPlan, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.plan, c.planKnown
+}
+
 // SetFromRepair records the outcome of a committed library-wide repair without
 // re-scanning: count is 0 for a clean run, else the number of failed writes.
 // It also invalidates any detector scan that started before this call, since
@@ -54,6 +94,7 @@ func (c *RegistryRepairCache) SetFromRepair(count int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.count, c.checkedAt, c.ok = count, time.Now().UTC(), true
+	c.plan, c.planKnown = RegistryRepairPlan{}, false
 	c.gen++
 }
 
@@ -70,8 +111,9 @@ func (c *RegistryRepairCache) begin() (gen uint64, claimed bool) {
 
 // finish releases the latch and stores the scan result unless a committed
 // repair updated the cache since begin (gen moved), in which case the repair's
-// fresher answer wins. A failed scan (err != nil) marks the cache not-ok.
-func (c *RegistryRepairCache) finish(gen uint64, count int, err error) {
+// fresher answer wins. A failed scan (err != nil) marks the cache not-ok. A
+// good scan stores the plan and count = Rebuild + Restore.
+func (c *RegistryRepairCache) finish(gen uint64, plan RegistryRepairPlan, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.running = false
@@ -80,25 +122,27 @@ func (c *RegistryRepairCache) finish(gen uint64, count int, err error) {
 	}
 	if err != nil {
 		c.count, c.ok = 0, false
+		c.plan, c.planKnown = RegistryRepairPlan{}, false
 		return
 	}
-	c.count, c.checkedAt, c.ok = count, time.Now().UTC(), true
+	c.count, c.checkedAt, c.ok = plan.Rebuild+plan.Restore, time.Now().UTC(), true
+	c.plan, c.planKnown = plan, true
 }
 
 // scanRegistryRepair is the real detector: both repair passes as a dry run.
 // It reuses the same service methods the repair endpoint composes, so the
-// count is exactly what a preview would report as Rebuilt + Restored (a dry
+// plan is exactly what a preview would report as Rebuilt + Restored (a dry
 // run reports Rebuilt as rows planned, not inserted, hence RowsPlanned).
-func (s *Service) scanRegistryRepair(ctx context.Context) (int, error) {
+func (s *Service) scanRegistryRepair(ctx context.Context) (RegistryRepairPlan, error) {
 	rebuild, err := s.RepairImageRegistry(ctx, ImageRepairOpts{Commit: false})
 	if err != nil {
-		return 0, err
+		return RegistryRepairPlan{}, err
 	}
 	restore, err := s.RestoreExistsFlags(ctx, ExistsFlagRestoreOpts{Commit: false})
 	if err != nil {
-		return 0, err
+		return RegistryRepairPlan{}, err
 	}
-	return rebuild.RowsPlanned + restore.Restored, nil
+	return RegistryRepairPlan{Rebuild: rebuild.RowsPlanned, Restore: restore.Restored}, nil
 }
 
 // RegistryRepairClaim atomically claims the repair/detector exclusion shared
@@ -129,7 +173,7 @@ func (s *Service) checkRegistryRepair(ctx context.Context, cache *RegistryRepair
 	defer func() {
 		if rv := recover(); rv != nil {
 			s.logger.Error("panic in registry repair check", "recover", rv, "stack", string(debug.Stack()))
-			cache.finish(gen, 0, fmt.Errorf("registry repair check panicked: %v", rv))
+			cache.finish(gen, RegistryRepairPlan{}, fmt.Errorf("registry repair check panicked: %v", rv))
 		}
 	}()
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -138,11 +182,11 @@ func (s *Service) checkRegistryRepair(ctx context.Context, cache *RegistryRepair
 	if scan == nil {
 		scan = s.scanRegistryRepair
 	}
-	count, err := scan(runCtx)
+	plan, err := scan(runCtx)
 	if err != nil {
 		s.logger.Error("registry repair check failed", slog.Any("error", err))
 	}
-	cache.finish(gen, count, err)
+	cache.finish(gen, plan, err)
 }
 
 // StartRegistryRepairCheck refreshes cache after startupDelay and then every
