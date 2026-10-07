@@ -107,7 +107,7 @@ type ExtraFanartMigrationView struct {
 // on (same card, heading and table markup).
 templ ExtraFanartMigrationPage(assets AssetPaths, view ExtraFanartMigrationView) {
 	@Layout(t(ctx, "extrafanart_migration.page_title"), assets) {
-		<div class="sw-extrafanart-migration space-y-6">
+		<div id="extrafanart-migration-page" class="sw-extrafanart-migration space-y-6">
 			<div class="sw-card rounded-lg px-3 py-2">
 				<div class="min-w-0">
 					<h1 class="text-xs font-semibold leading-tight">{ t(ctx, "extrafanart_migration.title") }</h1>
@@ -117,17 +117,26 @@ templ ExtraFanartMigrationPage(assets AssetPaths, view ExtraFanartMigrationView)
 				</div>
 			</div>
 			@ExtraFanartMigrationBody(view)
+			@extraFanartRunScript()
 		</div>
 	}
 }
 
 // ExtraFanartMigrationBody is the content below the page header: the preview on
 // a page load, or the receipt of a run (the answer the POST endpoint gives an
-// htmx request, as the page body alone).
+// htmx request, as the page body alone). A run swaps it for a fresh copy of
+// itself, so it is also the htmx target and carries the before-swap hook: htmx
+// does not swap a 4xx/5xx answer unless the TARGET says so, and the receipt of a
+// refused (409) or stopped (500) run is exactly such an answer.
 templ ExtraFanartMigrationBody(view ExtraFanartMigrationView) {
-	<div id="extrafanart-migration-body" class="space-y-6">
+	<div
+		id="extrafanart-migration-body"
+		class="space-y-6"
+		data-lost-toast={ t(ctx, "extrafanart_migration.run_lost") }
+		hx-on::before-swap="swExtraFanartRun.beforeSwap(event)"
+	>
 		if view.Running {
-			<div id="extrafanart-migration-running" class="sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber" role="alert">
+			<div id="extrafanart-migration-running" class="sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber">
 				<p
 					class="text-xs font-semibold leading-tight text-amber-800 dark:text-amber-400"
 					if view.Fragment {
@@ -135,7 +144,7 @@ templ ExtraFanartMigrationBody(view ExtraFanartMigrationView) {
 						autofocus
 					}
 				>{ t(ctx, "extrafanart_migration.running_title") }</p>
-				<p class="mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug">{ t(ctx, "extrafanart_migration.running_body") }</p>
+				<p class="mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug" role="alert">{ t(ctx, "extrafanart_migration.running_body") }</p>
 			</div>
 		} else if view.Aborted && len(view.Rows) == 0 {
 			// Stopped before reaching anything: there are no counts or rows to show,
@@ -203,10 +212,27 @@ templ ExtraFanartMigrationBody(view ExtraFanartMigrationView) {
 				</div>
 			}
 			if !view.Receipt {
-				<div class="sw-card rounded-lg px-3 py-2">
+				<div class="sw-card rounded-lg px-3 py-2 flex items-start justify-between gap-3 flex-wrap">
 					<p id="extrafanart-migration-warning" class="text-xs text-gray-600 dark:text-gray-400 leading-snug max-w-prose">
 						{ t(ctx, "extrafanart_migration.warning") }
 					</p>
+					// Offered only for a finished preview with something to move: a
+					// stopped preview is not a plan the operator has seen in full.
+					if view.Moves > 0 && !view.Aborted {
+						<button
+							type="button"
+							id="extrafanart-migration-run-button"
+							class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-70 disabled:cursor-not-allowed shrink-0"
+							hx-post="/api/v1/reports/extrafanart-migration"
+							hx-vals='{"dry_run": false}'
+							hx-target="#extrafanart-migration-body"
+							hx-swap="outerHTML"
+							hx-confirm={ t(ctx, "extrafanart_migration.run_confirm") }
+							hx-disabled-elt="this"
+							data-label={ t(ctx, "extrafanart_migration.run_button") }
+							data-running-label={ t(ctx, "extrafanart_migration.run_running") }
+						>{ t(ctx, "extrafanart_migration.run_button") }</button>
+					}
 				</div>
 			}
 			if note := view.cappedNote(ctx); note != "" {
@@ -262,15 +288,19 @@ templ extraFanartErrorCard() {
 // extraFanartReceipt is the card that says how a run went. Neutral for a clean
 // outcome, the amber accent for anything that needs the operator; its heading
 // takes focus when the body is rendered as a fragment (Fragment set).
+//
+// The live-region role sits on the body paragraph, NOT on the card: the focused
+// heading is inside the card, and a focused element inside a live region is
+// announced twice (once as the focus target, once as inserted content). Split
+// this way the heading is read by the focus move and the paragraph by the live
+// region, each once. The running notice follows the same shape.
 templ extraFanartReceipt(view ExtraFanartMigrationView) {
 	<div
 		id="extrafanart-migration-receipt"
 		if view.receiptNeedsAttention() {
 			class="sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber"
-			role="alert"
 		} else {
 			class="sw-card rounded-lg px-3 py-2"
-			role="status"
 		}
 	>
 		<h2
@@ -285,9 +315,99 @@ templ extraFanartReceipt(view ExtraFanartMigrationView) {
 				autofocus
 			}
 		>{ view.receiptTitle(ctx) }</h2>
-		<p id="extrafanart-migration-receipt-body" class="mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug max-w-prose">
+		<p
+			id="extrafanart-migration-receipt-body"
+			class="mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug max-w-prose"
+			if view.receiptNeedsAttention() {
+				role="alert"
+			} else {
+				role="status"
+			}
+		>
 			{ view.receiptBody(ctx) }
 			<a class="underline" href={ templ.SafeURL(view.BasePath + "/reports/extrafanart-migration") }>{ t(ctx, "extrafanart_migration.receipt_preview_again") }</a>
 		</p>
 	</div>
+}
+
+// extraFanartRunScript drives the Run button. It sits OUTSIDE the swapped body,
+// so its listeners survive the swap; the body reaches it through the before-swap
+// hook on itself.
+//
+//   - beforeSwap: swap the answer only when it is this page's own body (HTML
+//     carrying the body id), whatever its status code. A proxy's own error page
+//     is HTML too, and must never replace the page. htmx 2 needs shouldSwap set
+//     and, for an error status, isError cleared so no responseError fires.
+//   - lost: no usable answer (a 5xx or a foreign page, or no connection at all).
+//     A live run keeps going without its client, so the toast says it may still
+//     be running, and the button stays disabled: a blind second run is not
+//     offered, reloading shows what is left. htmx orders the events differently
+//     per failure: sendError/timeout fire after it re-enabled the button and after
+//     afterRequest, so lost() disables it; an error ANSWER reaches lost() before the
+//     re-enable, so busy() on afterRequest disables it. A 4xx is Stillwater refusing the
+//     request: nothing started, and the shared handler reports it.
+//   - busy: hx-disabled-elt disables the button; this adds aria-busy and the
+//     running label, and hands focus back to the button when the run did not
+//     replace it (the confirm dialog cannot return focus to a disabled button).
+//
+// htmx itself focuses the [autofocus] heading of a swapped-in body.
+templ extraFanartRunScript() {
+	<script>
+		(function () {
+			var page = document.getElementById('extrafanart-migration-page');
+			var BODY = 'extrafanart-migration-body';
+			var RUN = 'extrafanart-migration-run-button';
+			var lostRun = false;
+			window.swExtraFanartRun = {
+				beforeSwap: function (evt) {
+					var xhr = evt.detail.xhr;
+					var type = xhr.getResponseHeader('Content-Type') || '';
+					var ours = type.indexOf('text/html') === 0 && xhr.responseText.indexOf('id="' + BODY + '"') !== -1;
+					evt.detail.shouldSwap = ours;
+					evt.detail.isError = !ours;
+				}
+			};
+			if (!page) {
+				console.error('extrafanart migration: page wrapper missing; the Run button cannot report a lost connection');
+				return;
+			}
+			function lost(evt) {
+				var status = evt.detail.xhr ? evt.detail.xhr.status : 0;
+				if (status >= 400 && status < 500) return;
+				evt.stopPropagation();
+				lostRun = true;
+				// htmx fires sendError/timeout AFTER it restored the disabled state and
+				// after afterRequest, so busy() ran before lostRun was set: disable here.
+				// (An answer-error path reaches here BEFORE the restore; busy() covers it.)
+				var run = document.getElementById(RUN);
+				if (run) run.disabled = true;
+				// A disabled button cannot hold focus, so a keyboard user would drop to
+				// <body>. Hand focus to the skip-link target (<main tabindex="-1">), as the
+				// registry repair banner does, unless focus is somewhere else on purpose.
+				var active = document.activeElement;
+				if (!active || active === document.body || active === run || page.contains(active)) {
+					var main = document.getElementById('sw-main');
+					if (main) main.focus(); else console.error('extrafanart migration: #sw-main missing; focus left on the disabled Run button');
+				}
+				if (typeof window.showWarningToast !== 'function') {
+					console.error('extrafanart migration: showWarningToast unavailable; the run may still be going, reload to preview what is left');
+					return;
+				}
+				window.showWarningToast(document.getElementById(BODY).dataset.lostToast);
+			}
+			function busy(evt, on) {
+				var btn = evt.detail.elt;
+				if (!btn || btn.id !== RUN) return;
+				if (on) btn.setAttribute('aria-busy', 'true'); else btn.removeAttribute('aria-busy');
+				btn.textContent = on ? btn.dataset.runningLabel : btn.dataset.label;
+				if (!on && lostRun) btn.disabled = true;
+				if (!on && btn.isConnected && document.activeElement === document.body) btn.focus();
+			}
+			page.addEventListener('htmx:responseError', lost);
+			page.addEventListener('htmx:sendError', lost);
+			page.addEventListener('htmx:timeout', lost);
+			page.addEventListener('htmx:beforeRequest', function (evt) { busy(evt, true); });
+			page.addEventListener('htmx:afterRequest', function (evt) { busy(evt, false); });
+		})();
+	</script>
 }
