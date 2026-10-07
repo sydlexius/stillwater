@@ -806,7 +806,7 @@ func (f *flappingCountPeer) GetArtistDetail(ctx context.Context, id string) (*co
 // can spend the whole budget without real multi-second sleeps.
 func shrinkPollTiming(t *testing.T) {
 	t.Helper()
-	setBudget(t, 40*time.Millisecond)
+	setBudget(t, 150*time.Millisecond)
 	old := indexedUploadPollInterval
 	indexedUploadPollInterval = time.Millisecond
 	t.Cleanup(func() { indexedUploadPollInterval = old })
@@ -850,7 +850,9 @@ func TestUploadFanartSet_SettledBelowWantIsAFailureNotUnverifiable(t *testing.T)
 
 // settlesOnLastReadPeer serves its second count read only once the budget has
 // expired (it blocks on ctx), then returns normally: the count settles on the
-// last read the budget allowed.
+// last read the budget allowed. The fake ignores the deadline and returns
+// success, which no real client does; a read cut by the deadline is unsettled
+// (covered by TestPollCount_SettledIsTheLastTwoCompletedReads).
 type settlesOnLastReadPeer struct {
 	*fakeEmbyPeer
 	reads int
@@ -867,7 +869,7 @@ func (s *settlesOnLastReadPeer) GetArtistDetail(ctx context.Context, id string) 
 // Boundary: two equal reads at want, the second arriving as the budget ends,
 // is landed, not unverifiable.
 func TestPeerCacheLandedSince_SettlesOnLastAllowedRead(t *testing.T) {
-	setBudget(t, 40*time.Millisecond)
+	setBudget(t, 150*time.Millisecond)
 	peer := newFakeEmbyPeer()
 	peer.data = append(peer.data, []byte{0x41}) // the write landed: 4 backdrops
 	cache := &peerCache{reader: &settlesOnLastReadPeer{fakeEmbyPeer: peer}, id: "p1", loaded: true}
@@ -877,5 +879,43 @@ func TestPeerCacheLandedSince_SettlesOnLastAllowedRead(t *testing.T) {
 	added, count, err := cache.landedSince(context.Background())
 	if err != nil || count != 4 || len(added) != 1 {
 		t.Fatalf("got (%d hashes, count %d, err %v), want (1, 4, nil)", len(added), count, err)
+	}
+}
+
+// blockAfterReads serves seq, then blocks until the budget ends and returns the
+// ctx error, which is what a real HTTP client does when the deadline cuts a read.
+type blockAfterReads struct {
+	seq   []int
+	calls int
+}
+
+func (b *blockAfterReads) GetArtistDetail(ctx context.Context, _ string) (*connection.ArtistPlatformState, error) {
+	if b.calls < len(b.seq) {
+		b.calls++
+		return &connection.ArtistPlatformState{BackdropCount: b.seq[b.calls-1]}, nil
+	}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+// "Settled" is the LAST two completed reads being equal, read when the budget
+// cuts a read mid-flight. Not covered: the same expression at the select site
+// (budget ends between reads), which needs a clock seam.
+func TestPollCount_SettledIsTheLastTwoCompletedReads(t *testing.T) {
+	shrinkPollTiming(t)
+	for _, c := range []struct {
+		seq     []int
+		settled bool
+	}{
+		{nil, false},
+		{[]int{3}, false},
+		{[]int{3, 3}, true},
+		{[]int{3, 3, 4}, false},
+		{[]int{3, 4, 3, 3}, true},
+	} {
+		_, ok, settled, err := pollCount(context.Background(), &blockAfterReads{seq: c.seq}, "p1", 5)
+		if ok || err != nil || settled != c.settled {
+			t.Errorf("seq %v: got (ok %v, settled %v, err %v), want (false, %v, nil)", c.seq, ok, settled, err, c.settled)
+		}
 	}
 }

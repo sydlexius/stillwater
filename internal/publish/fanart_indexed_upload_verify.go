@@ -121,11 +121,13 @@ func (c *peerCache) holds(data []byte) bool {
 	return slices.Contains(c.hashes, img.ContentHash(data))
 }
 
-// errVerifyUnsettled is a SENTINEL error: one fixed value callers recognize
-// with errors.Is. It means the verify budget ran out while the peer's count was
-// still moving, so whether the write landed is UNKNOWN. That differs from a
-// count that settled below the wanted value (a plain "not landed").
-var errVerifyUnsettled = errors.New("backdrop count never settled; the upload could not be verified")
+// errVerifyUnsettled is a distinct error value so the log line says WHY the
+// verify failed: the budget ran out before two equal reads (the count still
+// moving, or no read completing), so whether the write landed is UNKNOWN. That
+// differs from a count that settled below the wanted value (a plain "not
+// landed"). confirmLanded treats it like any other read failure; nothing
+// branches on it.
+var errVerifyUnsettled = errors.New("backdrop count did not settle (or could not be read) within the budget; the upload could not be verified")
 
 // landedSince decides, after an indexed upload returned an HTTP error, whether
 // the peer accepted the write anyway (#3126: Emby 500s on an out-of-range

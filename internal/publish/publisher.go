@@ -3196,7 +3196,7 @@ func (p *Publisher) skipPastNilSlot(u fanartUpload, cache *peerCache, canRead, s
 	case !canRead && u.reader != nil && u.conn.Type == connection.TypeEmby:
 		p.logger.Warn("skipping fanart upload: the peer could not be read to check for a duplicate past an unreadable slot",
 			slog.String("artist", u.artist.Name), slog.String("connection", u.conn.Name), slog.Int("index", idx))
-		return []string{truncateWarning(fmt.Sprintf("%s (%s): fanart %d not synced: the platform could not be read to check for a duplicate; the next sync retries", u.conn.Name, u.conn.Type, idx))}, true
+		return []string{truncateWarning(fmt.Sprintf("%s (%s): fanart %d not synced: the platform could not be read reliably to check for a duplicate; the next sync retries", u.conn.Name, u.conn.Type, idx))}, true
 	}
 	return nil, false
 }
