@@ -53,6 +53,7 @@
   "banner.registry_repair.body.other": "{count} entrées du registre sont peut-être manquantes ou obsolètes.",
   "banner.registry_repair.checked": "Dernière vérification : {time}.",
   "banner.registry_repair.confirm": "Réparer le registre d'images maintenant ? Cela corrige uniquement les enregistrements de Stillwater pour qu'ils correspondent aux fichiers sur le disque ; aucun fichier image n'est modifié. Cela peut prendre plusieurs minutes sur une grande bibliothèque.",
+  "banner.registry_repair.confirm_plan": "Réparer le registre d'images maintenant ? Selon la dernière vérification ({age}), entrées à reconstruire : {rebuilt} ; marqueurs d'existence à restaurer : {restored}. Ces chiffres ont pu changer depuis. Cela corrige uniquement les enregistrements de Stillwater pour qu'ils correspondent aux fichiers sur le disque ; aucun fichier image n'est modifié. Cela peut prendre plusieurs minutes sur une grande bibliothèque.",
   "banner.registry_repair.dismiss_aria": "Fermer l'avis sur le registre d'images",
   "banner.registry_repair.run": "Réparer maintenant",
   "banner.registry_repair.running": "Réparation...",

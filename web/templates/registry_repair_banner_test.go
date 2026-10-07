@@ -171,3 +171,77 @@ func TestRegistryRepairBanner_DateLocaleFallsBackToNavigatorLanguage(t *testing.
 		t.Error("dateLocale does not fall back to navigator.language when navigator.languages is empty")
 	}
 }
+
+// #2678 slice 4: the dialog's cached-plan text ships in every locale as
+// data-confirm-plan, with each of the three placeholders the script fills
+// exactly once, next to the generic data-confirm fallback.
+func TestRegistryRepairBanner_ConfirmPlanAttribute(t *testing.T) {
+	attrRe := regexp.MustCompile(`data-confirm-plan="([^"]*)"`)
+	for _, loc := range []string{"en", "fr", "ja"} {
+		html := renderBannerFor(t, loc)
+		m := attrRe.FindStringSubmatch(html)
+		if m == nil {
+			t.Fatalf("%s: banner has no data-confirm-plan attribute", loc)
+		}
+		for _, ph := range []string{"{age}", "{rebuilt}", "{restored}"} {
+			if n := strings.Count(m[1], ph); n != 1 {
+				t.Errorf("%s: data-confirm-plan has %d of %s, want exactly 1", loc, n, ph)
+			}
+		}
+		if !strings.Contains(html, `data-confirm="`) {
+			t.Errorf("%s: the generic data-confirm fallback is gone", loc)
+		}
+		if loc != "en" && m[1] == attrRe.FindStringSubmatch(renderBannerFor(t, "en"))[1] {
+			t.Errorf("%s: data-confirm-plan equals the English text", loc)
+		}
+	}
+}
+
+// The registry banner must look like the ConflictBanner warn bar (#2678): both
+// carry the same gradient, blur, border and padding tokens. This proves class
+// parity only, not rendering (the browser spec pins the computed style).
+func TestRegistryRepairBanner_SharesConflictBannerWarnTokens(t *testing.T) {
+	shared := []string{
+		"bg-gradient-to-r", "from-amber-900/60", "to-yellow-700/50",
+		"dark:from-amber-900/60", "dark:to-yellow-700/50", "backdrop-blur-md",
+		"border-b", "border-amber-300/30", "px-6", "py-3",
+	}
+	classAttr := regexp.MustCompile(`class="([^"]*bg-gradient-to-r[^"]*)"`)
+	check := func(name, html string) {
+		t.Helper()
+		m := classAttr.FindStringSubmatch(html)
+		if m == nil {
+			t.Fatalf("%s: no element carries bg-gradient-to-r", name)
+		}
+		have := map[string]bool{}
+		for _, c := range strings.Fields(m[1]) {
+			have[c] = true
+		}
+		for _, want := range shared {
+			if !have[want] {
+				t.Errorf("%s: gradient bar lacks shared token %q (has %q)", name, want, m[1])
+			}
+		}
+	}
+	var buf bytes.Buffer
+	if err := ConflictBannerContent(ConflictBannerView{State: "image_only"}).Render(testCtx(t), &buf); err != nil {
+		t.Fatalf("render conflict banner: %v", err)
+	}
+	check("conflict banner (warn)", buf.String())
+	check("registry repair banner", renderBannerFor(t, "en"))
+}
+
+// A plan whose counts are not finite numbers must take the generic confirmation
+// (never render "null"), and say so on the console. The behavior is proven in the
+// browser (registry-repair-run.spec.js); this pins the guard in the shipped script.
+func TestRegistryRepairBanner_ScriptGuardsNonFinitePlan(t *testing.T) {
+	html := renderBannerFor(t, "en")
+	for _, want := range []string{
+		"Number.isFinite(d.plan.rebuild) && Number.isFinite(d.plan.restore)",
+		"plan is not a pair of finite numbers",
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("banner script missing %q", want)
+		}
+	}
+}

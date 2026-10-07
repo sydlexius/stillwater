@@ -29,6 +29,14 @@ import "github.com/sydlexius/stillwater/internal/i18n"
 // is a toast (success, warning for incomplete writes, or a fixed generic failure
 // message; the full error stays in the server log), after which the banner
 // endpoint is re-read so the banner hides itself when nothing needs repair.
+//
+// CACHED PLAN (#2678, slice 4): the confirmation dialog opens immediately and
+// shows the detector's cached split (rows to rebuild, flags to restore) with how
+// long ago it was computed ("As of the last check ({age}) ..."). Nothing is
+// fetched or re-scanned on click; the numbers are those of the page's last
+// banner read and the completion toast reports the actual result. When the
+// endpoint carries no plan (a library repair just finished with failed writes),
+// the dialog falls back to the generic confirm text.
 templ RegistryRepairBanner() {
 	// Always-exposed (visually hidden, never display:none) live region. It starts
 	// empty and is filled when the banner appears, so assistive tech announces the
@@ -45,6 +53,7 @@ templ RegistryRepairBanner() {
 		data-count-other={ t(ctx, "banner.registry_repair.body.other") }
 		data-checked-template={ t(ctx, "banner.registry_repair.checked") }
 		data-confirm={ t(ctx, "banner.registry_repair.confirm") }
+		data-confirm-plan={ t(ctx, "banner.registry_repair.confirm_plan") }
 		data-running-label={ t(ctx, "banner.registry_repair.running") }
 		data-toast-started={ t(ctx, "banner.registry_repair.toast.started") }
 		data-toast-already-running={ t(ctx, "banner.registry_repair.toast.already_running") }
@@ -134,6 +143,35 @@ templ RegistryRepairBanner() {
 					}
 					return el.lang || undefined;
 				}
+				// Cached detector answer from the last banner read, shown in the confirm
+				// dialog. lastPlan is null when the endpoint sent no split.
+				var lastPlan = null;
+				var lastChecked = null;
+				// ageText renders how long ago `when` was, in the page locale (the same
+				// dateLocale() as the checked-at line): minutes under an hour, hours
+				// under 48, else days. Clock skew (a future time) clamps to zero. A failing
+				// Intl.RelativeTimeFormat is logged and the absolute time shown instead.
+				function ageText(when) {
+					var mins = Math.max(0, Math.floor((Date.now() - when.getTime()) / 60000));
+					var n = mins, unit = 'minute';
+					if (mins >= 48 * 60) { n = Math.floor(mins / 1440); unit = 'day'; }
+					else if (mins >= 60) { n = Math.floor(mins / 60); unit = 'hour'; }
+					try {
+						return new Intl.RelativeTimeFormat(dateLocale(), { numeric: 'auto' }).format(-n, unit);
+					} catch (e) {
+						console.error('registry repair banner: Intl.RelativeTimeFormat failed; showing the absolute time', e);
+						return when.toLocaleString(dateLocale());
+					}
+				}
+				// confirmMessage is the dialog text: the cached plan when known (age computed
+				// now, so a page left open shows the true age), else the generic text.
+				function confirmMessage() {
+					if (!lastPlan) return el.dataset.confirm;
+					return el.dataset.confirmPlan
+						.replace('{age}', ageText(lastChecked))
+						.replace('{rebuilt}', String(lastPlan.rebuild))
+						.replace('{restored}', String(lastPlan.restore));
+				}
 				function check() {
 					if (!el.isConnected) return;
 					fetch(base + '/api/v1/reports/registry-repair/banner', {
@@ -169,6 +207,15 @@ templ RegistryRepairBanner() {
 						var tpl = d.count === 1 ? el.dataset.countOne : el.dataset.countOther;
 						document.getElementById('sw-registry-repair-count').textContent = '-- ' + tpl.replace('{count}', String(d.count));
 						var when = new Date(d.checked_at);
+						lastPlan = null;
+						if (d.plan && !(Number.isFinite(d.plan.rebuild) && Number.isFinite(d.plan.restore))) {
+							console.error('registry repair banner: plan is not a pair of finite numbers; using the generic confirmation');
+						} else if (d.plan && !isNaN(when.getTime())) {
+							lastPlan = { rebuild: d.plan.rebuild, restore: d.plan.restore };
+							lastChecked = when;
+						} else if (d.plan) {
+							console.error('registry repair banner: plan present without a valid checked_at; using the generic confirmation');
+						}
 						if (!isNaN(when.getTime())) {
 							document.getElementById('sw-registry-repair-checked').textContent =
 								el.dataset.checkedTemplate.replace('{time}', when.toLocaleString(dateLocale()));
@@ -287,7 +334,7 @@ templ RegistryRepairBanner() {
 						console.error('registry repair banner: showConfirmDialog unavailable');
 						return;
 					}
-					window.showConfirmDialog(el.dataset.confirm, null, start, {
+					window.showConfirmDialog(confirmMessage(), null, start, {
 						lang: el.lang,
 						acceptClass: 'px-4 py-2 rounded-md bg-amber-500 text-amber-950 text-sm font-medium hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-300'
 					});

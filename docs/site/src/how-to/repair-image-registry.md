@@ -22,7 +22,12 @@ on disk is missing from Stillwater, not on a schedule.
 When Stillwater thinks a repair is needed (see [Background Check](#background-check)), the notice at
 the top of the page has a **Repair now** button. It is available to administrators only.
 
-1. Select **Repair now** and confirm. The confirmation says no image files are changed.
+1. Select **Repair now** and confirm. The confirmation lists, from the last background check, how many
+   rows would be rebuilt and how many existence flags restored, and how long ago that check ran. It
+   opens at once; nothing is scanned when you select the button. The numbers may have changed since
+   (for example after files were added), and the toast in step 3 reports what the repair actually did.
+   If the notice has no breakdown (a repair of the whole library just finished with changes it could
+   not save), the confirmation is generic. It also says no image files are changed.
 2. The button reads **Repairing...** and is disabled while the repair runs in the background. A toast
    says the repair started.
 3. When it finishes, a toast reports the result:
@@ -125,7 +130,8 @@ succeeded. Re-run the operation; it is safe to repeat.
 ## Background Check
 
 Stillwater runs a preview in the background every 12 hours (the first one two minutes after startup) and
-remembers whether anything needed repair. The check never runs on demand, so the answer can be up to 12 hours old. Completing a repair of the whole library updates
+remembers whether anything needed repair, and how many rows it would rebuild and how many existence
+flags it would restore. The check never runs on demand, so the answer can be up to 12 hours old. Completing a repair of the whole library updates
 it immediately.
 
 When the last check found rows that may need repair, administrators see a notice at the top of their
