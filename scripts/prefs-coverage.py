@@ -327,6 +327,13 @@ def main():
                 # masquerade as a MISSING finding).
                 print(f"  [SKIP   ] {head_path}  ({key}) -- unreadable ({e}); "
                       "not treated as a regression", file=sys.stderr)
+                # A host-dependent skip: tell the pre-push gate so it writes no
+                # receipt stamp (the gate_skip `blocking` class, #3436). A write
+                # failure propagates and fails the check: closed, never silent.
+                blocker_file = os.environ.get("GATE_STAMP_BLOCK_FILE")
+                if blocker_file:
+                    with open(blocker_file, "a", encoding="utf-8") as bf:
+                        bf.write(f"prefs-coverage: {head_path} unreadable, skipped\n")
                 continue
             has = bool(rx.search(head_body))
 

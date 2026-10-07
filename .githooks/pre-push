@@ -10,6 +10,14 @@
 # --no-verify, which is forbidden by project policy and leaves a clear
 # audit trail.
 #
+# The gate is skipped, with one printed line, ONLY when a receipt proves the
+# same gate already passed for exactly what is pushed (#3436): the orchestrate
+# gate runner's receipt AND the stamp the gate writes (tree, base, tip of main,
+# patch-coverage base, RUN_* modes) both match the pushed tree, the tree is
+# clean, and no base or main moved.
+# The decision lives in scripts/gate-receipt-valid.sh; any doubt runs the gate.
+# PRE_PUSH_FORCE_GATE=1 forces the full gate.
+#
 # Skip with: git push --no-verify (do not do this).
 #
 # The hook is installed by `make hooks`, which sets core.hooksPath to
@@ -23,6 +31,31 @@ GATE="$REPO_ROOT/scripts/pre-push-gate.sh"
 if [ ! -x "$GATE" ]; then
     echo "pre-push: $GATE not found or not executable" >&2
     exit 1
+fi
+
+# The hook's stdin is the pushed refs; hand them to the decision script. Exit 0
+# = honored (skip), 64 = refused input (block the push), anything else, a crash
+# of the validator included, = run the gate (never a skip, never a block).
+VALID="$REPO_ROOT/scripts/gate-receipt-valid.sh"
+if [ -f "$VALID" ]; then
+    PUSH_REFS=$(cat || true)
+    rc=0
+    msg=$(printf '%s\n' "$PUSH_REFS" | bash "$VALID") || rc=$?
+    [ -z "$msg" ] || echo "$msg"
+    case "$rc" in
+        0)
+            # rc 0 means "skip" ONLY with the validator's skip line. A truncated
+            # or stubbed validator that exits 0 silently must run the gate.
+            case "$msg" in
+                *"skipping the gate"*) exit 0 ;;
+            esac
+            echo "pre-push: the receipt check returned success without a skip line; running the gate"
+            ;;
+        64)
+            echo "pre-push: push blocked: PRE_PUSH_FORCE_GATE or a RUN_* variable has an unrecognized value (see above)" >&2
+            exit 2
+            ;;
+    esac
 fi
 
 echo "pre-push: running scripts/pre-push-gate.sh ..."

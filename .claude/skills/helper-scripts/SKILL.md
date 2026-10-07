@@ -71,6 +71,33 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
   Without it, a mistyped `RUN_VULN=truee` fell into the default branch, printed
   "skipped by default", and left a green gate over a tier the operator had asked
   to run.
+- `scripts/gate-receipt-valid.sh` -- the pre-push hook's skip decision (#3436).
+  Honors a `gate-receipt/v1` receipt (producer `gate-runner`, result pass, tree
+  equal to every pushed commit's tree, clean tree with untracked counted) only
+  together with the `pre-push-gate-stamp.json` the gate writes on a passing run
+  (same tree, the merge-base of each pushed commit, same tip of local `main`, same patch-coverage base, `RUN_*`
+  modes at least as strict). Any doubt, a crash, or an exit 0 without the skip
+  line runs the gate; `PRE_PUSH_FORCE_GATE=1` forces it; a bad value exits 64,
+  which the hook turns into a blocked push.
+- `scripts/lib/gate-stamp.sh` -- the stamp's writer and the shared "dirty"
+  definition, plus `gate_skip <deterministic|blocking> <line>`: skip arms in
+  the gate and in `check-generated.sh` print through it; `prefs-coverage.py`
+  writes the blocker file directly; the few other skip-style lines are listed
+  in the test. A `blocking`
+  skip (host-dependent: a missing tool, an override variable) appends to the
+  file `$GATE_STAMP_BLOCK_FILE`, so no stamp is written; the stamp is also
+  withheld on a dirty start or end, a changed `HEAD` tree, or a moved local
+  `main` or patch-coverage base (`gate_patch_base`, the one `origin/main`-first
+  ladder; the gate hands it to the helper as `BASE`), or when a known list of
+  verdict-changing environment variables (`GOFLAGS`, `SKIP_*`, `BASE`, ...) is
+  set. The validator also refuses a stamp older than 4 hours. A new skip arm that
+  prints a skip or warn line must be classified or the test below fails; that
+  is a text heuristic, so a skip printing no such word is not caught.
+- `scripts/test-gate-receipt-valid.sh` -- drives the real hook against a stub
+  gate in a throwaway repo, one case per way a receipt can fail; executes the
+  real OpenAPI, properdocs and `check-generated.sh` skip arms; and holds the
+  allow-list (no raw skip-style output outside `gate_skip`). Called by
+  pre-push-gate and by CI's `Gate Invariant` job.
 - `scripts/test-run-flag-resolution.sh` -- tests for the above, plus an
   end-to-end assertion that the gate actually consumes it (a correct resolver
   nothing calls is not a fix). Called by pre-push-gate and by CI's
