@@ -759,6 +759,9 @@ jobs:
       - name: prefs-coverage diff handling self-test
         run: bash scripts/test-prefs-coverage.sh
 
+      - name: Gate timing and single-execution self-test
+        run: bash scripts/test-gate-timing.sh
+
       - name: Release blockers check self-test
         run: bash scripts/test-check-release-blockers.sh
 

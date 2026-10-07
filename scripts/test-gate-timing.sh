@@ -8,7 +8,7 @@
 #      can be missing from the table.
 #   3. test-check-plain-git-diff.sh runs exactly once per gate: not as its own
 #      gate step, and enforced (exit 0) inside test-git-clean-env.sh instead.
-# NOTE: CI's "Gate Invariant" job does not run this; it runs in the pre-push gate only.
+# NOTE: also run by CI's "Gate Invariant" job (gate.yml), so --no-verify pushes are covered.
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 GATE="${GATE:-$ROOT/scripts/pre-push-gate.sh}"
