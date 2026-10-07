@@ -59,6 +59,7 @@ func extraFanartView(res *extraFanartRunResult, basePath string) templates.Extra
 		BasePath: basePath, SkippedMissing: res.ArtistsSkippedMissing, Aborted: res.aborted, Status: res.Status,
 		ArtistsWithFiles: res.ArtistsWithFiles, Moves: res.Planned,
 		SkippedIdentical: res.SkippedIdentical, Problems: res.Problems,
+		Receipt: !res.DryRun, Moved: res.Moved, Failed: res.Failed,
 	}
 	for _, a := range res.Artists {
 		if a.Error != "" {

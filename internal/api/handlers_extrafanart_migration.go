@@ -9,6 +9,9 @@
 // Routes (same shape as the platform backdrop prune, handlers_platform_backdrop_prune.go):
 //
 //	POST {basePath}/api/v1/reports/extrafanart-migration    admin; singleton; dry_run flag
+//
+// The answer is JSON, or the operator page's body as HTML when htmx asks
+// (HX-Request: true); the status code is the same either way.
 package api
 
 import (
@@ -27,6 +30,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // extraFanartRunTimeout bounds one whole run so a wedged filesystem read cannot
@@ -605,5 +609,26 @@ func (r *Router) handleExtraFanartMigrationRun(w http.ResponseWriter, req *http.
 			slog.Int("failed", res.Failed), slog.Int("problems", res.Problems))
 	}
 
+	// An htmx request gets the page body as HTML under the SAME status code the
+	// JSON path uses. Every other client keeps the JSON body. The body depends on
+	// the request header, so caches must key on it.
+	w.Header().Set("Vary", "HX-Request")
+	if req.Header.Get("HX-Request") == "true" {
+		view := extraFanartView(res, r.assetsFor(req).BasePath)
+		view.Running = errors.Is(err, errExtraFanartRunning)
+		view.Fragment = true
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(status)
+		if rerr := templates.ExtraFanartMigrationBody(view).Render(req.Context(), w); rerr != nil {
+			// A client that gave up (a proxy timeout on a long run) is expected: the
+			// run itself finished and is logged above. Only a real fault is an error.
+			level, msg := slog.LevelError, "extrafanart migration: rendering the result failed"
+			if req.Context().Err() != nil {
+				level, msg = slog.LevelInfo, "extrafanart migration: the client went away before the result could be sent"
+			}
+			r.logger.Log(req.Context(), level, msg, slog.String("status", res.Status), slog.String("error", rerr.Error()))
+		}
+		return
+	}
 	writeJSON(w, status, res)
 }

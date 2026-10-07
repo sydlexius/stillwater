@@ -20,12 +20,34 @@ func commaInt(n int) string {
 	return s
 }
 
-// visibleRows returns the rows to render: all of them up to the cap.
+// visibleRows returns the rows to render. A preview shows the first rows up to
+// the cap. A receipt never drops a row the operator may need to act on: every
+// row that is not "moved" is kept, and moved rows fill whatever room the cap
+// leaves, in order.
 func (v ExtraFanartMigrationView) visibleRows() []ExtraFanartMigrationRow {
-	if limit := v.rowCap(); len(v.Rows) > limit {
+	limit := v.rowCap()
+	if len(v.Rows) <= limit {
+		return v.Rows
+	}
+	if !v.Receipt {
 		return v.Rows[:limit]
 	}
-	return v.Rows
+	room := limit
+	for _, row := range v.Rows {
+		if row.Outcome != "moved" {
+			room--
+		}
+	}
+	out := make([]ExtraFanartMigrationRow, 0, limit)
+	for _, row := range v.Rows {
+		if row.Outcome != "moved" {
+			out = append(out, row)
+		} else if room > 0 {
+			out = append(out, row)
+			room--
+		}
+	}
+	return out
 }
 
 // rowCap is RowCap when a caller set one (tests), else ExtraFanartMaxRows.
@@ -37,39 +59,47 @@ func (v ExtraFanartMigrationView) rowCap() int {
 }
 
 // cappedNote is the line shown when rows were left out, or "" when none were.
+// On a receipt only moved files are ever left out, and the line says so.
 func (v ExtraFanartMigrationView) cappedNote(ctx context.Context) string {
 	if len(v.Rows) <= v.rowCap() {
 		return ""
+	}
+	if v.Receipt {
+		return tf(ctx, "extrafanart_migration.receipt_rows_capped", commaInt(len(v.visibleRows())), commaInt(len(v.Rows)))
 	}
 	return tf(ctx, "extrafanart_migration.rows_capped", commaInt(v.rowCap()), commaInt(len(v.Rows)))
 }
 
 // ExtraFanartMigrationRow is one extrafanart/ file (or one artist-level error,
-// File empty) in the migration preview.
+// File empty) in the migration preview or receipt.
 type ExtraFanartMigrationRow struct {
 	ArtistID string
 	Artist   string
 	File     string
 	Dest     string
-	Outcome  string // planned, skipped, blocked, failed
+	Outcome  string // planned, skipped, blocked, failed; moved, source_gone after a run
 	Reason   string
 }
 
 // ExtraFanartMigrationView is the view model for /reports/extrafanart-migration
-// (#3179). The page only ever shows a PREVIEW: it reads what would move and
-// changes nothing.
+// (#3179). Loading the page shows a PREVIEW: it reads what would move and
+// changes nothing. The same body, with Receipt set, is the answer to a run.
 type ExtraFanartMigrationView struct {
 	BasePath         string
 	Running          bool   // another run holds the singleton slot
-	Aborted          bool   // the preview stopped before finishing; rows are incomplete
+	Aborted          bool   // the preview or run stopped before finishing; rows are incomplete
 	SkippedMissing   int    // artists skipped because their folder was not found
-	Status           string // planned, blocked, nothing_to_do, nothing_checked, failed
+	Status           string // planned, blocked, nothing_to_do, nothing_checked, failed; migrated, partial after a run
 	ArtistsWithFiles int
 	Moves            int // files the migration would move
 	SkippedIdentical int
 	Problems         int
 	Rows             []ExtraFanartMigrationRow
-	RowCap           int // 0 means ExtraFanartMaxRows; only tests set it
+	RowCap           int  // 0 means ExtraFanartMaxRows; only tests set it
+	Receipt          bool // the result of a live run, not a preview
+	Fragment         bool // swapped into an open page: its first heading takes focus
+	Moved            int  // files a run moved
+	Failed           int  // files a run was due to move and did not
 }
 
 // ExtraFanartMigrationPage renders the admin-gated extrafanart/ migration
@@ -91,18 +121,34 @@ templ ExtraFanartMigrationPage(assets AssetPaths, view ExtraFanartMigrationView)
 	}
 }
 
-// ExtraFanartMigrationBody is the preview content below the page header.
+// ExtraFanartMigrationBody is the content below the page header: the preview on
+// a page load, or the receipt of a run (the answer the POST endpoint gives an
+// htmx request, as the page body alone).
 templ ExtraFanartMigrationBody(view ExtraFanartMigrationView) {
 	<div id="extrafanart-migration-body" class="space-y-6">
 		if view.Running {
 			<div id="extrafanart-migration-running" class="sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber" role="alert">
-				<p class="text-xs font-semibold leading-tight text-amber-700 dark:text-amber-400">{ t(ctx, "extrafanart_migration.running_title") }</p>
+				<p
+					class="text-xs font-semibold leading-tight text-amber-800 dark:text-amber-400"
+					if view.Fragment {
+						tabindex="-1"
+						autofocus
+					}
+				>{ t(ctx, "extrafanart_migration.running_title") }</p>
 				<p class="mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug">{ t(ctx, "extrafanart_migration.running_body") }</p>
 			</div>
 		} else if view.Aborted && len(view.Rows) == 0 {
-			@extraFanartErrorCard()
+			// Stopped before reaching anything: there are no counts or rows to show,
+			// and the table's empty state ("nothing to migrate") would be false.
+			if view.Receipt {
+				@extraFanartReceipt(view)
+			} else {
+				@extraFanartErrorCard()
+			}
 		} else {
-			if view.Aborted {
+			if view.Receipt {
+				@extraFanartReceipt(view)
+			} else if view.Aborted {
 				// Whatever rows follow are only what the preview reached before it
 				// stopped, so they are NOT a complete plan: the card says so.
 				@extraFanartErrorCard()
@@ -120,33 +166,49 @@ templ ExtraFanartMigrationBody(view ExtraFanartMigrationView) {
 						<dt class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "extrafanart_migration.status_label") }</dt>
 						<dd class="text-lg font-semibold" id="extrafanart-migration-status">{ extraFanartLabel(ctx, "status", view.Status) }</dd>
 					</div>
-					<div>
-						<dt class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "extrafanart_migration.artists_with_files") }</dt>
-						<dd class="text-lg font-semibold" id="extrafanart-migration-artists">{ strconv.Itoa(view.ArtistsWithFiles) }</dd>
-					</div>
-					<div>
-						<dt class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "extrafanart_migration.files_to_move") }</dt>
-						<dd class="text-lg font-semibold" id="extrafanart-migration-moves">{ strconv.Itoa(view.Moves) }</dd>
-					</div>
+					if view.Receipt {
+						// A receipt counts what happened, not what was planned.
+						<div>
+							<dt class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "extrafanart_migration.files_moved") }</dt>
+							<dd class="text-lg font-semibold" id="extrafanart-migration-moved">{ strconv.Itoa(view.Moved) }</dd>
+						</div>
+						<div>
+							<dt class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "extrafanart_migration.files_not_moved") }</dt>
+							<dd class="text-lg font-semibold" id="extrafanart-migration-failed">{ strconv.Itoa(view.Failed) }</dd>
+						</div>
+					} else {
+						<div>
+							<dt class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "extrafanart_migration.artists_with_files") }</dt>
+							<dd class="text-lg font-semibold" id="extrafanart-migration-artists">{ strconv.Itoa(view.ArtistsWithFiles) }</dd>
+						</div>
+						<div>
+							<dt class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "extrafanart_migration.files_to_move") }</dt>
+							<dd class="text-lg font-semibold" id="extrafanart-migration-moves">{ strconv.Itoa(view.Moves) }</dd>
+						</div>
+					}
 					<div>
 						<dt class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "extrafanart_migration.files_identical") }</dt>
 						<dd class="text-lg font-semibold" id="extrafanart-migration-identical">{ strconv.Itoa(view.SkippedIdentical) }</dd>
 					</div>
 				</dl>
 			</div>
+			// The problems count shows on a receipt too: a run that only hit planning
+			// or listing errors has Failed == 0, and would otherwise under-report.
 			if view.Problems > 0 {
 				<div id="extrafanart-migration-problems" class="sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber" role="alert">
-					<p class="text-xs font-semibold leading-tight text-amber-700 dark:text-amber-400">{ t(ctx, "extrafanart_migration.problems_title") }</p>
+					<p class="text-xs font-semibold leading-tight text-amber-800 dark:text-amber-400">{ t(ctx, "extrafanart_migration.problems_title") }</p>
 					<p class="mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug">
 						{ tn(ctx, "extrafanart_migration.problems_body", view.Problems) }
 					</p>
 				</div>
 			}
-			<div class="sw-card rounded-lg px-3 py-2">
-				<p id="extrafanart-migration-warning" class="text-xs text-gray-600 dark:text-gray-400 leading-snug max-w-prose">
-					{ t(ctx, "extrafanart_migration.warning") }
-				</p>
-			</div>
+			if !view.Receipt {
+				<div class="sw-card rounded-lg px-3 py-2">
+					<p id="extrafanart-migration-warning" class="text-xs text-gray-600 dark:text-gray-400 leading-snug max-w-prose">
+						{ t(ctx, "extrafanart_migration.warning") }
+					</p>
+				</div>
+			}
 			if note := view.cappedNote(ctx); note != "" {
 				<p id="extrafanart-migration-capped" class="text-xs text-gray-600 dark:text-gray-400 leading-snug">{ note }</p>
 			}
@@ -192,7 +254,40 @@ templ ExtraFanartMigrationBody(view ExtraFanartMigrationView) {
 // extraFanartErrorCard is the notice shown when the preview stopped before finishing.
 templ extraFanartErrorCard() {
 	<div id="extrafanart-migration-error" class="sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber" role="alert">
-		<p class="text-xs font-semibold leading-tight text-amber-700 dark:text-amber-400">{ t(ctx, "extrafanart_migration.error_title") }</p>
+		<p class="text-xs font-semibold leading-tight text-amber-800 dark:text-amber-400">{ t(ctx, "extrafanart_migration.error_title") }</p>
 		<p class="mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug">{ t(ctx, "extrafanart_migration.error_body") }</p>
+	</div>
+}
+
+// extraFanartReceipt is the card that says how a run went. Neutral for a clean
+// outcome, the amber accent for anything that needs the operator; its heading
+// takes focus when the body is rendered as a fragment (Fragment set).
+templ extraFanartReceipt(view ExtraFanartMigrationView) {
+	<div
+		id="extrafanart-migration-receipt"
+		if view.receiptNeedsAttention() {
+			class="sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber"
+			role="alert"
+		} else {
+			class="sw-card rounded-lg px-3 py-2"
+			role="status"
+		}
+	>
+		<h2
+			id="extrafanart-migration-receipt-title"
+			if view.receiptNeedsAttention() {
+				class="text-xs font-semibold leading-tight text-amber-800 dark:text-amber-400"
+			} else {
+				class="text-xs font-semibold leading-tight"
+			}
+			if view.Fragment {
+				tabindex="-1"
+				autofocus
+			}
+		>{ view.receiptTitle(ctx) }</h2>
+		<p id="extrafanart-migration-receipt-body" class="mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug max-w-prose">
+			{ view.receiptBody(ctx) }
+			<a class="underline" href={ templ.SafeURL(view.BasePath + "/reports/extrafanart-migration") }>{ t(ctx, "extrafanart_migration.receipt_preview_again") }</a>
+		</p>
 	</div>
 }
