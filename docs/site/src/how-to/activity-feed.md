@@ -14,7 +14,7 @@ Click **Activity** in the sidebar, or **View all activity** at the bottom of the
 
 ## Read an entry
 
-Each entry shows the artist, a source badge (Manual, Scan, Import, Revert, Provider, or Rule), a value label beside it (see below), and a relative timestamp. Click the entry to expand it and see the field's old and new values side by side.
+Each entry shows the artist, a source badge (Manual, Scan, Revert, Provider, or Rule), a value label beside it (see below), and a relative timestamp. Click the entry to expand it and see the field's old and new values side by side.
 
 ## Where a value came from
 

@@ -47,35 +47,6 @@ The trail predates every release including `v1.6.1`. That made it TEMPTING as an
 attribution key, and the next section explains why it cannot serve as one
 anyway.
 
-### Source versus producer (#3078)
-
-The #3075 validation found 3,234 damage rows that no `source` could attribute:
-`source = 'manual'` means the write went through the operator write path, not
-that a person typed the value, so a provider write and an operator edit look
-identical in `metadata_changes`. Migration 029 adds a second column, `producer`,
-for the missing half:
-
-- `source` records what TRIGGERED the write. Its vocabulary and every predicate
-  that reads it are unchanged.
-- `producer` records what SUPPLIED THE VALUE. Each writer stamps it; the
-  vocabulary and the per-writer list live in `internal/artist/history_producer.go`
-  (read its doc block rather than a copy here, which would drift).
-
-The lock-damage repair predicate does NOT read `producer`. It still selects on
-`r.source LIKE 'rule:%'` alone (`lockDamageQuery` in
-`internal/artist/sqlite_history.go`), unchanged by design: rule writes already
-carry their rule in `source`, and moving a row between attribution buckets as a
-side effect of a new column is the failure the second column exists to avoid.
-`producer` serves display and any FUTURE repair that must tell an operator value
-from a provider value.
-
-Rows written before a path started stamping hold `producer = ''` and are
-unattributable for good. Nothing else on such a row (no user, request, provider,
-or job id) can be used to infer it, and a guess in either direction would
-mislabel operator text as provider text or the reverse. Migration 029 therefore
-never backfills, and the history UI shows "Value source not recorded" for them.
-See [Metadata history](../site/src/contributing/architecture/metadata-history.md).
-
 ### Rejected: parsing logs
 
 Logs cannot carry this. `internal/logging/logging.go:395` defaults to 10 MB per
@@ -109,6 +80,35 @@ Two corrections to that draft's reasoning, both worth keeping visible:
 - "Approximately zero rows" remains true for existing databases, and that is now
   stated as the design's accepted cost rather than used to justify a
   false-positive-prone predicate.
+
+### Source versus producer (#3078)
+
+The #3075 validation found 3,234 damage rows that no `source` could attribute:
+`source = 'manual'` means the write went through the operator write path, not
+that a person typed the value, so a provider write and an operator edit look
+identical in `metadata_changes`. Migration 029 adds a second column, `producer`,
+for the missing half:
+
+- `source` records what TRIGGERED the write. Its vocabulary and every predicate
+  that reads it are unchanged.
+- `producer` records what SUPPLIED THE VALUE. Each writer stamps it; the
+  vocabulary and the per-writer list live in `internal/artist/history_producer.go`
+  (read its doc block rather than a copy here, which would drift).
+
+The lock-damage repair predicate does NOT read `producer`. It still selects on
+`r.source LIKE 'rule:%'` alone (`lockDamageQuery` in
+`internal/artist/sqlite_history.go`), unchanged by design: rule writes already
+carry their rule in `source`, and moving a row between attribution buckets as a
+side effect of a new column is the failure the second column exists to avoid.
+`producer` serves display and any FUTURE repair that must tell an operator value
+from a provider value.
+
+Rows written before a path started stamping hold `producer = ''` and are
+unattributable for good. Nothing else on such a row (no user, request, provider,
+or job id) can be used to infer it, and a guess in either direction would
+mislabel operator text as provider text or the reverse. Migration 029 therefore
+never backfills, and the history UI shows "Value source not recorded" for them.
+See [Metadata history](../site/src/contributing/architecture/metadata-history.md).
 
 ### The join alone is NOT a causal link (found in review, #3074)
 
