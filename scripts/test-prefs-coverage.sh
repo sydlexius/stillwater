@@ -27,16 +27,17 @@ printf '%s\n' 'import importlib.util, sys' \
   'spec = importlib.util.spec_from_file_location("pc", sys.argv[1])' \
   'm = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)' \
   'try:' \
-  '    entries, _ = m.changed_files(sys.argv[2])' \
+  '    entries, base_sha = m.changed_files(sys.argv[2])' \
   '    print("\n".join(sorted(f"{h}<-{b}" for h, b in entries)))' \
+  '    print("base=" + str(base_sha))' \
   'except m.GitError:' \
   '    print("GITERROR")' > "$W/probe.py"
 rc=0
 # list <env...>: the sorted entries, or "GITERROR" when changed_files raises GitError.
 list() { (cd "$R" && env "$@" python3 -I "$W/probe.py" "$PY" "$BASE"); }
 WANT=$(list X=1)
-[ "$(printf '%s\n' "$WANT" | wc -l | tr -d ' ')" = 4 ] \
-  && echo "  PASS  clean list has the 4 expected entries (2 added, 1 modified, 1 renamed)" \
+[ "$(printf '%s\n' "$WANT" | wc -l | tr -d ' ')" = 5 ] \
+  && echo "  PASS  clean list has the 4 expected entries (2 added, 1 modified, 1 renamed) and a merge-base" \
   || { echo "  FAIL  clean list wrong: $WANT" >&2; rc=1; }
 check() { # <name> <env...>
   local name=$1; shift
@@ -52,4 +53,11 @@ check "GIT_DIFF_OPTS" GIT_DIFF_OPTS=-u5
 [ "$(list GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=diff.orderFile GIT_CONFIG_VALUE_0="$W/missing")" = GITERROR ] \
   && echo "  PASS  a failing git raises GitError (fails closed)" \
   || { echo "  FAIL  a failing git did not fail closed" >&2; rc=1; }
+# A replace ref must not change the list OR lose the merge-base (the worktree matches the real
+# HEAD here, so the list alone would coincide; base= is what a replaced HEAD breaks) (mirrors section B2 of test-check-plain-git-diff.sh).
+HEADSHA=$(git -C "$R" rev-parse HEAD); git -C "$R" replace -f "$HEADSHA" "$BASE"
+[ -z "$(git -C "$R" diff --name-only "$BASE" HEAD)" ] \
+  && echo "  PASS  precondition: the replace ref empties raw git diff" || { echo "  FAIL  replace variant is vacuous" >&2; rc=1; }
+check "a replace ref (git replace)" X=1
+git -C "$R" replace -d "$HEADSHA" >/dev/null
 exit $rc

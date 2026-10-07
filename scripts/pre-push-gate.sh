@@ -827,7 +827,8 @@ if command -v go &>/dev/null; then
     fi
     mv "$SW_RUN_DIR/oasdiff" "$oasdiff_bin"
   fi
-  if git show main:internal/api/openapi.yaml > "$tmp_openapi" 2>/dev/null; then
+  # GIT_NO_REPLACE_OBJECTS: a replace ref would swap main's spec for another blob.
+  if GIT_NO_REPLACE_OBJECTS=1 git show main:internal/api/openapi.yaml > "$tmp_openapi" 2>/dev/null; then
     breaking_out=$("$oasdiff_bin" breaking --fail-on ERR \
       "$tmp_openapi" internal/api/openapi.yaml 2>"$oasdiff_err") && oasdiff_rc=0 || oasdiff_rc=$?
     case "$oasdiff_rc" in
@@ -845,7 +846,7 @@ if command -v go &>/dev/null; then
         exit 1
         ;;
     esac
-  elif ! base_entry=$(git ls-tree --name-only main -- internal/api/openapi.yaml 2>/dev/null); then
+  elif ! base_entry=$(GIT_NO_REPLACE_OBJECTS=1 git ls-tree --name-only main -- internal/api/openapi.yaml 2>/dev/null); then
     echo "FAIL: could not ask git whether main has openapi.yaml" >&2
     exit 1
   elif [ -n "$base_entry" ]; then

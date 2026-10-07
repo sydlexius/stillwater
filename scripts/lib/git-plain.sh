@@ -29,7 +29,9 @@
 # variable and cannot be switched off by an argument.
 #
 # `git show <rev>:<path>` (a blob, no patch) was probed against all of the above
-# and is unaffected, so it needs no wrapper. scripts/check-plain-git-diff.sh
+# except a replace ref, and is otherwise unaffected, so it needs no wrapper; a raw
+# blob read in a gate that matters sets GIT_NO_REPLACE_OBJECTS=1 itself (the
+# OpenAPI base read does). scripts/check-plain-git-diff.sh
 # flags the common spellings of a patch-producing git call in scripts/ and
 # .githooks/ that skip this helper; its header lists what it cannot see.
 # Callers must also check git's own failure: capture the output in an

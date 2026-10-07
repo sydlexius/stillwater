@@ -76,4 +76,12 @@ stage_css; run sec3a 0 "^PASS tailwind" "tailwind: up-to-date styles.css passes"
 stage_css; run sec3a 1 "out of date" "tailwind: stale styles.css blocks" STALE_GEN=1
 stage_css; run sec3a 1 "out of date" "tailwind: stale styles.css blocks under GIT_LITERAL_PATHSPECS=1" STALE_GEN=1 "${LITERAL[@]}"
 stage_css; out=$(cd "$R" && env PATH="$W/bin:$PATH" STALE_GEN=1 "${BROKEN[@]}" bash "$W/sec3a.sh" 2>&1) && fail "tailwind: stale file committed with a failing git" || pass "tailwind: a failing git blocks"
+# A git whose ONLY failure is the unstaged `diff` (the staged --cached diff works),
+# so the hook reaches its dirty-file checks before failing.
+mkdir -p "$W/shim"; REALGIT=$(command -v git)
+printf '%s\n' '#!/bin/sh' 'd=0; c=0; for a in "$@"; do [ "$a" = diff ] && d=1; [ "$a" = --cached ] && c=1; done' \
+  "[ \$d = 1 ] && [ \$c = 0 ] && exit 1" "exec $REALGIT \"\$@\"" > "$W/shim/git"; chmod +x "$W/shim/git"
+SHIM_PATH="$W/shim:$W/bin:$PATH"
+stage_templ; run sec3 1 "could not list" "templ: failing unstaged diff blocks (not read as clean)" STALE_GEN=1 PATH="$SHIM_PATH"
+stage_css; run sec3a 1 "could not list" "tailwind: failing unstaged diff blocks (not read as clean)" STALE_GEN=1 PATH="$SHIM_PATH"
 exit $rc

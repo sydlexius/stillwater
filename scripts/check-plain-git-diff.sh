@@ -27,7 +27,8 @@
 # commands in Python, extension-less Python, `git stash show -p`, `git
 # blame/grep/status` output parsed, Makefile and workflow `run:` blocks, and
 # false positives on prose in a string that mentions `git diff` or on `git log
-# --format=%H` (use the exempt marker). It checks that git_plain_diff is used,
+# --format=%H` (use the exempt marker). The hook's marker scan skips `-diff` /
+# `binary` attributed files: the intended cost of reading binaries as binary. It checks that git_plain_diff is used,
 # not that git's exit status is checked; the tests drive that per site.
 # Usage: bash scripts/check-plain-git-diff.sh [root]
 set -euo pipefail
@@ -40,15 +41,11 @@ EXEMPTRE="[[:space:]]#[[:space:]]*plain-git-exempt:[[:space:]]*[^\"'[:space:]][^
 command -v python3 >/dev/null 2>&1 \
   || { echo "FAIL: check-plain-git-diff needs python3 (not found in PATH); this is a required check, so it fails rather than skips" >&2; exit 2; }
 PYV=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
-scanned=0
-bad=""
-while IFS= read -r f; do
-  rel=${f#"$ROOT"/}
-  case "$rel" in
-    scripts/check-plain-git-diff.sh|scripts/lib/git-plain.sh) continue ;;
-    *.py)
-      scanned=$((scanned + 1)); pyrc=0
-      out=$(python3 - "$f" <<'PYEOF'
+# The Python scanner lives in a temp file written here, NOT in a heredoc inside
+# $( ): bash 3.2 (stock macOS) cannot parse quote characters in such a heredoc.
+PYSCAN=$(mktemp)
+trap 'rm -f "$PYSCAN"' EXIT
+cat > "$PYSCAN" <<'PYEOF'
 import ast, re, sys
 VERBS = {"diff", "diff-tree", "diff-index", "diff-files", "log", "show",
          "format-patch", "whatchanged", "range-diff"}
@@ -83,7 +80,15 @@ for n in ast.walk(tree):
         continue
     print(f"{n.lineno}: {lines[n.lineno - 1].strip()}")
 PYEOF
-) || pyrc=1
+scanned=0
+bad=""
+while IFS= read -r f; do
+  rel=${f#"$ROOT"/}
+  case "$rel" in
+    scripts/check-plain-git-diff.sh|scripts/lib/git-plain.sh) continue ;;
+    *.py)
+      scanned=$((scanned + 1)); pyrc=0
+      out=$(python3 "$PYSCAN" "$f") || pyrc=1
       [ "$pyrc" -eq 0 ] || [ -n "$out" ] || out="python $PYV failed on this file"
       [ -z "$out" ] || bad="$bad$(printf '%s\n' "$out" | sed "s|^|$rel:|")"$'\n'
       ;;

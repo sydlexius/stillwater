@@ -129,7 +129,7 @@ def changed_files(base):
     # NOT degrade to "0 files changed" (a false PASS that suppresses the whole
     # gate). Only a clean rc==0 with empty output is a legitimate "no changes".
     if base:
-        mb_res = sh(["git", "merge-base", base, "HEAD"])
+        mb_res = sh(["git", "merge-base", base, "HEAD"], env={**os.environ, **GIT_PLAIN_ENV})  # a replace ref empties it
         # rc 1 == no common ancestor (unrelated histories): legitimate, fall
         # back to a working-tree diff. rc 124 (timeout) / 128 (bad rev) / etc.
         # are real failures -> fail closed.

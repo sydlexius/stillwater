@@ -174,7 +174,7 @@ got=$(cd "$R" && bash -c 'git() { echo HIJACK; return 3; }; . "$1"; git_plain_di
 [ "$got" = "internal/api/handlers_x.go" ] && pass "an exported/defined git function cannot hijack the helper" || fail "git function hijacked the helper: [$got]"
 
 echo "F. OpenAPI base read: skip only on a positive 'absent'"
-sed -n '/^  if git show main:internal\/api\/openapi.yaml/,/^  fi$/p' "$GATE_SH" > "$W/oa.sh"
+sed -n '/^  if GIT_NO_REPLACE_OBJECTS=1 git show main:internal\/api\/openapi.yaml/,/^  fi$/p' "$GATE_SH" > "$W/oa.sh"
 grep -q 'ls-tree' "$W/oa.sh" || fail "openapi arm cut is wrong"
 printf '#!/bin/sh\nexit 0\n' > "$W/oasdiff"; chmod +x "$W/oasdiff"
 R3="$W/repo3"; git -c init.defaultBranch=main init -q "$R3"; git -C "$R3" config user.name T; git -C "$R3" config user.email t@localhost
@@ -239,13 +239,25 @@ mk 'x=1' scripts/ok.sh; mkdir -p "$W/empty"
 s=0; out=$(env PATH="$W/empty" "$BASH" "$GUARD_SH" "$W/t" 2>&1) || s=$?
 [ "$s" -eq 2 ] && grep -q 'needs python3' <<<"$out" && pass "missing python3 FAILs naming the interpreter" || fail "missing python3 not reported (exit $s)"
 guard "$REPO_ROOT" && pass "repo scripts/ and .githooks/ are clean" || { fail "repo has a raw parsed git diff"; cat "$W/g.out" >&2; }
+echo "P. every shell file parses under stock macOS bash 3.2, and the guard runs there"
+if [ -x /bin/bash ]; then
+  for f in "$REPO_ROOT"/scripts/*.sh "$REPO_ROOT"/scripts/lib/*.sh "$REPO_ROOT"/.githooks/* "$GUARD_SH"; do
+    [ -f "$f" ] || continue
+    head -1 "$f" | grep -q 'sh' || continue
+    /bin/bash -n "$f" 2>"$W/n.err" || fail "/bin/bash -n fails on ${f#"$REPO_ROOT"/}: $(head -1 "$W/n.err")"
+  done
+  /bin/bash "$GUARD_SH" "$REPO_ROOT" >"$W/g32.out" 2>&1 && pass "all shell files parse under /bin/bash; guard passes there" || fail "guard fails under /bin/bash: $(head -2 "$W/g32.out")"
+else
+  echo "  SKIP  /bin/bash does not exist on this host: the bash 3.2 parse check did NOT run"
+fi
+
 # S. a caller exporting diff config (git -c k=v push does) must not change the verdict.
 if [ -z "${SW_PLAIN_SELFCHECK:-}" ]; then
   echo "S. the suite passes when the CALLER injects diff config"
   selfcheck() { local name=$1; shift
     if env SW_PLAIN_SELFCHECK=1 "$@" "$BASH" "${BASH_SOURCE[0]}" >"$W/self.out" 2>&1; then pass "suite green with caller config: $name"
     else fail "suite red with caller config: $name"; grep -E '^\s+FAIL' "$W/self.out" | head -3 >&2; fi; }
-  selfcheck "GIT_CONFIG_COUNT color.ui=always + interHunkContext=3" GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=color.ui GIT_CONFIG_VALUE_0=always GIT_CONFIG_KEY_1=diff.interHunkContext GIT_CONFIG_VALUE_1=3
-  selfcheck "GIT_CONFIG_PARAMETERS diff.noprefix" "GIT_CONFIG_PARAMETERS='diff.noprefix'='true'"
+  # Both injection channels at once: one rerun, and unsetting either variable family goes red.
+  selfcheck "GIT_CONFIG_COUNT (color.ui, interHunkContext) + GIT_CONFIG_PARAMETERS (noprefix)" GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=color.ui GIT_CONFIG_VALUE_0=always GIT_CONFIG_KEY_1=diff.interHunkContext GIT_CONFIG_VALUE_1=3 "GIT_CONFIG_PARAMETERS='diff.noprefix'='true'"
 fi
 exit $rc

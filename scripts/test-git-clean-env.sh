@@ -210,7 +210,7 @@ for helper in "${HELPERS[@]}"; do
     # scripts/ directory (a helper run from a tree with no scripts/ dies
     # instantly and looks innocent).
     set +e
-    OUT=$(cd "$REPO_ROOT" && GIT_DIR="$GDIR" bash "scripts/$helper" 2>&1)
+    OUT=$(cd "$REPO_ROOT" && GIT_DIR="$GDIR" SW_PLAIN_SELFCHECK=1 bash "scripts/$helper" 2>&1)
     RC=$?
     set -e
 
