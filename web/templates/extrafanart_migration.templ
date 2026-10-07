@@ -20,12 +20,34 @@ func commaInt(n int) string {
 	return s
 }
 
-// visibleRows returns the rows to render: all of them up to the cap.
+// visibleRows returns the rows to render. A preview shows the first rows up to
+// the cap. A receipt never drops a row the operator may need to act on: every
+// row that is not "moved" is kept, and moved rows fill whatever room the cap
+// leaves, in order.
 func (v ExtraFanartMigrationView) visibleRows() []ExtraFanartMigrationRow {
-	if limit := v.rowCap(); len(v.Rows) > limit {
+	limit := v.rowCap()
+	if len(v.Rows) <= limit {
+		return v.Rows
+	}
+	if !v.Receipt {
 		return v.Rows[:limit]
 	}
-	return v.Rows
+	room := limit
+	for _, row := range v.Rows {
+		if row.Outcome != "moved" {
+			room--
+		}
+	}
+	out := make([]ExtraFanartMigrationRow, 0, limit)
+	for _, row := range v.Rows {
+		if row.Outcome != "moved" {
+			out = append(out, row)
+		} else if room > 0 {
+			out = append(out, row)
+			room--
+		}
+	}
+	return out
 }
 
 // rowCap is RowCap when a caller set one (tests), else ExtraFanartMaxRows.
@@ -37,9 +59,13 @@ func (v ExtraFanartMigrationView) rowCap() int {
 }
 
 // cappedNote is the line shown when rows were left out, or "" when none were.
+// On a receipt only moved files are ever left out, and the line says so.
 func (v ExtraFanartMigrationView) cappedNote(ctx context.Context) string {
 	if len(v.Rows) <= v.rowCap() {
 		return ""
+	}
+	if v.Receipt {
+		return tf(ctx, "extrafanart_migration.receipt_rows_capped", commaInt(len(v.visibleRows())), commaInt(len(v.Rows)))
 	}
 	return tf(ctx, "extrafanart_migration.rows_capped", commaInt(v.rowCap()), commaInt(len(v.Rows)))
 }

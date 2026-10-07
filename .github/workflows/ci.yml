@@ -637,13 +637,21 @@ jobs:
       # is tolerant (warns, never fails): the deps step repeats it strictly after the
       # Chrome source is disabled (#3219). The restore-key prefix (engine+os)
       # stays, so older entries still seed SHA-verified .debs.
+      # Run 37672148659 hung here for the 20-minute job limit with no output: the
+      # refresh was unbounded and its output discarded. It now has a bound with
+      # timeout as the DIRECT parent of apt-get (the shape the deps step sanctions;
+      # never wrap npx), logs its output on failure, and the step has its own limit.
       - name: Compute apt cache key (${{ matrix.engine }})
         id: apt-key
+        timeout-minutes: 5
         run: |
           os=$(. /etc/os-release && echo "$ID-$VERSION_ID")
           echo "os=$os" >> "$GITHUB_OUTPUT"
           echo "img=${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
-          sudo apt-get update >/dev/null 2>&1 || echo "::warning::apt-get update failed while computing the cache key"
+          if ! { sudo timeout -k 10 90 apt-get update; } >"$RUNNER_TEMP/apt-key-update.log" 2>&1; then
+            echo "::warning::apt-get update failed or timed out while computing the cache key"
+            tail -n 20 "$RUNNER_TEMP/apt-key-update.log"
+          fi
           dry=$(npx playwright install-deps --dry-run ${{ matrix.engine }} || true)
           pkgs=$(printf '%s\n' "$dry" | sed -nE 's/^  ([a-z0-9][a-z0-9.+:-]*)$/\1/p' | tr '\n' ' ')
           inst=""

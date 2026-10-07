@@ -4477,12 +4477,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExtraFanartMigrationResult'
+            text/html:
+              schema:
+                type: string
+                description: The report page body, for a request with HX-Request true. A receipt lists every file that did not move.
         "207":
           description: A live run finished with a non-clean outcome (status `partial` or `failed`). This covers files that did not move and also runs where every file moved but a follow-up step failed (artist error `index_refresh_failed` or `directory_not_removed`). Per-item outcomes are in the body, which has the same shape as a 200.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExtraFanartMigrationResult'
+            text/html:
+              schema:
+                type: string
+                description: The report page body, for a request with HX-Request true. A receipt lists every file that did not move.
         "400":
           description: The body or dry_run value could not be parsed (JSON body with an `error` message). Nothing ran, so there is no dry_run field.
         "401":
@@ -4499,12 +4507,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExtraFanartMigrationResult'
+            text/html:
+              schema:
+                type: string
+                description: The report page body, for a request with HX-Request true. A receipt lists every file that did not move.
         "500":
           description: The run stopped early (status `failed`, or `partial` when files had already moved), for example when the platform profile cannot be read or the server is shutting down.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExtraFanartMigrationResult'
+            text/html:
+              schema:
+                type: string
+                description: The report page body, for a request with HX-Request true. A receipt lists every file that did not move.
 
   /reports/platform-backdrop-duplicates/prune:
     post:

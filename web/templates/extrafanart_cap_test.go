@@ -73,3 +73,28 @@ func TestExtraFanartMigrationBody_NoNoteAtOrUnderTheCap(t *testing.T) {
 		t.Errorf("the default cap is documented as 500, got %d", ExtraFanartMaxRows)
 	}
 }
+
+// A receipt over the cap never drops a row that did not move: failures sitting
+// past the cap are all rendered, only moved rows are cut, and the line says so.
+func TestExtraFanartReceipt_CapKeepsEveryNonMovedRow(t *testing.T) {
+	t.Parallel()
+	rows := capRows(ExtraFanartMaxRows + 20)
+	for i := range rows {
+		rows[i].Outcome = "moved"
+	}
+	for i := ExtraFanartMaxRows + 5; i < ExtraFanartMaxRows+8; i++ {
+		rows[i].Outcome, rows[i].Reason = "failed", "move_failed"
+	}
+	out := renderCapBody(t, ExtraFanartMigrationView{Status: "partial", Receipt: true, Moved: 517, Failed: 3, Rows: rows})
+	for i := ExtraFanartMaxRows + 5; i < ExtraFanartMaxRows+8; i++ {
+		if name := rows[i].File; !strings.Contains(out, name) {
+			t.Errorf("failed row %s past the cap was dropped from the receipt", name)
+		}
+	}
+	if got := strings.Count(out, "border-t border-gray-100"); got != ExtraFanartMaxRows {
+		t.Errorf("want %d rendered rows, got %d", ExtraFanartMaxRows, got)
+	}
+	if !strings.Contains(out, `id="extrafanart-migration-capped"`) || !strings.Contains(out, "Showing 500 of 520 rows") {
+		t.Error("the omitted-rows line is missing or has the wrong counts")
+	}
+}

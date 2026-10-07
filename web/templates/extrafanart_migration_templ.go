@@ -28,12 +28,34 @@ func commaInt(n int) string {
 	return s
 }
 
-// visibleRows returns the rows to render: all of them up to the cap.
+// visibleRows returns the rows to render. A preview shows the first rows up to
+// the cap. A receipt never drops a row the operator may need to act on: every
+// row that is not "moved" is kept, and moved rows fill whatever room the cap
+// leaves, in order.
 func (v ExtraFanartMigrationView) visibleRows() []ExtraFanartMigrationRow {
-	if limit := v.rowCap(); len(v.Rows) > limit {
+	limit := v.rowCap()
+	if len(v.Rows) <= limit {
+		return v.Rows
+	}
+	if !v.Receipt {
 		return v.Rows[:limit]
 	}
-	return v.Rows
+	room := limit
+	for _, row := range v.Rows {
+		if row.Outcome != "moved" {
+			room--
+		}
+	}
+	out := make([]ExtraFanartMigrationRow, 0, limit)
+	for _, row := range v.Rows {
+		if row.Outcome != "moved" {
+			out = append(out, row)
+		} else if room > 0 {
+			out = append(out, row)
+			room--
+		}
+	}
+	return out
 }
 
 // rowCap is RowCap when a caller set one (tests), else ExtraFanartMaxRows.
@@ -45,9 +67,13 @@ func (v ExtraFanartMigrationView) rowCap() int {
 }
 
 // cappedNote is the line shown when rows were left out, or "" when none were.
+// On a receipt only moved files are ever left out, and the line says so.
 func (v ExtraFanartMigrationView) cappedNote(ctx context.Context) string {
 	if len(v.Rows) <= v.rowCap() {
 		return ""
+	}
+	if v.Receipt {
+		return tf(ctx, "extrafanart_migration.receipt_rows_capped", commaInt(len(v.visibleRows())), commaInt(len(v.Rows)))
 	}
 	return tf(ctx, "extrafanart_migration.rows_capped", commaInt(v.rowCap()), commaInt(len(v.Rows)))
 }
@@ -127,7 +153,7 @@ func ExtraFanartMigrationPage(assets AssetPaths, view ExtraFanartMigrationView) 
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.title"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 87, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 113, Col: 92}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -140,7 +166,7 @@ func ExtraFanartMigrationPage(assets AssetPaths, view ExtraFanartMigrationView) 
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.subtitle"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 89, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 115, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -214,7 +240,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.running_title"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 111, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 137, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
@@ -227,7 +253,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.running_body"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 112, Col: 122}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 138, Col: 122}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
@@ -281,7 +307,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "extrafanart_migration.skipped_missing", view.SkippedMissing))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 133, Col: 77}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 159, Col: 77}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 				if templ_7745c5c3_Err != nil {
@@ -299,7 +325,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.status_label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 140, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 166, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
@@ -312,7 +338,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(extraFanartLabel(ctx, "status", view.Status))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 141, Col: 120}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 167, Col: 120}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
@@ -330,7 +356,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.files_moved"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 146, Col: 105}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 172, Col: 105}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -343,7 +369,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(view.Moved))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 147, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 173, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -356,7 +382,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.files_not_moved"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 150, Col: 109}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 176, Col: 109}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -369,7 +395,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(view.Failed))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 151, Col: 102}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 177, Col: 102}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -387,7 +413,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var15 string
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.artists_with_files"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 155, Col: 112}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 181, Col: 112}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -400,7 +426,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var16 string
 				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(view.ArtistsWithFiles))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 156, Col: 113}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 182, Col: 113}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 				if templ_7745c5c3_Err != nil {
@@ -413,7 +439,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var17 string
 				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.files_to_move"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 159, Col: 107}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 185, Col: 107}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {
@@ -426,7 +452,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var18 string
 				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(view.Moves))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 160, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 186, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 				if templ_7745c5c3_Err != nil {
@@ -444,7 +470,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.files_identical"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 164, Col: 108}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 190, Col: 108}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -457,7 +483,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(view.SkippedIdentical))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 165, Col: 114}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 191, Col: 114}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
@@ -475,7 +501,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var21 string
 				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.problems_title"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 173, Col: 135}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 199, Col: 135}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 				if templ_7745c5c3_Err != nil {
@@ -488,7 +514,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var22 string
 				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "extrafanart_migration.problems_body", view.Problems))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 175, Col: 69}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 201, Col: 69}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 				if templ_7745c5c3_Err != nil {
@@ -511,7 +537,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var23 string
 				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.warning"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 182, Col: 47}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 208, Col: 47}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 				if templ_7745c5c3_Err != nil {
@@ -534,7 +560,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var24 string
 				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(note)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 187, Col: 109}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 213, Col: 109}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 				if templ_7745c5c3_Err != nil {
@@ -557,7 +583,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var25 string
 				templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.empty"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 192, Col: 45}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 218, Col: 45}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 				if templ_7745c5c3_Err != nil {
@@ -575,7 +601,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var26 string
 				templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.column_artist"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 198, Col: 89}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 224, Col: 89}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 				if templ_7745c5c3_Err != nil {
@@ -588,7 +614,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var27 string
 				templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.column_file"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 199, Col: 87}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 225, Col: 87}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 				if templ_7745c5c3_Err != nil {
@@ -601,7 +627,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var28 string
 				templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.column_destination"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 200, Col: 94}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 226, Col: 94}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 				if templ_7745c5c3_Err != nil {
@@ -614,7 +640,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				var templ_7745c5c3_Var29 string
 				templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.column_outcome"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 201, Col: 90}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 227, Col: 90}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 				if templ_7745c5c3_Err != nil {
@@ -632,7 +658,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 					var templ_7745c5c3_Var30 templ.SafeURL
 					templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(view.BasePath + "/artists/" + row.ArtistID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 208, Col: 95}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 234, Col: 95}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 					if templ_7745c5c3_Err != nil {
@@ -645,7 +671,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 					var templ_7745c5c3_Var31 string
 					templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(row.Artist)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 208, Col: 110}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 234, Col: 110}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 					if templ_7745c5c3_Err != nil {
@@ -658,7 +684,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 					var templ_7745c5c3_Var32 string
 					templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(row.File)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 210, Col: 41}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 236, Col: 41}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 					if templ_7745c5c3_Err != nil {
@@ -671,7 +697,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 					var templ_7745c5c3_Var33 string
 					templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(row.Dest)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 211, Col: 41}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 237, Col: 41}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 					if templ_7745c5c3_Err != nil {
@@ -684,7 +710,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 					var templ_7745c5c3_Var34 string
 					templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(extraFanartLabel(ctx, "outcome", row.Outcome))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 213, Col: 57}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 239, Col: 57}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 					if templ_7745c5c3_Err != nil {
@@ -702,7 +728,7 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 						var templ_7745c5c3_Var35 string
 						templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(" - " + extraFanartLabel(ctx, "reason", row.Reason))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 215, Col: 111}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 241, Col: 111}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 						if templ_7745c5c3_Err != nil {
@@ -765,7 +791,7 @@ func extraFanartErrorCard() templ.Component {
 		var templ_7745c5c3_Var37 string
 		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.error_title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 231, Col: 129}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 257, Col: 129}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 		if templ_7745c5c3_Err != nil {
@@ -778,7 +804,7 @@ func extraFanartErrorCard() templ.Component {
 		var templ_7745c5c3_Var38 string
 		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.error_body"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 232, Col: 118}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 258, Col: 118}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 		if templ_7745c5c3_Err != nil {
@@ -859,7 +885,7 @@ func extraFanartReceipt(view ExtraFanartMigrationView) templ.Component {
 		var templ_7745c5c3_Var40 string
 		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(view.receiptTitle(ctx))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 261, Col: 27}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 287, Col: 27}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 		if templ_7745c5c3_Err != nil {
@@ -872,7 +898,7 @@ func extraFanartReceipt(view ExtraFanartMigrationView) templ.Component {
 		var templ_7745c5c3_Var41 string
 		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(view.receiptBody(ctx))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 263, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 289, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 		if templ_7745c5c3_Err != nil {
@@ -885,7 +911,7 @@ func extraFanartReceipt(view ExtraFanartMigrationView) templ.Component {
 		var templ_7745c5c3_Var42 templ.SafeURL
 		templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(view.BasePath + "/reports/extrafanart-migration"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 264, Col: 94}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 290, Col: 94}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 		if templ_7745c5c3_Err != nil {
@@ -898,7 +924,7 @@ func extraFanartReceipt(view ExtraFanartMigrationView) templ.Component {
 		var templ_7745c5c3_Var43 string
 		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.receipt_preview_again"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 264, Col: 152}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 290, Col: 152}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 		if templ_7745c5c3_Err != nil {
