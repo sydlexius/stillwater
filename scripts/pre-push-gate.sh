@@ -66,6 +66,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/lib/run-flags.sh"
 # Plain `git diff` for every check that parses it (#3446).
 . "$SCRIPT_DIR/lib/git-plain.sh"
+# Per-step wall-clock timing: gate_step headers + a summary table.
+. "$SCRIPT_DIR/lib/gate-timing.sh"
 
 resolve_run_flag RUN_RACE "${RUN_RACE:-}"; RACE_MODE="$RESOLVED_RUN_FLAG"
 resolve_run_flag RUN_VULN "${RUN_VULN:-}"; VULN_MODE="$RESOLVED_RUN_FLAG"
@@ -159,12 +161,13 @@ acquire_lock
 COVER_OUT="$SW_RUN_DIR/cover.out"
 tmp_openapi=""
 cleanup() {
+  gate_timing_summary || true  # a failing run still shows where the time went
   rm -f "${COVER_OUT:-}" "${tmp_openapi:-}"
   rm -rf "${LOCK_DIR:-}"
 }
 trap cleanup EXIT
 
-echo "=== Conflict markers (tracked files) ==="
+gate_step "Conflict markers (tracked files)"
 # Catch unresolved merge markers across every tracked file regardless of
 # extension. Mkdocs.yml conflict in PR #1357 round 1 slipped through because
 # the local sweep filter only included *.go/*.json/*.templ/*.md. This check
@@ -186,7 +189,7 @@ fi
 echo "OK"
 
 echo ""
-echo "=== Gate invariant (no advisory step in the default path) ==="
+gate_step "Gate invariant (no advisory step in the default path)"
 # Assert this script still satisfies the rule in the header block: a check in
 # the default path either BLOCKS or is not in the default path. Three greps
 # over one file, so it runs unconditionally and fail-fasts.
@@ -196,36 +199,40 @@ echo "=== Gate invariant (no advisory step in the default path) ==="
 # to be something that fails rather than something that reminds. Mirrored by
 # CI's "Gate Invariant" job (gate.yml) for the --no-verify path.
 bash "$SCRIPT_DIR/check-gate-invariant.sh"
+bash "$SCRIPT_DIR/test-gate-timing.sh"
 
 echo ""
-echo "=== Required workflows run on any PR base (#3002) ==="
+gate_step "Required workflows run on any PR base (#3002)"
 # A `pull_request: branches: [main]` filter makes a stacked PR run no required
 # checks, and the merge oracle reads the empty rollup as green. Static, hermetic.
 # Mirrored by CI's "Gate Invariant" job (gate.yml).
 bash "$SCRIPT_DIR/check-pr-trigger-scope.sh"
 
 echo ""
-echo "=== a11y shard matrix is complete (#3442) ==="
+gate_step "a11y shard matrix is complete (#3442)"
 # A missing or duplicated shard index silently drops specs. Mirrored by CI's
 # "Gate Invariant" job (gate.yml).
 bash "$SCRIPT_DIR/check-a11y-shards.sh"
 bash "$SCRIPT_DIR/test-check-a11y-shards.sh"
 
 echo ""
-echo "=== parsed git diffs use plain output (#3446) ==="
+gate_step "parsed git diffs use plain output (#3446)"
 # A developer's external diff tool, textconv or color config must not change
 # what a check parses. Mirrored by CI's "Gate Invariant" job (gate.yml).
 bash "$SCRIPT_DIR/check-plain-git-diff.sh"
-bash "$SCRIPT_DIR/test-check-plain-git-diff.sh"
+# test-check-plain-git-diff.sh is NOT run here: test-git-clean-env.sh (further
+# down) runs it once, with a hard exit-0 check, under a worktree GIT_DIR.
+# Running it in both places cost ~2x for no extra signal; the single-execution
+# rule is asserted by scripts/test-gate-timing.sh.
 bash "$SCRIPT_DIR/test-pre-commit-plain-diff.sh"
 bash "$SCRIPT_DIR/test-prefs-coverage.sh"
 
 echo ""
-echo "=== release-blockers check self-test (#2905) ==="
+gate_step "release-blockers check self-test (#2905)"
 bash "$SCRIPT_DIR/test-check-release-blockers.sh"
 
 echo ""
-echo "=== git-init guard presence (#3051) ==="
+gate_step "git-init guard presence (#3051)"
 # `git init <path>` re-initializes an inherited GIT_DIR and IGNORES <path>. The
 # pre-push hook exports GIT_DIR, this gate inherits it, and several checks below
 # build fixture repositories. From a worktree -- which SHARES the main repo's
@@ -248,7 +255,7 @@ bash "$SCRIPT_DIR/test-check-git-init-guarded.sh"
 bash "$SCRIPT_DIR/check-git-init-guarded.sh"
 
 echo ""
-echo "=== Tool version drift ==="
+gate_step "Tool version drift"
 # Assert the lint/spell tool versions pinned independently in the bash hook,
 # the pre-commit framework config, and the CI workflows all agree. A drift
 # lets a local hook pass while CI fails on the same tree (and vice versa);
@@ -262,7 +269,7 @@ fi
 bash "$TOOL_VERSIONS_HELPER"
 
 echo ""
-echo "=== Action pin drift ==="
+gate_step "Action pin drift"
 # Assert every sub-action of one action repo (github/codeql-action/{init,analyze,
 # upload-sarif}, actions/cache{,/restore}) is pinned to the SAME commit SHA. They
 # ship from one repo and are version-locked to each other, but Dependabot names
@@ -279,7 +286,7 @@ fi
 bash "$ACTION_PINS_HELPER"
 
 echo ""
-echo "=== Changed Go files/packages ==="
+gate_step "Changed Go files/packages"
 # Derived once, up front, so both the Tests step below and the measurement-
 # linter re-pass further down (in the Lint section) reuse the same set instead
 # of computing it twice. Motivation: M52 PR #1644 bumped
@@ -313,7 +320,7 @@ else
 fi
 
 echo ""
-echo "=== Tests ==="
+gate_step "Tests"
 # RUN_RACE three-state gate, mirroring the RUN_A11Y pattern further down in
 # this file (the "Accessibility (axe-core)" section):
 #   - RUN_RACE truthy (1/true/yes/on): full `go test -race -coverpkg=./...
@@ -457,7 +464,7 @@ case "$RACE_MODE" in
 esac
 
 echo ""
-echo "=== Vulnerability scan (govulncheck) ==="
+gate_step "Vulnerability scan (govulncheck)"
 # RUN_VULN three-state gate, mirroring the RUN_RACE pattern above (and
 # RUN_A11Y further down): CI's "Go Vulnerability Check" job (security.yml)
 # runs unconditionally on every PR (any base) and push to main, with no paths-filter and is
@@ -505,7 +512,7 @@ if [ "$run_vuln" -eq 1 ]; then
 fi
 
 echo ""
-echo "=== Lint (diff-only) ==="
+gate_step "Lint (diff-only)"
 # Lint only the lines changed since BASE. With a warm cache this runs in
 # ~5s; cold it can take ~30s. Closes the `git commit --no-verify` bypass:
 # the pre-commit hook lints staged files, but a `--no-verify` commit + plain
@@ -582,11 +589,11 @@ fi
 echo "OK"
 
 echo ""
-echo "=== OpenAPI consistency ==="
+gate_step "OpenAPI consistency"
 go test -count=1 -run TestOpenAPIConsistency -v ./internal/api/
 
 echo ""
-echo "=== CSS comments ==="
+gate_step "CSS comments"
 # Assert no hand-written CSS comment terminates itself. A `*/` inside comment
 # PROSE closes the comment, so everything after it is parsed as CSS -- which in
 # #2525 silently swallowed the entire `@theme` block and meant its `swd-*`
@@ -597,7 +604,7 @@ echo "=== CSS comments ==="
 bash "$SCRIPT_DIR/check-css-comments.sh"
 
 echo ""
-echo "=== goreleaser extra_files mirror (#3034) ==="
+gate_step "goreleaser extra_files mirror (#3034)"
 # Assert every repo-file COPY source in build/docker/Dockerfile.goreleaser is
 # also listed in .goreleaser.yml's extra_files:. goreleaser's dockers_v2
 # buildx context is assembled ONLY from staged platform binaries plus
@@ -612,7 +619,7 @@ bash "$SCRIPT_DIR/test-check-goreleaser-extra-files.sh"
 bash "$SCRIPT_DIR/check-goreleaser-extra-files.sh"
 
 echo ""
-echo "=== Worktree settings link (#2879) ==="
+gate_step "Worktree settings link (#2879)"
 # Hermetic, no network, sub-second: runs unconditionally rather than diff-scoped.
 # What it guards is invisible at runtime -- a worktree whose Claude Code grants
 # silently fall back to the user-global set produces a permission PROMPT, and a
@@ -628,7 +635,7 @@ bash "$SCRIPT_DIR/test-link-worktree-settings.sh"
 bash "$SCRIPT_DIR/test-remove-worktree.sh"
 
 echo ""
-echo "=== zizmor suppression scope ==="
+gate_step "zizmor suppression scope"
 # A `# zizmor: ignore[dangerous-triggers]` suppresses the audit for the WHOLE
 # `on:` mapping, not the one trigger it was written for. So a dangerous trigger
 # added to an already-suppressed block raises no finding and no code-scanning
@@ -643,7 +650,7 @@ bash "$SCRIPT_DIR/test-check-zizmor-suppressions.sh"
 bash "$SCRIPT_DIR/check-zizmor-suppressions.sh"
 
 echo ""
-echo "=== RUN_* flag resolution (#2983) ==="
+gate_step "RUN_* flag resolution (#2983)"
 # Hermetic, sub-second: asserts this gate still REFUSES an unrecognized RUN_*
 # value rather than folding it into "unset". The regression it guards is
 # invisible by construction -- a mistyped RUN_VULN=truee would print "skipped by
@@ -653,7 +660,7 @@ echo "=== RUN_* flag resolution (#2983) ==="
 bash "$SCRIPT_DIR/test-run-flag-resolution.sh"
 
 echo ""
-echo "=== git-clean-env behavior (#3051) ==="
+gate_step "git-clean-env behavior (#3051)"
 # The BEHAVIORAL half of the #3051 guard (the static half is a pre-flight, up
 # near the top of this gate -- see its block for the mechanism). This runs each
 # affected helper against a real throwaway worktree and reads the main repo's
@@ -664,7 +671,7 @@ echo "=== git-clean-env behavior (#3051) ==="
 bash "$SCRIPT_DIR/test-git-clean-env.sh"
 
 echo ""
-echo "=== CSS lint (diff-scoped ratchet, #2402) ==="
+gate_step "CSS lint (diff-scoped ratchet, #2402)"
 # Design-token layer stylelint gate. The token migration is not complete
 # (input.css still carries ~135 pre-existing literal-value violations), so
 # this is a ratchet: only violations on lines this diff ADDED can fail the
@@ -682,18 +689,18 @@ echo "=== CSS lint (diff-scoped ratchet, #2402) ==="
 "$SCRIPT_DIR/stylelint-diff-gate.sh" "$BASE"
 
 echo ""
-echo "=== Generated files ==="
+gate_step "Generated files"
 bash "$SCRIPT_DIR/check-generated.sh"
 
 echo ""
-echo "=== Doc facts ==="
+gate_step "Doc facts"
 # Assert hand-written docs still cite code-derived facts (rule count, envelope
 # version, Go minimum, reverse-proxy body-size) correctly. Catches the silent
 # drift documented in #1711; the surrounding prose stays hand-written.
 bash "$SCRIPT_DIR/check-doc-facts.sh"
 
 echo ""
-echo "=== Codecov/floor mirror ==="
+gate_step "Codecov/floor mirror"
 # Assert codecov.yml's per-package project targets mirror
 # testdata/coverage-floor.json exactly. Catches the silent drift documented in
 # #2756 (internal/server sat at 91% in codecov.yml while the floor had been
@@ -701,7 +708,7 @@ echo "=== Codecov/floor mirror ==="
 bash "$SCRIPT_DIR/check-codecov-floor-mirror.sh"
 
 echo ""
-echo "=== ProperDocs config YAML ==="
+gate_step "ProperDocs config YAML"
 # Catch syntax errors (incl. residual conflict markers, indentation slips,
 # duplicate keys) in the properdocs config before CI's "Build site" job does.
 # Stdlib PyYAML only -- no need for properdocs itself locally. If python3 is
@@ -756,7 +763,7 @@ else
 fi
 
 echo ""
-echo "=== Raw error leak check ==="
+gate_step "Raw error leak check"
 # Scope to production handler code only: test files legitimately assert on
 # err.Error()/err.String() and never reach a client response.
 # Diff captured first so a failed git fails the check instead of reading as clean.
@@ -776,7 +783,7 @@ fi
 echo "OK"
 
 echo ""
-echo "=== OpenAPI breaking changes ==="
+gate_step "OpenAPI breaking changes"
 # Pinned to v1.25.1: the previously-installed "main" dev build cannot parse
 # this spec's OpenAPI 3.1 dialect at all -- it models exclusiveMinimum as a
 # bool (3.0 semantics) and hard-fails on the numeric form 3.1 requires (see
@@ -864,7 +871,7 @@ fi
 esac
 
 echo ""
-echo "=== Patch coverage ==="
+gate_step "Patch coverage"
 if [ "$SKIP_PATCH_COVERAGE" -eq 1 ]; then
   # SKIP_PATCH_COVERAGE is now set for more than one reason (RUN_RACE=0
   # opt-out, or the changed-packages path legitimately producing no coverage
@@ -916,7 +923,7 @@ else
 fi
 
 echo ""
-echo "=== Fuzz matrix drift check ==="
+gate_step "Fuzz matrix drift check"
 # Verify that the static fuzz matrix in .github/workflows/fuzz.yml lists
 # every `func Fuzz*` defined in internal/. A set comparison (not a count)
 # catches rename/swap drift that preserves cardinality but breaks parity.
@@ -939,7 +946,7 @@ fi
 echo "OK: $(wc -l < "$live_fuzz_file" | tr -d ' ') fuzz targets, matrix set matches."
 
 echo ""
-echo "=== Provider failure smoke test ==="
+gate_step "Provider failure smoke test"
 # RUN_PROVIDER_SMOKE three-state gate, mirroring the RUN_VULN pattern above.
 # CI's "Provider Failure Smoke" job (gate.yml) is a REQUIRED check and is the
 # authoritative gate. Locally the step builds a binary and boots a temporary
@@ -987,7 +994,7 @@ if [ "$run_provider_smoke" -eq 1 ]; then
 fi
 
 echo ""
-echo "=== Accessibility (axe-core) ==="
+gate_step "Accessibility (axe-core)"
 # RUN_A11Y three-state gate. `make test-a11y` builds the binary, boots an
 # ephemeral server, and drives Playwright + @axe-core/playwright across two
 # browser projects -- ~2.4 minutes, the most expensive step this gate ever ran.
@@ -1034,7 +1041,7 @@ if [ "$run_a11y" -eq 1 ]; then
   echo "OK"
 fi
 
-echo "=== UI-preference coverage (prefs-coverage) ==="
+gate_step "UI-preference coverage (prefs-coverage)"
 # Enforces .prefs.toml (#2195): for each changed surface file matching a
 # [[pref]] surface glob, asserts the pref's verify token/class is still
 # referenced. Layer 1 only -- it catches a surface edit that silently drops
@@ -1106,4 +1113,5 @@ echo ""
 # gate can fail while this line prints (#2983). A "SKIP:" line means a check
 # did not run; a check that RAN and FAILED exits non-zero before reaching
 # here. scripts/check-gate-invariant.sh enforces that mechanically.
+gate_timing_summary
 echo "All hard checks passed. Proceed with /pr-review-toolkit:review-pr."
