@@ -68,7 +68,9 @@ fi
 # stylelint/jq missing is "cannot check" and has to fail loudly, or a real
 # violation could ship on any machine that skipped `npm ci`. So this decision
 # is made from the diff alone, before either tool is probed for.
-if [ -z "$(git_plain_diff --name-only "$BASE" -- "$CSS_GLOB")" ]; then
+# Assigned first so set -e fails closed if git itself fails.
+changed_css=$(git_plain_diff --name-only "$BASE" -- "$CSS_GLOB")
+if [ -z "$changed_css" ]; then
   echo "SKIP: no files under $CSS_GLOB changed since $BASE -- nothing for stylelint to check."
   exit 0
 fi
@@ -96,6 +98,8 @@ ADDED_LINES="$WORK_DIR/added-lines.txt"
 # line number and are skipped.
 current_file=""
 current_line=0
+# Written to a file first: a process substitution would hide a failed git.
+git_plain_diff --unified=0 "$BASE" -- "$CSS_GLOB" > "$WORK_DIR/diff.txt"
 while IFS= read -r diff_line; do
   case "$diff_line" in
     "diff --git "*)
@@ -114,7 +118,7 @@ while IFS= read -r diff_line; do
       current_line=$((current_line + 1))
       ;;
   esac
-done < <(git_plain_diff --unified=0 "$BASE" -- "$CSS_GLOB")
+done < "$WORK_DIR/diff.txt"
 
 HAS_ADDED_LINES=1
 if [ ! -s "$ADDED_LINES" ]; then

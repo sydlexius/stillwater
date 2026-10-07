@@ -48,13 +48,19 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
   is its mutation test. Run by the gate and the `Gate Invariant` job.
 - `scripts/lib/git-plain.sh` -- `git_plain_diff`, a `git diff` that ignores the
   developer's `GIT_EXTERNAL_DIFF`/`diff.external`, textconv, color, prefix,
-  `core.quotePath` and `GIT_DIFF_OPTS` (#3446); the header lists what each one
-  does to a parser. Use it for any `git diff` whose output a check reads.
-- `scripts/check-plain-git-diff.sh` -- fail when a parsed `git diff`/`log`/`show`
-  in `scripts/` bypasses it (blob `git show <rev>:<path>` and a commented
-  `# plain-git-exempt:` line are allowed); `scripts/test-check-plain-git-diff.sh`
-  also drives the real raw-error-leak arm and the stylelint changed-line loop
-  under each tooling variant. Run by the gate and the `Gate Invariant` job.
+  `core.quotePath`, binary attributes, inter-hunk context, pathspec modes and
+  `GIT_DIFF_OPTS` (#3446); the header lists what each one does to a parser. Use
+  it for any `git diff` whose output a check reads, and capture its output in an
+  assignment so a failed git is not read as "no diff".
+- `scripts/check-plain-git-diff.sh` -- fail when a patch-producing git command
+  (`diff*`, `log`, `show`, `format-patch`, ...) in `scripts/` (including `lib/`)
+  or `.githooks/` bypasses it; allowed: blob `git show <rev>:<path>`, hook
+  `--name-only` listings, and a `# plain-git-exempt: <reason>` line. Its header
+  lists the known limits. `scripts/test-check-plain-git-diff.sh` drives the real
+  raw-error-leak arm and the stylelint changed-line loop under each tooling
+  variant, plus fail-closed checks for a failing git. Run by the gate and the
+  `Gate Invariant` job. (`scripts/test-stylelint-diff-gate.sh` is run by neither:
+  its T3 needs a stylelint install outside the repo.)
 - `scripts/lib/run-flags.sh` -- sourced by the gate; resolves each `RUN_*`
   variable to run / skip / default and REFUSES an unrecognized value (exit 2).
   Without it, a mistyped `RUN_VULN=truee` fell into the default branch, printed

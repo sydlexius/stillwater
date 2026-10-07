@@ -53,8 +53,12 @@ warn() {
 # Marker forms checked: <<<<<<< (start), ======= (separator), >>>>>>> (end).
 # The trailing space/EOL guard avoids matching legitimate content like a string
 # of seven equals in a markdown ASCII rule.
-MARKERS=$(git diff --no-ext-diff --no-textconv --no-color --cached -U0 --diff-filter=ACMR -- 2>/dev/null \
-    | grep -nE '^\+(<{7}|={7}|>{7})( |$)' || true)
+# shellcheck source=scripts/lib/git-plain.sh
+. "$(git rev-parse --show-toplevel)/scripts/lib/git-plain.sh"
+# Captured first: a failed git must block the commit, not read as "no markers".
+staged_diff=$(git_plain_diff --cached -U0 --diff-filter=ACMR --) \
+    || { echo "FAIL conflict-markers: the staged diff could not be read" >&2; exit 1; }
+MARKERS=$(printf '%s\n' "$staged_diff" | grep -nE '^\+(<{7}|={7}|>{7})( |$)' || true)
 if [ -n "$MARKERS" ]; then
     echo -e "${RED}${BOLD}FAIL${RESET} conflict-markers: unresolved merge conflict markers in staged content:"
     echo "$MARKERS" | head -20 | sed 's/^/  /'

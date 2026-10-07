@@ -65,15 +65,23 @@ class GitError(Exception):
 # Plain `git diff` for the parsed name-status output (#3446): the developer's
 # external diff tool, textconv, color and rename config must not change it. See
 # scripts/lib/git-plain.sh for the measured effect of each. check-plain-git-diff.sh
-# requires every diff argv in this file to start from this constant.
+# parses this file and flags any git diff argv not built from this constant, and
+# checks that the constant keeps the hardening flags.
 GIT_PLAIN_DIFF = ["git", "-c", "core.quotePath=false", "diff",
-                  "--no-ext-diff", "--no-textconv", "--no-color", "-M"]
+                  "--no-ext-diff", "--no-textconv", "--no-color", "--text",
+                  "--inter-hunk-context=0", "-M",
+                  "--src-prefix=a/", "--dst-prefix=b/"]
+# Pathspec modes and GIT_DIFF_OPTS are environment, so they ride in env.
+GIT_PLAIN_ENV = {"GIT_DIFF_OPTS": "", "GIT_LITERAL_PATHSPECS": "0",
+                 "GIT_GLOB_PATHSPECS": "0", "GIT_NOGLOB_PATHSPECS": "0",
+                 "GIT_ICASE_PATHSPECS": "0"}
 
 
-def sh(args, timeout=120):
+def sh(args, timeout=120, env=None):
     # Bounded so a hung git op fails fast (rc 124) instead of burning the job budget.
     try:
-        return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout,
+                              env=env)
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(args, 124, "", f"timed out after {timeout}s")
 
@@ -139,7 +147,8 @@ def changed_files(base):
     # file can't regress a token) and Copies. core.quotePath=false keeps
     # non-ASCII paths literal so the downstream os.path.isfile / git show
     # resolve the real filename instead of a C-quoted octal escape.
-    res = sh(GIT_PLAIN_DIFF + ["--name-status", "--diff-filter=AMR", rng])
+    res = sh(GIT_PLAIN_DIFF + ["--name-status", "--diff-filter=AMR", rng],
+             env={**os.environ, **GIT_PLAIN_ENV})
     if res.returncode != 0:
         raise GitError(f"git diff --name-status {rng} failed "
                        f"(rc={res.returncode}): {res.stderr.strip()}")

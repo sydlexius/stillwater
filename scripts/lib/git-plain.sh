@@ -18,17 +18,26 @@
 #   core.quotePath (default true) -> non-ASCII paths come back C-quoted, in the
 #                         header AND in --name-only output.
 #   diff.renames=false -> a pure rename reads as a whole new file of `+` lines.
+#   a binary / -diff attribute or diff.<drv>.binary -> "Binary files differ",
+#                         no `+` lines (--text).
+#   diff.interHunkContext -> nearby --unified=0 hunks fuse, line numbers drift.
+#   GIT_LITERAL_PATHSPECS / GIT_NOGLOB_PATHSPECS / GIT_GLOB_PATHSPECS /
+#   GIT_ICASE_PATHSPECS -> pathspec'd diffs come back empty or widened.
 # This is a function, not a bare flag list: GIT_DIFF_OPTS is an environment
 # variable and cannot be switched off by an argument.
 #
 # `git show <rev>:<path>` (a blob, no patch) was probed against all of the above
 # and is unaffected, so it needs no wrapper. scripts/check-plain-git-diff.sh
-# fails when a parsed `git diff` bypasses this helper.
+# fails when a parsed `git diff` in scripts/ or .githooks/ bypasses this helper.
+# Callers must also check git's own failure: capture the output in an
+# assignment (`d=$(git_plain_diff ...)`) so a failed git is not read as "no diff".
 #
 # USAGE: . "$SCRIPT_DIR/lib/git-plain.sh"; git_plain_diff --name-only "$BASE" -- '*.go'
 
 git_plain_diff() {
-    GIT_DIFF_OPTS='' git -c core.quotePath=false diff \
-        --no-ext-diff --no-textconv --no-color -M \
+    GIT_DIFF_OPTS='' GIT_LITERAL_PATHSPECS=0 GIT_GLOB_PATHSPECS=0 \
+    GIT_NOGLOB_PATHSPECS=0 GIT_ICASE_PATHSPECS=0 \
+    command git -c core.quotePath=false diff \
+        --no-ext-diff --no-textconv --no-color --text --inter-hunk-context=0 -M \
         --src-prefix=a/ --dst-prefix=b/ "$@"
 }
