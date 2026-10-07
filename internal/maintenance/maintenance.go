@@ -192,7 +192,8 @@ func (s *Service) ScanExistsFlags(ctx context.Context) error {
 		SELECT ai.artist_id, ai.image_type, ai.slot_index, a.path
 		FROM artist_images ai
 		JOIN artists a ON ai.artist_id = a.id
-		WHERE ai.exists_flag = 1`)
+		WHERE ai.exists_flag = 1
+		ORDER BY ai.artist_id, ai.image_type, ai.slot_index`)
 	if err != nil {
 		return fmt.Errorf("querying exists_flag rows: %w", err)
 	}
@@ -211,6 +212,9 @@ func (s *Service) ScanExistsFlags(ctx context.Context) error {
 	// driver.
 	var stale []staleRow
 	checked, skipped := 0, 0
+	// One directory listing per artist directory for the whole pass: an artist
+	// with 20 fanart rows costs one read, not 20.
+	checker := newSlotChecker()
 
 	for rows.Next() {
 		var artistID, imageType, artistPath string
@@ -229,6 +233,33 @@ func (s *Service) ScanExistsFlags(ctx context.Context) error {
 				slog.String("artist_id", artistID),
 				slog.String("image_type", imageType))
 			skipped++
+			continue
+		}
+
+		// Fanart rows are decided by the SAME slot-aware rule the restore pass
+		// uses (slotChecker.confirm), never by the primary-name probe below. A
+		// folder holding only backdrop2.jpg..backdropN.jpg has no primary file,
+		// but its slots ARE on disk, and the library scanner and the restore pass
+		// both say so; a primary-only probe here would clear every one of those
+		// flags each hour and the repair banner would come straight back (#3456).
+		//
+		// Direction matters: the restore pass SETS a flag on (true, nil); this
+		// pass CLEARS one, and only on (false, nil). Every "cannot tell" outcome
+		// of confirm is an error, so the error branch below skips the row. An
+		// error must never fall through to the clear.
+		if imageType == "fanart" {
+			verdict, vErr := s.fanartSlotVerdict(ctx, checker, dir, artistID, slotIndex, checked)
+			if vErr != nil {
+				return vErr
+			}
+			switch verdict {
+			case slotPresent:
+				// File on disk: nothing to do.
+			case slotAbsent:
+				stale = append(stale, staleRow{artistID, imageType, slotIndex})
+			case slotUnverifiable:
+				skipped++
+			}
 			continue
 		}
 
@@ -307,6 +338,41 @@ func (s *Service) ScanExistsFlags(ctx context.Context) error {
 	return nil
 }
 
+// slotVerdict is the three-way outcome of a clearing pass's slot check.
+type slotVerdict int
+
+const (
+	slotPresent      slotVerdict = iota // file confirmed on disk: leave the flag
+	slotAbsent                          // directory read, file definitively absent: clear
+	slotUnverifiable                    // could not tell: leave the flag, count as skipped
+)
+
+// fanartSlotVerdict asks the shared slot rule about one fanart row for the
+// CLEARING pass. Only (false, nil) from the rule is slotAbsent. ANY error is
+// slotUnverifiable, never slotAbsent: the restore pass can afford to treat an
+// unknown as "do nothing" because doing nothing leaves the flag cleared, but
+// this pass would DESTROY the flag, so "could not look" must map to "keep it".
+// The one error returned is a canceled context, which ends the whole pass
+// (#2689) instead of being counted as another unverifiable artist.
+func (s *Service) fanartSlotVerdict(ctx context.Context, c *slotChecker, dir, artistID string, slotIndex, checked int) (slotVerdict, error) {
+	present, err := c.confirm(ctx, dir, "fanart", slotIndex)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return slotUnverifiable, fmt.Errorf("exists_flag scan canceled after %d rows checked: %w", checked, ctxErr)
+		}
+		s.logger.Warn("exists_flag scan: cannot verify fanart slot on disk, skipping",
+			slog.String("artist_id", artistID),
+			slog.String("dir", dir),
+			slog.Int("slot_index", slotIndex),
+			slog.Any("error", err))
+		return slotUnverifiable, nil
+	}
+	if present {
+		return slotPresent, nil
+	}
+	return slotAbsent, nil
+}
+
 // StartExistsFlagScanner runs ScanExistsFlags once at startup (after
 // startupDelay, so DB migrations and other boot-time I/O don't contend with
 // it) and then on a fixed interval until the context is canceled.
@@ -368,24 +434,64 @@ func (s *Service) StartExistsFlagScanner(ctx context.Context, interval, startupD
 //     conservative direction: an unverifiable slot is never restored.
 //
 // Fanart is resolved convention-agnostically via ResolveFanart over the default
-// naming set (the same union ScanExistsFlags probes), because slot_index is a
+// naming set (ScanExistsFlags uses this same rule for fanart rows), because slot_index is a
 // DiscoverFanart ORDINAL: the file backing slot N is the Nth resolved fanart
 // path, whatever numbering convention the library uses. Single-slot types
 // (thumb, logo, banner) occupy slot 0 only; a row claiming slot_index > 0 for
 // such a type has no on-disk naming and is reported absent, never restored.
 func confirmSlotOnDisk(ctx context.Context, dir, imageType string, slotIndex int) (bool, error) {
+	return newSlotChecker().confirm(ctx, dir, imageType, slotIndex)
+}
+
+// fanartListing is one directory's resolved fanart count, or the error that
+// stopped it being resolved. Only the count is kept: confirm needs nothing else.
+type fanartListing struct {
+	count int
+	err   error
+}
+
+// slotChecker is the ONE rule for "is this (image type, slot) on disk". Both
+// ScanExistsFlags (which clears flags) and RestoreExistsFlags (which sets them)
+// call confirm, so the two cannot drift apart (#3456).
+//
+// It memoizes the fanart directory listing per directory, so a pass over many
+// rows of one artist reads that directory once. The cache lives only as long as
+// the checker, which each pass creates fresh, so it never serves stale data
+// across passes. Both passes order their rows by artist, so one directory's rows
+// are adjacent; the one remaining window is a file written DURING that short run
+// of rows, which the next pass corrects. It is not safe for concurrent use; each pass is single
+// goroutine.
+type slotChecker struct {
+	fanart map[string]fanartListing
+}
+
+func newSlotChecker() *slotChecker {
+	return &slotChecker{fanart: make(map[string]fanartListing)}
+}
+
+// confirm reports whether the slot is on disk; see confirmSlotOnDisk for the
+// meaning of the three return shapes.
+func (c *slotChecker) confirm(ctx context.Context, dir, imageType string, slotIndex int) (bool, error) {
 	if imageType == "fanart" {
-		names, err := img.ResolveFanartNames(nil)
-		if err != nil {
-			// No fanart naming patterns at all: cannot verify, so do not restore.
+		// Observe cancellation BEFORE the cache, so a cache hit cannot answer a
+		// row after the context is done. Both callers re-check ctx.Err() on any
+		// error and abort the pass, so this ends the pass rather than skipping.
+		if err := ctx.Err(); err != nil {
 			return false, err
 		}
-		_, paths, err := img.ResolveFanart(ctx, dir, names)
-		if err != nil {
-			// Directory unreadable/absent -- unverifiable, skip.
-			return false, err
+		l, ok := c.fanart[dir]
+		if !ok {
+			l = listFanart(ctx, dir)
+			// A listing that raced a cancellation is not a fact about the
+			// directory, so it is never remembered.
+			if ctx.Err() == nil {
+				c.fanart[dir] = l
+			}
 		}
-		return slotIndex >= 0 && slotIndex < len(paths), nil
+		if l.err != nil {
+			return false, l.err
+		}
+		return slotIndex >= 0 && slotIndex < l.count, nil
 	}
 
 	// Single-slot types live at slot 0. A row past slot 0 for one of them has no
@@ -408,6 +514,30 @@ func confirmSlotOnDisk(ctx context.Context, dir, imageType string, slotIndex int
 	// #2686). Restore only on a confirmed hit.
 	_, found, err := img.FindExistingImageStrictVerifyDir(ctx, dir, patterns)
 	return found, err
+}
+
+// listFanart resolves a directory's fanart across every default naming
+// convention and returns how many ordinal slots are on disk.
+//
+// Fanart is resolved convention-agnostically via ResolveFanart over the default
+// naming set, because slot_index is a DiscoverFanart ORDINAL: the file backing
+// slot N is the Nth resolved fanart path, whatever numbering convention the
+// library uses. A numbered run with no primary file (backdrop2.jpg..) resolves
+// too, which is what the library scanner does as well.
+//
+// err != nil means "could not look" (no naming patterns, or the directory is
+// unreadable or missing). It is NEVER reported as a count of zero, because zero
+// licenses clearing flags and an error must not.
+func listFanart(ctx context.Context, dir string) fanartListing {
+	names, err := img.ResolveFanartNames(nil)
+	if err != nil {
+		return fanartListing{err: err}
+	}
+	_, paths, err := img.ResolveFanart(ctx, dir, names)
+	if err != nil {
+		return fanartListing{err: err}
+	}
+	return fanartListing{count: len(paths)}
 }
 
 // ExistsFlagRestoreOpts controls a RestoreExistsFlags pass.
@@ -500,6 +630,8 @@ func (s *Service) RestoreExistsFlags(ctx context.Context, opts ExistsFlagRestore
 		query += ` AND ai.artist_id = ?`
 		args = append(args, opts.ArtistID)
 	}
+	// Adjacent rows per artist keep the per-directory listing cache's window short.
+	query += ` ORDER BY ai.artist_id, ai.image_type, ai.slot_index`
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("querying cleared exists_flag rows: %w", err)
@@ -517,6 +649,7 @@ func (s *Service) RestoreExistsFlags(ctx context.Context, opts ExistsFlagRestore
 	// requirement under the pure-Go driver, not an optimization (mirrors
 	// ScanExistsFlags).
 	var present []presentRow
+	checker := newSlotChecker() // one fanart listing per directory per pass
 
 	for rows.Next() {
 		var artistID, imageType, artistPath string
@@ -537,7 +670,7 @@ func (s *Service) RestoreExistsFlags(ctx context.Context, opts ExistsFlagRestore
 			continue
 		}
 
-		found, confErr := confirmSlotOnDisk(ctx, dir, imageType, slotIndex)
+		found, confErr := checker.confirm(ctx, dir, imageType, slotIndex)
 		if confErr != nil {
 			// A cancellation is not an unverifiable slot -- it is an aborted
 			// pass, and it must END the scan rather than be absorbed into the
