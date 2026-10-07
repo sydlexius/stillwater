@@ -91,9 +91,10 @@ for the missing half:
 
 - `source` records what TRIGGERED the write. Its vocabulary and every predicate
   that reads it are unchanged.
-- `producer` records what SUPPLIED THE VALUE. Each writer stamps it; the
-  vocabulary and the per-writer list live in `internal/artist/history_producer.go`
-  (read its doc block rather than a copy here, which would drift).
+- `producer` records what SUPPLIED THE VALUE. Writers that supply a value stamp
+  it; a write that carries no value, or whose source is unknown, deliberately
+  leaves it empty. The vocabulary and the per-writer list live in
+  `internal/artist/history_producer.go` (read its doc block rather than a copy here, which would drift).
 
 The lock-damage repair predicate does NOT read `producer`. It still selects on
 `r.source LIKE 'rule:%'` alone (`lockDamageQuery` in
