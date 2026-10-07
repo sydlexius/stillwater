@@ -46,6 +46,15 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
   matrix lists shards exactly 1..N with a constant `shards` (#3442), so a dropped
   or duplicated shard cannot silently skip specs; `scripts/test-check-a11y-shards.sh`
   is its mutation test. Run by the gate and the `Gate Invariant` job.
+- `scripts/lib/git-plain.sh` -- `git_plain_diff`, a `git diff` that ignores the
+  developer's `GIT_EXTERNAL_DIFF`/`diff.external`, textconv, color, prefix,
+  `core.quotePath` and `GIT_DIFF_OPTS` (#3446); the header lists what each one
+  does to a parser. Use it for any `git diff` whose output a check reads.
+- `scripts/check-plain-git-diff.sh` -- fail when a parsed `git diff`/`log`/`show`
+  in `scripts/` bypasses it (blob `git show <rev>:<path>` and a commented
+  `# plain-git-exempt:` line are allowed); `scripts/test-check-plain-git-diff.sh`
+  also drives the real raw-error-leak arm and the stylelint changed-line loop
+  under each tooling variant. Run by the gate and the `Gate Invariant` job.
 - `scripts/lib/run-flags.sh` -- sourced by the gate; resolves each `RUN_*`
   variable to run / skip / default and REFUSES an unrecognized value (exit 2).
   Without it, a mistyped `RUN_VULN=truee` fell into the default branch, printed

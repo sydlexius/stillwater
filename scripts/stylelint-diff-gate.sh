@@ -27,6 +27,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
+# shellcheck source=scripts/lib/git-plain.sh
+. "$SCRIPT_DIR/lib/git-plain.sh"
 
 CSS_GLOB='web/static/css/*.css'
 
@@ -66,7 +68,7 @@ fi
 # stylelint/jq missing is "cannot check" and has to fail loudly, or a real
 # violation could ship on any machine that skipped `npm ci`. So this decision
 # is made from the diff alone, before either tool is probed for.
-if [ -z "$(git diff --name-only "$BASE" -- "$CSS_GLOB")" ]; then
+if [ -z "$(git_plain_diff --name-only "$BASE" -- "$CSS_GLOB")" ]; then
   echo "SKIP: no files under $CSS_GLOB changed since $BASE -- nothing for stylelint to check."
   exit 0
 fi
@@ -112,7 +114,7 @@ while IFS= read -r diff_line; do
       current_line=$((current_line + 1))
       ;;
   esac
-done < <(git diff --unified=0 "$BASE" -- "$CSS_GLOB")
+done < <(git_plain_diff --unified=0 "$BASE" -- "$CSS_GLOB")
 
 HAS_ADDED_LINES=1
 if [ ! -s "$ADDED_LINES" ]; then

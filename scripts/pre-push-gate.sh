@@ -64,6 +64,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # convention. Resolved here, at the top, so a typo costs a second rather than
 # sitting undetected through the tests, lint, and OpenAPI steps.
 . "$SCRIPT_DIR/lib/run-flags.sh"
+# Plain `git diff` for every check that parses it (#3446).
+. "$SCRIPT_DIR/lib/git-plain.sh"
 
 resolve_run_flag RUN_RACE "${RUN_RACE:-}"; RACE_MODE="$RESOLVED_RUN_FLAG"
 resolve_run_flag RUN_VULN "${RUN_VULN:-}"; VULN_MODE="$RESOLVED_RUN_FLAG"
@@ -209,6 +211,13 @@ bash "$SCRIPT_DIR/check-a11y-shards.sh"
 bash "$SCRIPT_DIR/test-check-a11y-shards.sh"
 
 echo ""
+echo "=== parsed git diffs use plain output (#3446) ==="
+# A developer's external diff tool, textconv or color config must not change
+# what a check parses. Mirrored by CI's "Gate Invariant" job (gate.yml).
+bash "$SCRIPT_DIR/check-plain-git-diff.sh"
+bash "$SCRIPT_DIR/test-check-plain-git-diff.sh"
+
+echo ""
 echo "=== release-blockers check self-test (#2905) ==="
 bash "$SCRIPT_DIR/test-check-release-blockers.sh"
 
@@ -273,7 +282,7 @@ echo "=== Changed Go files/packages ==="
 # of computing it twice. Motivation: M52 PR #1644 bumped
 # SSEHub.SubscribeToEventBus from cog=28 to cog=34 (cap 30); local gate PASS,
 # CI FAIL. Issue #1645.
-MODIFIED_GO_FILES=$(git diff --name-only --diff-filter=ACMR "$BASE" -- '*.go' \
+MODIFIED_GO_FILES=$(git_plain_diff --name-only --diff-filter=ACMR "$BASE" -- '*.go' \
   | grep -v '_templ\.go$' || true)
 # Guard against BSD xargs (macOS) running `dirname` with zero args when the
 # input is empty; GNU xargs has --no-run-if-empty but BSD does not. Empty
@@ -745,7 +754,7 @@ echo ""
 echo "=== Raw error leak check ==="
 # Scope to production handler code only: test files legitimately assert on
 # err.Error()/err.String() and never reach a client response.
-error_leaks=$(git diff "$BASE"..HEAD -- 'internal/api/handlers.go' 'internal/api/handlers_*.go' ':(exclude)internal/api/*_test.go' \
+error_leaks=$(git_plain_diff "$BASE"..HEAD -- 'internal/api/handlers.go' 'internal/api/handlers_*.go' ':(exclude)internal/api/*_test.go' \
   | grep '^+' \
   | grep -E 'err\.(Error|String)\(\)' \
   | grep -vE '\bslog\.|\blogger\.|\blog\.' || true)

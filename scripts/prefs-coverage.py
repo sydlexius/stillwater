@@ -62,6 +62,14 @@ class GitError(Exception):
     """
 
 
+# Plain `git diff` for the parsed name-status output (#3446): the developer's
+# external diff tool, textconv, color and rename config must not change it. See
+# scripts/lib/git-plain.sh for the measured effect of each. check-plain-git-diff.sh
+# requires every diff argv in this file to start from this constant.
+GIT_PLAIN_DIFF = ["git", "-c", "core.quotePath=false", "diff",
+                  "--no-ext-diff", "--no-textconv", "--no-color", "-M"]
+
+
 def sh(args, timeout=120):
     # Bounded so a hung git op fails fast (rc 124) instead of burning the job budget.
     try:
@@ -131,8 +139,7 @@ def changed_files(base):
     # file can't regress a token) and Copies. core.quotePath=false keeps
     # non-ASCII paths literal so the downstream os.path.isfile / git show
     # resolve the real filename instead of a C-quoted octal escape.
-    res = sh(["git", "-c", "core.quotePath=false", "diff",
-              "--name-status", "-M", "--diff-filter=AMR", rng])
+    res = sh(GIT_PLAIN_DIFF + ["--name-status", "--diff-filter=AMR", rng])
     if res.returncode != 0:
         raise GitError(f"git diff --name-status {rng} failed "
                        f"(rc={res.returncode}): {res.stderr.strip()}")
