@@ -2,10 +2,12 @@ package i18n
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -199,5 +201,130 @@ func TestTranslationKeysDefined(t *testing.T) {
 		for _, k := range keys {
 			t.Errorf("translation key %q used in %v is not defined in en.json (renders as the bare key in the UI)", k, missing[k])
 		}
+	}
+}
+
+// braceRE and verbRE match the two interpolation syntaxes locale strings use:
+// {name} (replaced by Translator.TF and by client-side .replace calls) and
+// printf verbs (%s, %d, %v, %.1f, %[2]d ...). The flag class has no space: "85%
+// for readability" is prose, not the verb "% f". "%%" is a literal percent sign,
+// so it is stripped before the verb scan.
+var (
+	braceRE  = regexp.MustCompile(`\{[A-Za-z_][A-Za-z0-9_]*\}`)
+	verbRE   = regexp.MustCompile(`%(?:\[([0-9]+)\])?[-+#0]*[0-9]*(?:\.[0-9]+)?([a-zA-Z])`)
+	percentR = strings.NewReplacer("%%", "")
+)
+
+// placeholderSig returns a comparable signature of a string's placeholders:
+// the sorted MULTISET of {name} tokens (a duplicated {count} is a different
+// string), and the printf verbs keyed by the argument they consume, sorted by
+// argument index. tf() is fmt.Sprintf, so count and order matter: an unindexed
+// "%s %d" and a translation "%d %s" differ, while a positional reorder such as
+// "%[2]d %[1]s" (needed by some languages) maps to the same index:verb pairs
+// as en's "%s %d" and is legal. A precision or width change on the same verb
+// (%.1f to %.0f) is deliberately allowed: the argument type is unchanged.
+// Stray percent signs left after removing "%%" and the verbs are COUNTED, so a
+// translation that writes "(%d %)" or "(%d%)" for en's "(%d%%)" differs (Sprintf
+// would render %!)(NOVERB)). The count is compared for every string, verbs or
+// not: a correct translation keeps its prose percent signs one for one.
+func placeholderSig(s string) string {
+	braces := braceRE.FindAllString(s, -1)
+	sort.Strings(braces)
+	var verbs []string
+	next := 1
+	body := percentR.Replace(s)
+	for _, m := range verbRE.FindAllStringSubmatch(body, -1) {
+		idx := next
+		if m[1] != "" {
+			idx, _ = strconv.Atoi(m[1])
+		}
+		next = idx + 1
+		verbs = append(verbs, fmt.Sprintf("%03d:%s", idx, m[2]))
+	}
+	sort.Strings(verbs)
+	stray := strings.Count(verbRE.ReplaceAllString(body, ""), "%")
+	// Literal "%%" signs are counted too: a dropped one renders a different string.
+	return fmt.Sprintf("%s | %s | stray%%=%d | literal%%=%d", strings.Join(braces, " "), strings.Join(verbs, " "), stray, strings.Count(s, "%%"))
+}
+
+// TestPlaceholderSig pins the signature rules the parity guard relies on.
+func TestPlaceholderSig(t *testing.T) {
+	same := [][2]string{
+		{"%d of %d (%d%%)", "%d sur %d (%d%%)"},
+		{"Use 85% for readability: %s", "Utilisez 85% pour la lisibilite : %s"},
+		{"%s and %s share %s", "%[3]s, %[1]s, %[2]s"},
+		{"{count} rows", "{count} lignes"},
+		{"%.1f MB", "%.0f Mo"}, // precision change on the same verb is allowed
+		{"100%% sure", "sur a 100%%"},
+	}
+	for _, c := range same {
+		if placeholderSig(c[0]) != placeholderSig(c[1]) {
+			t.Errorf("want equal signatures: %q vs %q (%q vs %q)", c[0], c[1], placeholderSig(c[0]), placeholderSig(c[1]))
+		}
+	}
+	differ := [][2]string{
+		{"%d of %d", "%d de"},               // one of two verbs dropped
+		{"%s has %d", "%d a %s"},            // unindexed order swapped
+		{"{count} rows", "{count} {count}"}, // duplicated token
+		{"%s and %s share %s", "%s et %s"},  // third verb dropped
+		{"%d", "%s"},
+		{"(%d%%)", "(%d %)"},  // stray percent, space before it
+		{"%d%%", "%d"},        // literal percent dropped
+		{"(%d%%)", "(%d%)"},   // unescaped percent
+		{"50% off", "50 off"}, // prose percent dropped                        // verb type changed
+	}
+	for _, c := range differ {
+		if placeholderSig(c[0]) == placeholderSig(c[1]) {
+			t.Errorf("want different signatures: %q vs %q", c[0], c[1])
+		}
+	}
+}
+
+// TestLocalePlaceholderParity guards a translation that drops, renames or adds a
+// placeholder: the code substitutes values by name, so a fr/ja string missing
+// "{count}" renders the number nowhere, and an extra "{x}" renders literally.
+// For every key a locale shares with en, the set of {name} placeholders and of
+// printf verbs must equal en's. Locales are discovered from the directory so a
+// new one is covered automatically.
+func TestLocalePlaceholderParity(t *testing.T) {
+	root := repoRoot(t)
+	dir := filepath.Join(root, "internal", "i18n", "locales")
+	load := func(loc string) map[string]string {
+		raw, err := os.ReadFile(filepath.Join(dir, loc+".json"))
+		if err != nil {
+			t.Fatalf("reading %s.json: %v", loc, err)
+		}
+		var m map[string]string
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("parsing %s.json: %v", loc, err)
+		}
+		return m
+	}
+	en := load("en")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dir, err)
+	}
+	for _, entry := range entries {
+		loc := strings.TrimSuffix(entry.Name(), ".json")
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" || loc == "en" {
+			continue
+		}
+		t.Run(loc, func(t *testing.T) {
+			var bad []string
+			for key, val := range load(loc) {
+				enVal, ok := en[key]
+				if !ok {
+					continue // orphan keys are TestLocaleCompleteness's concern
+				}
+				if want, got := placeholderSig(enVal), placeholderSig(val); want != got {
+					bad = append(bad, key+": en has ["+want+"], "+loc+" has ["+got+"]")
+				}
+			}
+			sort.Strings(bad)
+			if len(bad) > 0 {
+				t.Errorf("%s.json has %d key(s) whose placeholders differ from en.json:\n  %s", loc, len(bad), strings.Join(bad, "\n  "))
+			}
+		})
 	}
 }
