@@ -9,8 +9,9 @@
 // browser.newContext() does not inherit test.use options by itself.
 //
 // EXPECTED TEXT IS READ FROM THE LOCALE JSON, never hardcoded: the spec proves
-// the page shows what the file says, so a reworded translation does not break it
-// while a missing or reverted key (a fall-back to English) does.
+// the page shows what the file says, so a reworded translation does not break it.
+// A key reverted to English IN the JSON would still match the page, so KEYS lists
+// every key the spec reads and one test asserts each differs from en.
 //
 // FIXTURE: helpers/seed-registry-repair.js. The fixture can be repaired exactly
 // once, so each locale boots its own server (describe-level beforeAll); the
@@ -32,7 +33,30 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // fill replaces {name} placeholders with literal values.
 const fill = (tpl, vars) => Object.entries(vars).reduce((s, [k, v]) => s.replaceAll(`{${k}}`, String(v)), tpl);
 // templateRe turns a message with {placeholders} into a regex matching any value for each.
-const templateRe = (tpl) => new RegExp(`^${escapeRe(tpl).replace(/\\\{[a-z]+\\\}/g, '.+?')}$`);
+// {time} is free text; every other placeholder here is a number, so a literal
+// "{rebuilt}" left unreplaced does not match.
+const templateRe = (tpl) => new RegExp(`^${escapeRe(tpl).replace(/\\\{([a-z]+)\\\}/g, (_, n) => (n === 'time' ? '.+?' : '\\d+'))}$`);
+
+// Every locale key the spec reads. One list, so the differs-from-English guard
+// cannot drift from what is actually asserted.
+const KEYS = [
+  'banner.registry_repair.title',
+  'banner.registry_repair.run',
+  'banner.registry_repair.running',
+  'banner.registry_repair.confirm',
+  'banner.registry_repair.body.one',
+  'banner.registry_repair.body.other',
+  'banner.registry_repair.checked',
+  'banner.registry_repair.aria_label',
+  'banner.registry_repair.dismiss_aria',
+  'banner.registry_repair.toast.started',
+  'banner.registry_repair.toast.done',
+  'banner.registry_repair.toast.failed',
+  'common.learn_more',
+  'common.cancel',
+  'common.confirm',
+  'notifications.dismiss_aria',
+];
 
 // Records every toast that enters the container (text + lang): the started toast
 // is auto-dismissed and a tiny fixture can finish before a poll would see it.
@@ -81,8 +105,8 @@ for (const [code, region] of [['fr', 'fr-FR'], ['ja', 'ja-JP']]) {
       return { context, page };
     }
 
-    test('the translations differ from English (the proof cannot pass on a fall-back)', () => {
-      for (const key of ['banner.registry_repair.title', 'banner.registry_repair.run', 'banner.registry_repair.toast.done', 'common.cancel']) {
+    test('every key the spec reads is translated, not English (the proof cannot pass on a fall-back)', () => {
+      for (const key of KEYS) {
         expect(L[key], `${code}.json lacks ${key}`).toBeTruthy();
         expect(L[key], `${code}.json ${key} equals English`).not.toBe(en[key]);
       }
@@ -100,6 +124,41 @@ for (const [code, region] of [['fr', 'fr-FR'], ['ja', 'ja-JP']]) {
       await expect(banner.getByRole('button', { name: L['banner.registry_repair.run'] })).toHaveCount(1);
       await expect(banner.getByRole('button', { name: L['banner.registry_repair.dismiss_aria'] })).toHaveCount(1);
       await expect(banner).not.toContainText(en['banner.registry_repair.title']);
+      // Live region name and the link, from their own keys.
+      await expect(page.locator('#sw-registry-repair-live')).toHaveAttribute('aria-label', L['banner.registry_repair.aria_label']);
+      await expect(banner.getByRole('link', { name: L['common.learn_more'] })).toHaveCount(1);
+      await context.close();
+    });
+
+    // Stubbed count 2: the real fixture has one row, so only a stub renders the
+    // plural (.other) string, the one carrying {count}. The time must use the
+    // page language (template comment): expected value is computed in the page.
+    test('plural count and the checked time render in the page locale', async ({ browser, locale }) => {
+      const { context, page } = await openBanner(browser, locale);
+      await page.route('**/registry-repair/banner', (route) => route.fulfill({
+        json: { ok: true, needs_repair: true, count: 2, checked_at: '2026-03-04T15:06:07Z' },
+      }));
+      await page.goto(`${server.baseURL}/reports`);
+      await expect(page.locator(BANNER)).toBeVisible();
+      await expect(page.locator('#sw-registry-repair-count')).toContainText(fill(L['banner.registry_repair.body.other'], { count: 2 }));
+      const when = await page.evaluate((r) => new Date('2026-03-04T15:06:07Z').toLocaleString(r), locale);
+      await expect(page.locator('#sw-registry-repair-checked')).toHaveText(fill(L['banner.registry_repair.checked'], { time: when }));
+      await context.close();
+    });
+
+    // Stubbed run: the running label while the job reports running, then the
+    // failed toast (fixed message) when it reports failed. Does not touch the fixture.
+    test('running label and failed toast are localized', async ({ browser, locale }) => {
+      const { context, page } = await openBanner(browser, locale);
+      let status = { running: true, status: 'running' };
+      await page.route('**/registry-repair/remediate', (route) => route.fulfill({ status: 202, json: { running: true, status: 'running' } }));
+      await page.route('**/registry-repair/status', (route) => route.fulfill({ json: status }));
+      await page.locator('#sw-registry-repair-run').click();
+      await page.locator('#confirm-modal-accept').click();
+      await expect(page.locator('#sw-registry-repair-run')).toHaveText(L['banner.registry_repair.running']);
+      status = { running: false, status: 'failed', error_code: 'timeout' };
+      await expect.poll(() => page.evaluate(() => window.__toasts.map((t) => t.text)), { timeout: 30_000 })
+        .toContain(L['banner.registry_repair.toast.failed']);
       await context.close();
     });
 
@@ -141,8 +200,14 @@ for (const [code, region] of [['fr', 'fr-FR'], ['ja', 'ja-JP']]) {
       const toasts = await page.evaluate(() => window.__toasts);
       for (const key of ['started', 'done']) {
         const t = toasts.find((x) => templateRe(L[`banner.registry_repair.toast.${key}`]).test(x.text));
+        expect(t, `no ${key} toast was recorded`).toBeTruthy();
         expect(t.lang, `${key} toast lang`).toBe(code);
       }
+      // The done toast is sticky, so its dismiss button is still there: its
+      // accessible name and language are the page locale's, not English.
+      const dismiss = page.locator('#error-toast-container').getByRole('button', { name: L['notifications.dismiss_aria'] });
+      await expect(dismiss).toHaveCount(1);
+      await expect(dismiss).toHaveAttribute('lang', code);
       for (const t of toasts) {
         expect(t.text, 'no English toast text on a localized page').not.toMatch(/Image registry/);
       }

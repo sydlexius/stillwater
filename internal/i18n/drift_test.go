@@ -2,10 +2,12 @@ package i18n
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -204,29 +206,64 @@ func TestTranslationKeysDefined(t *testing.T) {
 
 // braceRE and verbRE match the two interpolation syntaxes locale strings use:
 // {name} (replaced by Translator.TF and by client-side .replace calls) and
-// printf verbs (%s, %d, %v, %.1f, ...). "%%" is a literal percent sign, so it is
-// stripped before the verb scan.
+// printf verbs (%s, %d, %v, %.1f, %[2]d ...). The flag class has no space: "85%
+// for readability" is prose, not the verb "% f". "%%" is a literal percent sign,
+// so it is stripped before the verb scan.
 var (
 	braceRE  = regexp.MustCompile(`\{[A-Za-z_][A-Za-z0-9_]*\}`)
-	verbRE   = regexp.MustCompile(`%[-+# 0]*[0-9]*(?:\.[0-9]+)?[a-zA-Z]`)
+	verbRE   = regexp.MustCompile(`%(?:\[([0-9]+)\])?[-+#0]*[0-9]*(?:\.[0-9]+)?([a-zA-Z])`)
 	percentR = strings.NewReplacer("%%", "")
 )
 
-// placeholderSet returns the sorted, de-duplicated {name} and printf-verb tokens in s.
-func placeholderSet(s string) []string {
-	seen := map[string]struct{}{}
-	for _, m := range braceRE.FindAllString(s, -1) {
-		seen[m] = struct{}{}
+// placeholderSig returns a comparable signature of a string's placeholders:
+// the sorted MULTISET of {name} tokens (a duplicated {count} is a different
+// string), and the printf verbs keyed by the argument they consume, sorted by
+// argument index. tf() is fmt.Sprintf, so count and order matter: an unindexed
+// "%s %d" and a translation "%d %s" differ, while a positional reorder such as
+// "%[2]d %[1]s" (needed by some languages) maps to the same index:verb pairs
+// as en's "%s %d" and is legal.
+func placeholderSig(s string) string {
+	braces := braceRE.FindAllString(s, -1)
+	sort.Strings(braces)
+	var verbs []string
+	next := 1
+	for _, m := range verbRE.FindAllStringSubmatch(percentR.Replace(s), -1) {
+		idx := next
+		if m[1] != "" {
+			idx, _ = strconv.Atoi(m[1])
+		}
+		next = idx + 1
+		verbs = append(verbs, fmt.Sprintf("%03d:%s", idx, m[2]))
 	}
-	for _, m := range verbRE.FindAllString(percentR.Replace(s), -1) {
-		seen[m] = struct{}{}
+	sort.Strings(verbs)
+	return strings.Join(braces, " ") + " | " + strings.Join(verbs, " ")
+}
+
+// TestPlaceholderSig pins the signature rules the parity guard relies on.
+func TestPlaceholderSig(t *testing.T) {
+	same := [][2]string{
+		{"%d of %d (%d%%)", "%d sur %d (%d%%)"},
+		{"Use 85% for readability: %s", "Utilisez 85% pour la lisibilite : %s"},
+		{"%s and %s share %s", "%[3]s, %[1]s, %[2]s"},
+		{"{count} rows", "{count} lignes"},
 	}
-	out := make([]string, 0, len(seen))
-	for m := range seen {
-		out = append(out, m)
+	for _, c := range same {
+		if placeholderSig(c[0]) != placeholderSig(c[1]) {
+			t.Errorf("want equal signatures: %q vs %q (%q vs %q)", c[0], c[1], placeholderSig(c[0]), placeholderSig(c[1]))
+		}
 	}
-	sort.Strings(out)
-	return out
+	differ := [][2]string{
+		{"%d of %d", "%d de"},               // one of two verbs dropped
+		{"%s has %d", "%d a %s"},            // unindexed order swapped
+		{"{count} rows", "{count} {count}"}, // duplicated token
+		{"%s and %s share %s", "%s et %s"},  // third verb dropped
+		{"%d", "%s"},                        // verb type changed
+	}
+	for _, c := range differ {
+		if placeholderSig(c[0]) == placeholderSig(c[1]) {
+			t.Errorf("want different signatures: %q vs %q", c[0], c[1])
+		}
+	}
 }
 
 // TestLocalePlaceholderParity guards a translation that drops, renames or adds a
@@ -266,9 +303,8 @@ func TestLocalePlaceholderParity(t *testing.T) {
 				if !ok {
 					continue // orphan keys are TestLocaleCompleteness's concern
 				}
-				want, got := placeholderSet(enVal), placeholderSet(val)
-				if strings.Join(want, " ") != strings.Join(got, " ") {
-					bad = append(bad, key+": en has "+strings.Join(want, " ")+", "+loc+" has "+strings.Join(got, " "))
+				if want, got := placeholderSig(enVal), placeholderSig(val); want != got {
+					bad = append(bad, key+": en has ["+want+"], "+loc+" has ["+got+"]")
 				}
 			}
 			sort.Strings(bad)
