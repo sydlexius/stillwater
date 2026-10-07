@@ -46,7 +46,7 @@ check "gate does not run test-check-plain-git-diff.sh as its own step" \
     test "$(grep -v '^[[:space:]]*#' "$GATE" | grep -c 'test-check-plain-git-diff\.sh')" -eq 0
 check "test-git-clean-env.sh still covers it" grep -q '^    test-check-plain-git-diff\.sh$' "$CLEAN_ENV"
 check "clean-env full-verdict branch runs the suite without SW_PLAIN_SELFCHECK" \
-    grep -qF 'OUT=$(cd "$REPO_ROOT" && GIT_DIR="$GDIR" bash "scripts/$helper" 2>&1)' "$CLEAN_ENV"
+    grep -qF 'OUT=$(cd "$REPO_ROOT" && env -u SW_PLAIN_SELFCHECK GIT_DIR="$GDIR" bash "scripts/$helper" 2>&1)' "$CLEAN_ENV"
 check "clean-env requires the full-verdict exit to be exactly 0" \
     grep -qF 'test "$RC" -eq 0 || true' "$CLEAN_ENV"
 check "test-git-clean-env.sh enforces its exit status" grep -q '^FULL_VERDICT_HELPERS="test-check-plain-git-diff\.sh"' "$CLEAN_ENV"

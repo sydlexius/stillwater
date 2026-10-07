@@ -222,7 +222,7 @@ for helper in "${HELPERS[@]}"; do
     case " $FULL_VERDICT_HELPERS " in *" $helper "*) full_verdict=1 ;; esac
     set +e
     if [ "$full_verdict" -eq 1 ]; then
-        OUT=$(cd "$REPO_ROOT" && GIT_DIR="$GDIR" bash "scripts/$helper" 2>&1)
+        OUT=$(cd "$REPO_ROOT" && env -u SW_PLAIN_SELFCHECK GIT_DIR="$GDIR" bash "scripts/$helper" 2>&1)
     else
         OUT=$(cd "$REPO_ROOT" && GIT_DIR="$GDIR" SW_PLAIN_SELFCHECK=1 bash "scripts/$helper" 2>&1)
     fi
@@ -231,6 +231,8 @@ for helper in "${HELPERS[@]}"; do
     if [ "$full_verdict" -eq 1 ]; then
         require "scripts/$helper exits 0 (its own verdict is enforced here)" \
             test "$RC" -eq 0 || true
+        # Surface WHICH case failed; the verdict line alone hides it.
+        [ "$RC" -eq 0 ] || printf '%s\n' "$OUT" | grep -E '^[[:space:]]*FAIL' | head -10 >&2
     fi
 
     # The helper must actually have RUN. Its own verdict is not this suite's
