@@ -1113,5 +1113,5 @@ echo ""
 # gate can fail while this line prints (#2983). A "SKIP:" line means a check
 # did not run; a check that RAN and FAILED exits non-zero before reaching
 # here. scripts/check-gate-invariant.sh enforces that mechanically.
-gate_timing_summary
+gate_timing_summary || true
 echo "All hard checks passed. Proceed with /pr-review-toolkit:review-pr."

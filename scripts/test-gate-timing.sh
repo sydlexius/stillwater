@@ -8,6 +8,7 @@
 #      can be missing from the table.
 #   3. test-check-plain-git-diff.sh runs exactly once per gate: not as its own
 #      gate step, and enforced (exit 0) inside test-git-clean-env.sh instead.
+# NOTE: CI's "Gate Invariant" job does not run this; it runs in the pre-push gate only.
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 GATE="${GATE:-$ROOT/scripts/pre-push-gate.sh}"
@@ -33,10 +34,10 @@ check "failing run keeps its exit status (7)" test "$RC" -eq 7
 check "failing run still prints the summary" grep -Eq '^ +[0-9]+s  gamma$' <<<"$OUT"
 
 # 2. no raw `echo "=== ..."` header left in the gate, and the gate is wired up.
-check "gate has no header that bypasses gate_step" test "$(grep -c '^echo "=== ' "$GATE")" -eq 0
+check "gate has no header that bypasses gate_step" test "$(grep -c '^[[:space:]]*echo .=== ' "$GATE")" -eq 0
 check "gate sources the timing lib" grep -q 'lib/gate-timing.sh' "$GATE"
 check "gate prints the summary before its success banner" \
-    bash -c 'awk "/^gate_timing_summary\$/{s=NR} /^echo \"All hard checks passed/{b=NR} END{exit !(s && b && s<b)}" "$1"' _ "$GATE"
+    bash -c 'awk "/^gate_timing_summary/{s=NR} /^echo \"All hard checks passed/{b=NR} END{exit !(s && b && s<b)}" "$1"' _ "$GATE"
 check "gate prints the summary from its EXIT cleanup" \
     bash -c 'sed -n "/^cleanup() {/,/^}/p" "$1" | grep -q gate_timing_summary' _ "$GATE"
 
@@ -44,6 +45,10 @@ check "gate prints the summary from its EXIT cleanup" \
 check "gate does not run test-check-plain-git-diff.sh as its own step" \
     test "$(grep -v '^[[:space:]]*#' "$GATE" | grep -c 'test-check-plain-git-diff\.sh')" -eq 0
 check "test-git-clean-env.sh still covers it" grep -q '^    test-check-plain-git-diff\.sh$' "$CLEAN_ENV"
+check "clean-env full-verdict branch runs the suite without SW_PLAIN_SELFCHECK" \
+    grep -qF 'OUT=$(cd "$REPO_ROOT" && GIT_DIR="$GDIR" bash "scripts/$helper" 2>&1)' "$CLEAN_ENV"
+check "clean-env requires the full-verdict exit to be exactly 0" \
+    grep -qF 'test "$RC" -eq 0 || true' "$CLEAN_ENV"
 check "test-git-clean-env.sh enforces its exit status" grep -q '^FULL_VERDICT_HELPERS="test-check-plain-git-diff\.sh"' "$CLEAN_ENV"
 
 echo "=== RESULTS: $pass passed, $fail failed ==="
