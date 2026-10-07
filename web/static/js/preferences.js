@@ -234,7 +234,24 @@
 
   // Fetch all preferences from the server, update cache, and apply.
   // Returns a Promise that resolves with the preferences object.
+  //
+  // A call made while a load is already in flight returns that load's promise
+  // instead of starting another fetch. Without this, a caller (a test helper
+  // waiting for the page's own load, say) would start a SECOND request that can
+  // resolve before the first, and the first one's applyAll(savedPrefs) would
+  // then land last. The reference clears when the load settles, success or
+  // failure, so a call after that always fetches fresh.
+  var inFlightLoad = null;
   function load() {
+    if (inFlightLoad) return inFlightLoad;
+    var p = doLoad();
+    inFlightLoad = p;
+    var clear = function () { if (inFlightLoad === p) inFlightLoad = null; };
+    p.then(clear, clear);
+    return p;
+  }
+
+  function doLoad() {
     // Step 1: Apply cached preferences immediately (no flash of defaults).
     var cached = readCache();
     if (cached) {

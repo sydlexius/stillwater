@@ -36,9 +36,11 @@ Prior values accrue automatically from manual edits, provider metadata refreshes
 
 To revert a field:
 
-1. Click the **clock icon** next to the field. A popover opens listing up to five recent prior values, most recent first, each showing its source and timestamp.
+1. Click the **clock icon** next to the field. A popover opens listing up to five recent prior values, most recent first, each showing its source, a timestamp and, unless the source already says it (Undo, rule and identify entries), where the value came from. A value line such as "Value: from Last.fm" or "Value: set by a user" says what supplied that value. Changes made before Stillwater tracked this, and a few others that cannot be known, read "Value source not recorded".
 2. Click the value you want to restore. It is staged back into the field's input and the field is marked changed.
 3. Click **Save** to apply it (or **Cancel** to discard the staged value).
+
+Restaging an old value and saving it is a new edit, so the new entry records no value source and reads "Value source not recorded", even when the old value came from a provider.
 
 This is the per-field undo path. There is no global "undo all" -- each field manages its own history independently.
 
