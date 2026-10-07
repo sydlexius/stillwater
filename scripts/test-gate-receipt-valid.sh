@@ -200,6 +200,26 @@ expect_run "object-id local ref that differs from the sha field runs the gate" "
 reset; precond "valid receipt and stamp (abbreviated id)"
 hook "${B:0:12} $B refs/heads/feature $ZERO"
 expect_run "an abbreviated object id as the local ref runs the gate" "not a branch"
+reset; precond "valid receipt and stamp (39-char id)"
+hook "${B:0:39} ${B:0:39} refs/heads/feature $ZERO"
+expect_run "a 39-char hex local ref equal to the sha field runs the gate" "not a branch"
+# The hook's `bash` resolves through PATH; put the system /bin/bash (3.2 on macOS) first.
+mkdir -p "$WORK/sysbash"; ln -sf /bin/bash "$WORK/sysbash/bash"
+# 40 x A: uppercase A-E sit inside the range [0-9a-f] in a UTF-8 collation.
+UB=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+reset; precond "valid receipt and stamp (uppercase id, UTF-8 locale)"
+hook "$UB $UB refs/heads/feature $ZERO" "PATH=$WORK/sysbash:$PATH" LC_ALL=en_US.UTF-8
+expect_run "an uppercase 40-hex local ref equal to the sha field runs the gate under /bin/bash and UTF-8" "not a branch"
+NH=$(printf 'g%.0s' $(seq 40))
+reset; precond "valid receipt and stamp (non-hex 40-char ref)"
+hook "$NH $NH refs/heads/feature $ZERO"
+expect_run "a 40-char non-hex local ref equal to the sha field runs the gate" "not a branch"
+git -C "$R" tag -a -m annotated tagobj "$B"
+TAGOID=$(git -C "$R" rev-parse refs/tags/tagobj)
+reset; precond "valid receipt and stamp (annotated tag object id)"
+realpush "$TAGOID:refs/heads/objid-annotated"
+if [ "$(ran)" = yes ] && ! printf '%s' "$OUT" | grep -q 'skipping the gate' && printf '%s' "$OUT" | grep -q 'not a commit'; then pass "a real push of an annotated tag object id to refs/heads/* runs the gate"
+else fail "annotated tag object id was not refused (ran=$(ran))"; fi
 echo "--- stamp"
 reset; stamp_edit 'del(.patch_base)'; hook "$PUSH_B"
 expect_run "a stamp with no patch_base field runs the gate" "no patch_base"

@@ -32,7 +32,8 @@
 #      must be a branch (or HEAD) push of a real commit, or a full 40/64-hex
 #      object id equal to the line's sha pushed to a refs/heads/* destination
 #      (safe-push's form); a delete (all-zero
-#      sha), a tag push, or no stdin at all means run the gate. Multiple refs
+#      sha), a push whose source is a tag or a non-commit object, or no stdin at all
+#      means run the gate; the destination ref matters only for the object-id form. Multiple refs
 #      are allowed only when every one has that same tree (simplest correct
 #      option: nothing is skipped on a partial match);
 #   3. the working tree is clean (untracked files count as dirty, whatever the
@@ -151,10 +152,15 @@ while read -r lref lsha rref _rsha; do
     # safe-push pushes `<full object id>:refs/heads/<b>`, so git hands the hook the
     # id as the local ref. Honored only when it is a full id equal to the sha
     # field and the destination is a branch.
-    *[!0-9a-f]* | "") refuse "pushed ref '$lref' is not a branch or a full object id" ;;
+    *[!0123456789abcdef]* | "") refuse "pushed ref '$lref' is not a branch or a full object id" ;;
     *)
       case "${#lref}:$rref" in
-        40:refs/heads/* | 64:refs/heads/*) [ "$lref" = "${lsha:-}" ] || refuse "pushed object id '$lref' differs from the sha field" ;;
+        40:refs/heads/* | 64:refs/heads/*)
+          [ "$lref" = "${lsha:-}" ] || refuse "pushed object id '$lref' differs from the sha field"
+          # It must BE a commit: a tag id peels to another id, a tree or blob fails.
+          [ "$(git rev-parse --verify -q "$lref^{commit}" 2>/dev/null || echo none)" = "$lref" ] \
+            || refuse "pushed object id '$lref' is not a commit"
+          ;;
         *) refuse "pushed ref '$lref' is not a branch, or an object id pushed to a non-branch ref" ;;
       esac
       ;;
