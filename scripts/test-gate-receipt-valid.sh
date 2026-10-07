@@ -20,6 +20,10 @@ git_clean_env_unset
 # deny list is the one the stamp writer uses).
 unset GATE_STAMP_DIR BASE
 for _v in $(env | grep -oE '^SKIP_[A-Za-z0-9_]*' || true); do unset "$_v"; done
+# Unset RUN_* mode flags so the test cases run with the default gate behavior,
+# not the caller's requested modes. Cases that need a specific mode pass it
+# explicitly to the hook (e.g., hook "$PUSH_B" RUN_A11Y=1).
+unset RUN_RACE RUN_VULN RUN_PROVIDER_SMOKE RUN_A11Y PRE_PUSH_FORCE_GATE
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 
 if ! command -v jq >/dev/null 2>&1; then

@@ -794,6 +794,19 @@ jobs:
       - name: Gate receipt decision self-test
         run: bash scripts/test-gate-receipt-valid.sh
 
+      # Verify the receipt self-test ignores inherited RUN_* flags (#3459): the
+      # test suite unsets them at startup so mode mismatches cannot invalidate
+      # a receipt. This step runs the suite with flags exported to ensure the
+      # unsetting actually silences them.
+      - name: Receipt self-test ignores the caller's RUN_* flags
+        env:
+          RUN_A11Y: "1"
+          RUN_RACE: "1"
+          RUN_VULN: "1"
+          RUN_PROVIDER_SMOKE: "1"
+          PRE_PUSH_FORCE_GATE: "1"
+        run: bash scripts/test-gate-receipt-valid.sh
+
       # An inherited GIT_DIR makes `git init <path>` re-initialize GIT_DIR and
       # ignore <path>. Run from a worktree by the pre-push hook, that wrote
       # core.bare=true into the MAIN repository's shared config and silently
