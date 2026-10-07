@@ -21,9 +21,9 @@ An administrator can also preview the migration in the browser at `/reports/extr
 - A note above the table repeats that the migration is one-way and that nothing is deleted.
 - If some artist folders were not found, a notice above the summary says how many were skipped and that nothing under them was checked.
 - If the preview stops before it finishes, an error notice appears above whatever rows it reached (or on its own if it reached none). Any rows shown are not a complete plan; reload to try again.
-- If another migration or preview is already running, a notice says so and no table is shown.
+- If a migration is running, or another preview is still loading, a notice says so and no table is shown.
 
-The preview reads every artist's folder, so on a large library it can take a while. While it is open it holds the same lock a run does, so a run started at that moment answers "already running" (a 409); wait for the page to finish loading first.
+The preview reads every artist's folder, so on a large library it can take a while. It never blocks a run: a run you start while a preview is loading goes ahead. While a run is in progress the page shows a notice instead of a preview, and a second preview opened at the same time shows the same notice. The table shows at most the first 500 rows and says how many it left out; the summary still counts every file.
 
 The page has no run button yet: to move the files, use the API as described below.
 

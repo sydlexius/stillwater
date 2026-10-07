@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -306,9 +307,8 @@ func TestExtraFanartPage_RunningNoticeWhenSingletonHeld(t *testing.T) {
 	if !strings.Contains(body, `id="extrafanart-migration-running"`) {
 		t.Error("want the running notice")
 	}
-	// An open preview holds the same slot a run does, so the notice names both.
-	if !strings.Contains(body, "migration or preview") {
-		t.Error("the running notice must say that another migration or preview holds the lock")
+	if !strings.Contains(body, "migration is running") {
+		t.Error("the running notice must say that a migration is running")
 	}
 	if strings.Contains(body, "extrafanart-migration-table") || strings.Contains(body, "Alpha") {
 		t.Error("the running notice must not come with a plan")
@@ -498,5 +498,79 @@ func TestExtraFanartPage_CanceledPreviewLogsInfoAndStops(t *testing.T) {
 	}
 	if w.Body.Len() != 0 {
 		t.Errorf("nothing should be rendered for a canceled request, got %d bytes", w.Body.Len())
+	}
+}
+
+// parkOnWarn blocks the first "planning failed" log (the unplannable artist) until
+// released, which parks a preview in the middle of its dry run.
+type parkOnWarn struct {
+	slog.Handler
+	parked  chan struct{}
+	release chan struct{}
+	first   *atomic.Bool
+}
+
+func (h parkOnWarn) Handle(ctx context.Context, rec slog.Record) error {
+	if strings.Contains(rec.Message, "planning failed") {
+		// Only the first caller parks; a sync.Once would block the others too.
+		if h.first.CompareAndSwap(false, true) {
+			close(h.parked)
+			<-h.release
+		}
+	}
+	return h.Handler.Handle(ctx, rec)
+}
+
+// A preview that is open (parked mid-dry-run) never makes a live run answer 409,
+// and a second page load meanwhile shows the running notice instead of a second
+// preview. Both the POST run and the second load must finish while the first
+// preview is still parked.
+func TestExtraFanartPage_OpenPreviewDoesNotBlockALiveRun(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForBackdrops(t)
+	seedPlanFailArtist(t, svc, "Broken")
+	a := seedExtraFanartArtist(t, svc, "Alpha", 2)
+	parked, release := make(chan struct{}), make(chan struct{})
+	r.logger = slog.New(parkOnWarn{Handler: slog.NewTextHandler(&bytes.Buffer{}, nil), parked: parked, release: release, first: &atomic.Bool{}})
+
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() { done <- getExtraFanartPage(t, r, adminContext()) }()
+	select {
+	case <-parked:
+	case <-time.After(10 * time.Second):
+		t.Fatal("precondition: the preview never reached the parked state")
+	}
+	r.extraFanartMu.Lock()
+	previewing := r.extraFanartPreviewing
+	r.extraFanartMu.Unlock()
+	if !previewing {
+		t.Fatal("precondition: a parked preview must hold the preview guard")
+	}
+
+	second := getExtraFanartPage(t, r, adminContext()).Body.String()
+	if !strings.Contains(second, `id="extrafanart-migration-running"`) || strings.Contains(second, "extrafanart-migration-table") {
+		t.Error("a second preview while one is open must show the running notice and no table")
+	}
+	w := postExtraFanart(r, adminContext(), `{"dry_run": false}`, "application/json")
+	if w.Code == http.StatusConflict {
+		t.Fatalf("an open preview made a live run answer 409: %s", w.Body.String())
+	}
+	if res := decodeRun(t, w); res.Moved != 2 {
+		t.Errorf("the live run should have moved Alpha's 2 files, got %+v", res)
+	}
+	if _, err := os.Stat(filepath.Join(a.dir, "extrafanart")); !os.IsNotExist(err) {
+		t.Errorf("the live run did not complete while the preview was open (err %v)", err)
+	}
+
+	close(release)
+	first := (<-done).Body.String()
+	if strings.Contains(first, "extrafanart_migration.") {
+		t.Error("the parked preview rendered a bare key")
+	}
+	r.extraFanartMu.Lock()
+	still := r.extraFanartPreviewing || r.extraFanartRunning
+	r.extraFanartMu.Unlock()
+	if still {
+		t.Error("a guard was left held after both finished")
 	}
 }

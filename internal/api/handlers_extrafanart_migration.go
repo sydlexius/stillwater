@@ -199,7 +199,12 @@ func (r *Router) runExtraFanartMigration(ctx context.Context, dryRun bool) (*ext
 		r.extraFanartRunning = false
 		r.extraFanartMu.Unlock()
 	}()
+	return r.planExtraFanartMigration(ctx, dryRun, res)
+}
 
+// planExtraFanartMigration is the body of a run, for a caller that already holds
+// whichever guard applies (the run singleton, or the page's preview guard).
+func (r *Router) planExtraFanartMigration(ctx context.Context, dryRun bool, res *extraFanartRunResult) (*extraFanartRunResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, extraFanartRunTimeout)
 	defer cancel()
 

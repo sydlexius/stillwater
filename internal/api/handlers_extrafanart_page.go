@@ -20,8 +20,9 @@ import (
 
 // handleExtraFanartMigrationPage renders the admin preview page. The plan the
 // operator sees comes from a real dry run on every load, so it cannot be a
-// stale snapshot. The dry run holds the migration's singleton slot while it
-// runs, so a second load during it (or during a live run) sees the running notice.
+// stale snapshot. The dry run takes the page's own preview guard, never the run
+// singleton, so an open preview cannot make a live run answer 409. A second load
+// during a preview, or any load during a run, sees the running notice.
 func (r *Router) handleExtraFanartMigrationPage(w http.ResponseWriter, req *http.Request) {
 	if !r.requireForeignAdmin(w, req) {
 		return
@@ -33,8 +34,9 @@ func (r *Router) handleExtraFanartMigrationPage(w http.ResponseWriter, req *http
 		r.logger.Warn("extrafanart migration: could not extend the write deadline; a long preview may lose its page",
 			slog.String("error", err.Error()))
 	}
-	res, err := r.runExtraFanartMigration(req.Context(), true)
-	view := extraFanartView(res, r.assetsFor(req).BasePath)
+	assets := r.assetsFor(req)
+	res, err := r.previewExtraFanartMigration(req.Context())
+	view := extraFanartView(res, assets.BasePath)
 	switch {
 	case errors.Is(err, errExtraFanartRunning):
 		view.Running = true
@@ -48,7 +50,7 @@ func (r *Router) handleExtraFanartMigrationPage(w http.ResponseWriter, req *http
 		r.logger.Error("extrafanart migration preview failed", slog.String("error", err.Error()))
 		// view.Aborted is already set from the result (extraFanartView).
 	}
-	renderTempl(w, req, templates.ExtraFanartMigrationPage(r.assetsFor(req), view))
+	renderTempl(w, req, templates.ExtraFanartMigrationPage(assets, view))
 }
 
 // extraFanartView converts a run result into the template's view model.
@@ -69,4 +71,26 @@ func extraFanartView(res *extraFanartRunResult, basePath string) templates.Extra
 		}
 	}
 	return v
+}
+
+// previewExtraFanartMigration runs the dry run for the page under its own guard.
+// It yields (errExtraFanartRunning, so the page shows the running notice) when a
+// run or another preview is in progress, and it only reads, so a run that starts
+// mid-preview can at worst leave a stale row; it cannot be blocked or written to.
+func (r *Router) previewExtraFanartMigration(ctx context.Context) (*extraFanartRunResult, error) {
+	res := &extraFanartRunResult{DryRun: true, Artists: []extraFanartArtistResult{}}
+	r.extraFanartMu.Lock()
+	if r.extraFanartRunning || r.extraFanartPreviewing {
+		r.extraFanartMu.Unlock()
+		res.Status = "running"
+		return res, errExtraFanartRunning
+	}
+	r.extraFanartPreviewing = true
+	r.extraFanartMu.Unlock()
+	defer func() {
+		r.extraFanartMu.Lock()
+		r.extraFanartPreviewing = false
+		r.extraFanartMu.Unlock()
+	}()
+	return r.planExtraFanartMigration(ctx, true, res)
 }

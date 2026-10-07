@@ -256,6 +256,10 @@ type Router struct {
 	// singleton: a second request while one runs gets 409.
 	extraFanartMu      sync.Mutex
 	extraFanartRunning bool
+	// extraFanartPreviewing is the operator page's own guard (also under
+	// extraFanartMu): one page preview at a time, and a preview never takes
+	// extraFanartRunning, so it can never make a live POST run answer 409.
+	extraFanartPreviewing bool
 	// extraFanartBeforeApply is a test seam called between planning and applying
 	// one artist; nil in production.
 	extraFanartBeforeApply func(artistID string)
