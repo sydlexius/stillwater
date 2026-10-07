@@ -144,7 +144,9 @@ templ RegistryRepairBanner() {
 					return el.lang || undefined;
 				}
 				// Cached detector answer from the last banner read, shown in the confirm
-				// dialog. lastPlan is null when the endpoint sent no split.
+				// dialog. Both are cleared at the START of every check(), so a failed,
+				// unusable or in-flight re-read never leaves stale counts; only a usable
+				// answer with a plan sets them. lastPlan is null when there is no split.
 				var lastPlan = null;
 				var lastChecked = null;
 				// ageText renders how long ago `when` was, in the page locale (the same
@@ -174,6 +176,8 @@ templ RegistryRepairBanner() {
 				}
 				function check() {
 					if (!el.isConnected) return;
+					lastPlan = null;
+					lastChecked = null;
 					fetch(base + '/api/v1/reports/registry-repair/banner', {
 						credentials: 'same-origin',
 						headers: { Accept: 'application/json' }
@@ -207,7 +211,6 @@ templ RegistryRepairBanner() {
 						var tpl = d.count === 1 ? el.dataset.countOne : el.dataset.countOther;
 						document.getElementById('sw-registry-repair-count').textContent = '-- ' + tpl.replace('{count}', String(d.count));
 						var when = new Date(d.checked_at);
-						lastPlan = null;
 						if (d.plan && !(Number.isFinite(d.plan.rebuild) && Number.isFinite(d.plan.restore))) {
 							console.error('registry repair banner: plan is not a pair of finite numbers; using the generic confirmation');
 						} else if (d.plan && !isNaN(when.getTime())) {

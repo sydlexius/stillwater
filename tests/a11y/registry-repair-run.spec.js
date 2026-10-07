@@ -421,6 +421,29 @@ test('open confirm dialog with the cached plan passes axe (dark and light)', asy
   }
 });
 
+// The cached plan must not outlive the read that produced it: after a re-read that
+// is unusable (ok:false) or fails (aborted), the dialog is generic, not the old counts.
+// The re-read is triggered by finishing a (stubbed) run, which calls check() again.
+test('a failed or unusable re-read clears the cached plan from the dialog', async ({ browser }) => {
+  const en = loadLocale('en');
+  for (const second of ['unusable', 'aborted']) {
+    const usable = { ok: true, needs_repair: true, count: 5, checked_at: new Date().toISOString(), plan: { rebuild: 3, restore: 2 } };
+    const { context, page } = await openBanner(browser, 'dark', usable);
+    await page.locator(RUN).click();
+    await expect(page.locator(MSG), 'precondition: first read shows the plan').toContainText('rows to rebuild: 3');
+    await page.locator('#confirm-modal-cancel').click();
+    await page.route(`**${BANNER_API}`, (route) => (second === 'aborted' ? route.abort() : route.fulfill({ json: { ok: false, needs_repair: false, count: 0 } })));
+    await page.route(`**${REMEDIATE_API}`, (route) => route.fulfill({ status: 202, json: { running: true, status: 'running' } }));
+    await page.route(`**${STATUS_API}`, (route) => route.fulfill({ json: DONE_REPORT }));
+    await confirmRun(page);
+    await expect(page.locator(TOASTS)).toContainText('Image registry repaired');
+    await expect(page.locator(BANNER), 'banner stays visible after an unusable re-read').toBeVisible();
+    await page.locator(RUN).click();
+    await expect(page.locator(MSG), second).toHaveText(en['banner.registry_repair.confirm']);
+    await context.close();
+  }
+});
+
 // A plan field that is not a finite number must never render ("null", "undefined"):
 // the dialog takes the generic text and logs loudly.
 test('a malformed plan falls back to the generic text with a console.error', async ({ browser }) => {

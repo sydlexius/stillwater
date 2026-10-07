@@ -231,6 +231,23 @@ func TestRegistryRepairBanner_SharesConflictBannerWarnTokens(t *testing.T) {
 	check("registry repair banner", renderBannerFor(t, "en"))
 }
 
+// Every banner read starts with no plan, so a failed or unusable re-read cannot
+// leave stale counts in the confirmation. The behavior is proven in the browser.
+func TestRegistryRepairBanner_ScriptClearsPlanAtCheckStart(t *testing.T) {
+	html := renderBannerFor(t, "en")
+	i := strings.Index(html, "function check()")
+	if i < 0 {
+		t.Fatal("banner script has no check()")
+	}
+	head := html[i:]
+	if len(head) > 300 {
+		head = head[:300]
+	}
+	if !strings.Contains(head, "lastPlan = null") || !strings.Contains(head, "lastChecked = null") {
+		t.Errorf("check() does not clear lastPlan and lastChecked before fetching: %s", head)
+	}
+}
+
 // A plan whose counts are not finite numbers must take the generic confirmation
 // (never render "null"), and say so on the console. The behavior is proven in the
 // browser (registry-repair-run.spec.js); this pins the guard in the shipped script.
