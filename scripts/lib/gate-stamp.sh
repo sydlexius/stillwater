@@ -82,9 +82,11 @@ PATCH_COVERAGE_ALLOW_DIRTY|patch-coverage.sh tolerates a dirty tree with it
 SW_TEST_URL|points the a11y specs at another server
 SW_BINARY|points the provider smoke at another binary
 SW_BASE|points the provider smoke at another server
+SW_PORT|the provider smoke and the a11y target health-check this port; another server may hold it
 '
-# gate_env_blockers -- block the stamp once per listed variable that is set.
-gate_env_blockers() {
+# gate_env_hits -- print "NAME|reason" once per listed variable that is set and
+# non-empty. Shared by the stamp writer and the receipt validator.
+gate_env_hits() {
   local name pat reason
   for name in $(compgen -e); do
     while IFS='|' read -r pat reason; do
@@ -92,9 +94,17 @@ gate_env_blockers() {
       # shellcheck disable=SC2254  # the list holds glob patterns on purpose
       case "$name" in $pat) ;; *) continue ;; esac
       [ -n "${!name:-}" ] || continue
-      gate_skip blocking "NOTE: no gate stamp will be written: $name is set ($reason)"
+      printf '%s|%s\n' "$name" "$reason"
     done <<<"$GATE_ENV_DENY"
   done
+}
+# gate_env_blockers -- block the stamp once per listed variable that is set.
+gate_env_blockers() {
+  local name reason
+  while IFS='|' read -r name reason; do
+    [ -n "$name" ] || continue
+    gate_skip blocking "NOTE: no gate stamp will be written: $name is set ($reason)"
+  done < <(gate_env_hits)
 }
 
 gate_stamp_begin() {

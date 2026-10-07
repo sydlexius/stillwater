@@ -124,6 +124,12 @@ r_commit=$(jq -er '.commit_sha' "$RECEIPT" 2>/dev/null) || refuse "receipt has n
 # they are not in this listing.
 [ -z "$(gate_tree_status)" ] || refuse "working tree is dirty"
 
+# The stamp writer withholds a stamp when a verdict-changing variable is set; apply
+# the same list here, so a stamp made in a clean shell is not honored by a push
+# made with one set.
+env_hit=$(gate_env_hits | head -1)
+[ -z "$env_hit" ] || refuse "${env_hit%%|*} is set in this push's environment (${env_hit#*|})"
+
 [ -f "$STAMP" ] || refuse "no gate stamp from a passing gate run"
 s_schema=$(jq -er '.schema' "$STAMP" 2>/dev/null) || refuse "gate stamp unreadable or malformed"
 [ "$s_schema" = "pre-push-gate-stamp/v1" ] || refuse "gate stamp schema is '$s_schema'"
@@ -190,13 +196,15 @@ rank() {
   case "$2" in
     on) echo 2 ;;
     default) if [ "$1" = race ]; then echo 1; else echo 0; fi ;;
-    *) echo 0 ;;
+    off) echo 0 ;;
+    *) echo bad ;;
   esac
 }
 for pair in "race:$RACE_MODE" "vuln:$VULN_MODE" "provider_smoke:$PROVIDER_MODE" "a11y:$A11Y_MODE"; do
   flag=${pair%%:*}
   want=${pair#*:}
   have=$(jq -er --arg f "$flag" '.modes[$f]' "$STAMP" 2>/dev/null) || refuse "gate stamp has no mode for $flag"
+  [ "$(rank "$flag" "$have")" != bad ] || refuse "gate stamp has an unknown mode '$have' for $flag"
   [ "$(rank "$flag" "$have")" -ge "$(rank "$flag" "$want")" ] \
     || refuse "gate ran with $flag=$have, this push needs $flag=$want"
 done

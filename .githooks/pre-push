@@ -39,7 +39,11 @@ fi
 # of the validator included, = run the gate (never a skip, never a block).
 VALID="$REPO_ROOT/scripts/gate-receipt-valid.sh"
 if [ -f "$VALID" ]; then
-    PUSH_REFS=$(cat || true)
+    # A failed read must not hand the validator a prefix of the pushed refs.
+    if ! PUSH_REFS=$(cat); then
+        echo "pre-push: could not read the pushed refs from stdin; running the gate"
+        exec bash "$GATE"
+    fi
     rc=0
     msg=$(printf '%s\n' "$PUSH_REFS" | bash "$VALID") || rc=$?
     [ -z "$msg" ] || echo "$msg"

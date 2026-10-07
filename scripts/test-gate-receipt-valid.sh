@@ -220,6 +220,24 @@ reset; precond "valid receipt and stamp (annotated tag object id)"
 realpush "$TAGOID:refs/heads/objid-annotated"
 if [ "$(ran)" = yes ] && ! printf '%s' "$OUT" | grep -q 'skipping the gate' && printf '%s' "$OUT" | grep -q 'not a commit'; then pass "a real push of an annotated tag object id to refs/heads/* runs the gate"
 else fail "annotated tag object id was not refused (ran=$(ran))"; fi
+echo "--- environment, malformed stamp mode, unreadable stdin (round 5)"
+reset; precond "valid receipt and stamp (GOFLAGS set)"
+hook "$PUSH_B" GOFLAGS=-count=1
+expect_run "a push made with GOFLAGS set runs the gate even with a clean-shell stamp" "GOFLAGS is set"
+reset; precond "valid receipt and stamp (SW_PORT set)"
+hook "$PUSH_B" SW_PORT=1975
+expect_run "a push made with SW_PORT set runs the gate" "SW_PORT is set"
+reset; precond "valid receipt and stamp (nothing set)"
+hook "$PUSH_B"
+expect_skip "the same push without a deny-listed variable still skips"
+reset; stamp_edit '.modes.vuln="garbage"'; hook "$PUSH_B"
+expect_run "a stamp with a malformed mode runs the gate" "unknown mode 'garbage' for vuln"
+reset; precond "valid receipt and stamp (stdin unreadable)"
+RC=0; OUT=$(cd "$HD" && bash .githooks/pre-push <"$WORK" 2>&1) || RC=$?
+expect_run "a hook whose stdin cannot be read runs the gate" "could not read the pushed refs"
+reset; precond "valid receipt and stamp (SW_PORT at gate start)"
+lib 'SW_PORT=1975 gate_stamp_begin; gate_stamp_write "$(git rev-parse HEAD~1)" default default default default'
+expect_nostamp "SW_PORT set at gate start writes no stamp" "SW_PORT is set"
 echo "--- stamp"
 reset; stamp_edit 'del(.patch_base)'; hook "$PUSH_B"
 expect_run "a stamp with no patch_base field runs the gate" "no patch_base"
