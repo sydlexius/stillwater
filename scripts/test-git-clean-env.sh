@@ -166,6 +166,9 @@ HELPERS=(
     test-prefs-coverage.sh
 )
 
+# Helpers whose own pass/fail verdict this suite enforces (see the loop below).
+FULL_VERDICT_HELPERS="test-check-plain-git-diff.sh"
+
 # check-commit-signing.sh runs `git init` too but is deliberately NOT above: a
 # hook-invoked check whose exit code depends on the caller's signing config, so
 # with no signer it exits BEFORE its probe repo and a "config unchanged" result
@@ -209,10 +212,28 @@ for helper in "${HELPERS[@]}"; do
     # Invoke exactly as the pre-push hook would: GIT_DIR exported, from the real
     # scripts/ directory (a helper run from a tree with no scripts/ dies
     # instantly and looks innocent).
+    # FULL_VERDICT_HELPERS run WITHOUT SW_PLAIN_SELFCHECK (so the suite's own
+    # caller-config rerun executes) and must exit 0. The pre-push gate does not
+    # run test-check-plain-git-diff.sh as its own step: this is its one
+    # gate-time execution, so it is held to a hard verdict here, not only to
+    # "it ran" (a red suite that printed some PASS lines must not slip through
+    # the looser check below).
+    full_verdict=0
+    case " $FULL_VERDICT_HELPERS " in *" $helper "*) full_verdict=1 ;; esac
     set +e
-    OUT=$(cd "$REPO_ROOT" && GIT_DIR="$GDIR" SW_PLAIN_SELFCHECK=1 bash "scripts/$helper" 2>&1)
+    if [ "$full_verdict" -eq 1 ]; then
+        OUT=$(cd "$REPO_ROOT" && env -u SW_PLAIN_SELFCHECK GIT_DIR="$GDIR" bash "scripts/$helper" 2>&1)
+    else
+        OUT=$(cd "$REPO_ROOT" && GIT_DIR="$GDIR" SW_PLAIN_SELFCHECK=1 bash "scripts/$helper" 2>&1)
+    fi
     RC=$?
     set -e
+    if [ "$full_verdict" -eq 1 ]; then
+        require "scripts/$helper exits 0 (its own verdict is enforced here)" \
+            test "$RC" -eq 0 || true
+        # Surface WHICH case failed; the verdict line alone hides it.
+        [ "$RC" -eq 0 ] || printf '%s\n' "$OUT" | grep -E '^[[:space:]]*FAIL' | head -10 >&2
+    fi
 
     # The helper must actually have RUN. Its own verdict is not this suite's
     # business (some cases need tooling that may be absent locally), but silence
