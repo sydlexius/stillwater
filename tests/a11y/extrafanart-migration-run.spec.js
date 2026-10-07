@@ -202,6 +202,30 @@ test('lost connection: warning toast says the run may still be going; no second 
   await context.close();
 });
 
+test('lost connection does not steal focus the user moved to a link while the request was in flight', async ({ browser }) => {
+  const { context, page } = await openPlan(browser);
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  await page.route(`**${API}`, async (route) => { await gate; await route.abort('connectionreset'); });
+  await confirmRun(page);
+  await expect(page.locator(RUN)).toBeDisabled();
+  const link = page.locator('#extrafanart-migration-table tbody tr a').first();
+  await link.focus();
+  await expect(link, 'precondition: the user moved focus to a link inside the page').toBeFocused();
+  release();
+  await expect(page.locator(`${TOASTS} > div`, { hasText: LOST })).toHaveCount(1);
+  await expect(page.locator(RUN)).toBeDisabled();
+  await expect(link, 'a lost answer must not pull focus away from a deliberate choice').toBeFocused();
+  await context.close();
+});
+
+test('missingContent reports one of two byte-identical files that was deleted', () => {
+  const before = [{ rel: 'a/fanart.jpg', sha: 'x' }, { rel: 'b/fanart.jpg', sha: 'x' }, { rel: 'a/n.nfo', sha: 'y' }];
+  expect(missingContent(before, before)).toEqual([]);
+  expect(missingContent(before, before.filter((f) => f.rel !== 'b/fanart.jpg'))).toEqual(['b/fanart.jpg']);
+  expect(missingContent(before, [before[0], before[1]])).toEqual(['a/n.nfo']);
+});
+
 test('a proxy error page (504 HTML) is never swapped in: same warning toast, the plan stays', async ({ browser }) => {
   const { context, page } = await openPlan(browser);
   await page.route(`**${API}`, (route) => route.fulfill({

@@ -383,9 +383,11 @@ templ extraFanartRunScript() {
 				if (run) run.disabled = true;
 				// A disabled button cannot hold focus, so a keyboard user would drop to
 				// <body>. Hand focus to the skip-link target (<main tabindex="-1">), as the
-				// registry repair banner does, unless focus is somewhere else on purpose.
+				// registry repair banner does, but only when focus is actually lost (none,
+				// <body>, or the Run button): never from a link or control the user moved
+				// to while the request was in flight.
 				var active = document.activeElement;
-				if (!active || active === document.body || active === run || page.contains(active)) {
+				if (!active || active === document.body || active === run) {
 					var main = document.getElementById('sw-main');
 					if (main) main.focus(); else console.error('extrafanart migration: #sw-main missing; focus left on the disabled Run button');
 				}

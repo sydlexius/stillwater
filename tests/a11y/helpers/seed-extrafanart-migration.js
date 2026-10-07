@@ -252,10 +252,21 @@ export function inventory(libDir) {
   return out.sort((a, b) => a.rel.localeCompare(b.rel));
 }
 
-/** missingContent names the files of `before` whose bytes are in no file of `after`. */
+/**
+ * missingContent names the files of `before` whose bytes no longer have a file in
+ * `after`. A multiset comparison: files that share bytes (the fixture writes the
+ * same fanart.jpg for every artist) each need their own surviving copy, so
+ * deleting one of two identical files is reported.
+ */
 export function missingContent(before, after) {
-  const have = new Set(after.map((f) => f.sha));
-  return before.filter((f) => !have.has(f.sha)).map((f) => f.rel);
+  const left = new Map();
+  for (const f of after) left.set(f.sha, (left.get(f.sha) || 0) + 1);
+  return before.filter((f) => {
+    const n = left.get(f.sha) || 0;
+    if (n === 0) return true;
+    left.set(f.sha, n - 1);
+    return false;
+  }).map((f) => f.rel);
 }
 
 /** unlockRunFixture makes the read-only artist folder writable, for the test that needs a fully clean run. */
