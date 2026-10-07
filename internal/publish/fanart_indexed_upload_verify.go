@@ -27,6 +27,17 @@ var indexedUploadPollInterval = 250 * time.Millisecond
 // bounds each read) ran out first. The count is only a cheap first filter; see
 // verifyIndexedUploadLanded.
 func pollStableCount(ctx context.Context, reader connection.ArtistStateGetter, platformArtistID string, want int) (count int, ok bool, err error) {
+	count, ok, _, err = pollCount(ctx, reader, platformArtistID, want)
+	return count, ok, err
+}
+
+// pollCount is pollStableCount plus one more answer: settled. "Settled" means
+// the LAST two reads were equal, i.e. the count had stopped moving when the
+// budget ended. ok=false with settled=true is a count holding still BELOW want
+// (the peer really did not take the write). ok=false with settled=false is a
+// count still moving when time ran out: the verdict is unknown, not "no"
+// (#3200).
+func pollCount(ctx context.Context, reader connection.ArtistStateGetter, platformArtistID string, want int) (count int, ok, settled bool, err error) {
 	pctx, cancel := context.WithTimeout(ctx, indexedUploadLagTolerance)
 	defer cancel()
 	stable, last := 0, -1
@@ -34,9 +45,9 @@ func pollStableCount(ctx context.Context, reader connection.ArtistStateGetter, p
 		state, getErr := reader.GetArtistDetail(pctx, platformArtistID)
 		if getErr != nil {
 			if pctx.Err() != nil && ctx.Err() == nil {
-				return last, false, nil // budget spent mid-read
+				return last, false, stable >= 1, nil // budget spent mid-read
 			}
-			return last, false, fmt.Errorf("re-reading backdrop count to verify indexed upload: %w", getErr)
+			return last, false, false, fmt.Errorf("re-reading backdrop count to verify indexed upload: %w", getErr)
 		}
 		if last != -1 && state.BackdropCount == last {
 			stable++
@@ -45,11 +56,11 @@ func pollStableCount(ctx context.Context, reader connection.ArtistStateGetter, p
 		}
 		last = state.BackdropCount
 		if stable >= 1 && last >= want {
-			return last, true, nil
+			return last, true, true, nil
 		}
 		select {
 		case <-pctx.Done():
-			return last, false, ctx.Err() // nil unless the CALLER's ctx ended
+			return last, false, stable >= 1, ctx.Err() // err is nil unless the CALLER's ctx ended
 		case <-time.After(indexedUploadPollInterval):
 		}
 	}
@@ -110,6 +121,12 @@ func (c *peerCache) holds(data []byte) bool {
 	return slices.Contains(c.hashes, img.ContentHash(data))
 }
 
+// errVerifyUnsettled is a SENTINEL error: one fixed value callers recognize
+// with errors.Is. It means the verify budget ran out while the peer's count was
+// still moving, so whether the write landed is UNKNOWN. That differs from a
+// count that settled below the wanted value (a plain "not landed").
+var errVerifyUnsettled = errors.New("backdrop count never settled; the upload could not be verified")
+
 // landedSince decides, after an indexed upload returned an HTTP error, whether
 // the peer accepted the write anyway (#3126: Emby 500s on an out-of-range
 // upload yet appends). It is by CONTENT and by NEWNESS: the settled count must
@@ -118,11 +135,21 @@ func (c *peerCache) holds(data []byte) bool {
 // slot) therefore never confirm a genuine failure. The new entries are added to
 // the cache. A read failure returns err, which the caller treats as "report the
 // original error". (A concurrent append of byte-identical content during the
-// window cannot be told apart from our own write; that is accepted.)
+// window cannot be told apart from our own write; that is accepted.) A count
+// that never SETTLED in the budget returns errVerifyUnsettled: unverifiable, so
+// the cache is stale and the caller must not upload more on a guess (#3200). A
+// count that settled below the target returns no error and no hashes: a
+// genuine "not landed".
 func (c *peerCache) landedSince(ctx context.Context) (hashes []string, count int, err error) {
-	count, ok, err := pollStableCount(ctx, c.reader, c.id, len(c.hashes)+1)
-	if err != nil || !ok {
+	count, ok, settled, err := pollCount(ctx, c.reader, c.id, len(c.hashes)+1)
+	if err != nil {
 		return nil, count, err
+	}
+	if !ok {
+		if !settled {
+			return nil, count, errVerifyUnsettled
+		}
+		return nil, count, nil
 	}
 	hashes, err = peerContentHashes(ctx, c.reader, c.id, len(c.hashes), count)
 	if err != nil {
