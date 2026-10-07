@@ -32,7 +32,8 @@ export default defineConfig({
   globalSetup: './tests/a11y/global-setup.js',
   // Run-level staleness check on the known-violation allowlist: fails the run
   // if an allowance outlived its defect. Must be run-level -- no single spec can
-  // know whether another file's scan matched an entry. See global-teardown.js.
+  // know whether another file's scan matched an entry. It is skipped in sharded
+  // runs (CI), so it only runs locally; see global-teardown.js.
   globalTeardown: './tests/a11y/global-teardown.js',
   // A genuine violation still fails on every attempt; a load-induced
   // transient (the CPU-starved theme-toggle timeout root-caused in #2223)

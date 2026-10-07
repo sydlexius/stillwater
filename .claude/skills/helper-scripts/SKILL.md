@@ -42,6 +42,10 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
   no required checks and read as green (#3002). Run by the gate and by the
   `Gate Invariant` job.
 - `scripts/test-check-pr-trigger-scope.sh` -- hermetic mutation tests for the above.
+- `scripts/check-a11y-shards.sh` -- assert each project in `ci.yml`'s `a11y-test`
+  matrix lists shards exactly 1..N with a constant `shards` (#3442), so a dropped
+  or duplicated shard cannot silently skip specs; `scripts/test-check-a11y-shards.sh`
+  is its mutation test. Run by the gate and the `Gate Invariant` job.
 - `scripts/lib/run-flags.sh` -- sourced by the gate; resolves each `RUN_*`
   variable to run / skip / default and REFUSES an unrecognized value (exit 2).
   Without it, a mistyped `RUN_VULN=truee` fell into the default branch, printed

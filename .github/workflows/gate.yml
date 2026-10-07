@@ -741,6 +741,12 @@ jobs:
       - name: PR trigger guard self-test
         run: bash scripts/test-check-pr-trigger-scope.sh
 
+      - name: Check the a11y shard matrix is complete
+        run: bash scripts/check-a11y-shards.sh
+
+      - name: a11y shard matrix guard self-test
+        run: bash scripts/test-check-a11y-shards.sh
+
       - name: Release blockers check self-test
         run: bash scripts/test-check-release-blockers.sh
 
