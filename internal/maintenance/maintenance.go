@@ -473,12 +473,17 @@ func newSlotChecker() *slotChecker {
 // meaning of the three return shapes.
 func (c *slotChecker) confirm(ctx context.Context, dir, imageType string, slotIndex int) (bool, error) {
 	if imageType == "fanart" {
+		// Observe cancellation BEFORE the cache, so a cache hit cannot answer a
+		// row after the context is done. Both callers re-check ctx.Err() on any
+		// error and abort the pass, so this ends the pass rather than skipping.
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
 		l, ok := c.fanart[dir]
 		if !ok {
 			l = listFanart(ctx, dir)
-			// A canceled or timed-out listing is not a fact about the directory,
-			// so it is never remembered: a later row must look again (the callers
-			// end the pass on cancellation anyway).
+			// A listing that raced a cancellation is not a fact about the
+			// directory, so it is never remembered.
 			if ctx.Err() == nil {
 				c.fanart[dir] = l
 			}

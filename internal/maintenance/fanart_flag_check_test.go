@@ -6,6 +6,7 @@ package maintenance
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -287,5 +288,26 @@ func TestFanartFlagCycle_ReachesFixedPoint(t *testing.T) {
 		if plan != (RegistryRepairPlan{}) {
 			t.Errorf("pass %d: detector = %+v, want {0 0}", pass, plan)
 		}
+	}
+}
+
+// A cache hit must still observe cancellation: after the context is done, the
+// next row of an already-listed directory returns the context error, never the
+// remembered answer.
+func TestSlotChecker_CacheHitObservesCancellation(t *testing.T) {
+	dir := t.TempDir()
+	writeImage(t, filepath.Join(dir, "backdrop2.jpg"), 10, 10)
+	c := newSlotChecker()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if ok, err := c.confirm(ctx, dir, "fanart", 0); err != nil || !ok {
+		t.Fatalf("priming slot 0 = %v, %v; want true, nil", ok, err)
+	}
+	if len(c.fanart) != 1 {
+		t.Fatalf("precondition: the listing must be cached, have %d entries", len(c.fanart))
+	}
+	cancel()
+	if ok, err := c.confirm(ctx, dir, "fanart", 0); !errors.Is(err, context.Canceled) || ok {
+		t.Fatalf("confirm after cancel = %v, %v; want false, context.Canceled", ok, err)
 	}
 }
