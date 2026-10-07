@@ -446,14 +446,12 @@ func (r *Router) handleRegistryRepairBanner(w http.ResponseWriter, req *http.Req
 	if !r.requireForeignAdmin(w, req) {
 		return
 	}
-	count, checkedAt, ok := r.registryRepairCache.Get()
+	snap := r.registryRepairCache.Snapshot()
 	body := &registryRepairBanner{
-		NeedsRepair: ok && count > 0, Count: count, CheckedAt: checkedAt, OK: ok,
+		NeedsRepair: snap.OK && snap.Count > 0, Count: snap.Count, CheckedAt: snap.CheckedAt, OK: snap.OK,
 	}
-	// Two separate locked reads: a scan finishing between them could pair a new
-	// split with an old count, so only serve the split when it sums to count.
-	if plan, known := r.registryRepairCache.Plan(); ok && known && plan.Rebuild+plan.Restore == count {
-		body.Plan = &registryRepairBannerPlan{Rebuild: plan.Rebuild, Restore: plan.Restore}
+	if snap.PlanKnown {
+		body.Plan = &registryRepairBannerPlan{Rebuild: snap.Plan.Rebuild, Restore: snap.Plan.Restore}
 	}
 	writeJSON(w, http.StatusOK, body)
 }

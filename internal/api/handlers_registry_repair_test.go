@@ -1289,8 +1289,14 @@ func TestRegistryRepairBanner_ServesPlan(t *testing.T) {
 		t.Fatalf("never checked: %v; want ok=false and no plan", m)
 	}
 
-	// A real detector pass over the fixture: one unregistered image (rebuild)
-	// and one stale-flag row whose file is present (restore).
+	// A real detector pass over the fixture: two unregistered images (rebuild)
+	// and one stale-flag row whose file is present (restore). Asymmetric so a
+	// swapped pair of fields goes red.
+	var presentDir string
+	if err := f.db.QueryRow(`SELECT path FROM artists WHERE id = ?`, f.presentID).Scan(&presentDir); err != nil {
+		t.Fatalf("reading present dir: %v", err)
+	}
+	writeRepairImage(t, filepath.Join(presentDir, "backdrop2.jpg"))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go f.router.maintenanceService.StartRegistryRepairCheck(ctx, cache,
@@ -1302,13 +1308,13 @@ func TestRegistryRepairBanner_ServesPlan(t *testing.T) {
 		}
 	}
 	plan, _ := m["plan"].(map[string]any)
-	if m["ok"] != true || plan["rebuild"] != float64(1) || plan["restore"] != float64(1) || m["count"] != float64(2) {
-		t.Fatalf("after detector: %v; want count 2, plan {rebuild 1, restore 1}", m)
+	if m["ok"] != true || plan["rebuild"] != float64(2) || plan["restore"] != float64(1) || m["count"] != float64(3) {
+		t.Fatalf("after detector: %v; want count 3, plan {rebuild 2, restore 1}", m)
 	}
 
 	startRepair(t, f.router, `{"commit":true,"artist_id":"`+f.presentID+`"}`)
 	waitRepairDone(t, f.router)
-	if got := bannerBody(t, f.router); got["plan"] == nil || got["count"] != float64(2) {
+	if got := bannerBody(t, f.router); got["plan"] == nil || got["count"] != float64(3) {
 		t.Fatalf("scoped commit changed the banner: %v", got)
 	}
 

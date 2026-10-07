@@ -58,6 +58,25 @@ func (c *RegistryRepairCache) Get() (count int, checkedAt time.Time, ok bool) {
 	return c.count, c.checkedAt, c.ok
 }
 
+// RegistryRepairSnapshot is one consistent read of the cache.
+type RegistryRepairSnapshot struct {
+	Count     int
+	CheckedAt time.Time
+	OK        bool
+	Plan      RegistryRepairPlan
+	PlanKnown bool
+}
+
+// Snapshot returns count, timestamp, ok and the plan under ONE lock, so the
+// split always belongs to the count and checked_at beside it. Invariant:
+// PlanKnown implies OK, because both a scan error and SetFromRepair clear the
+// plan (the latter's count is failed writes, not a plan).
+func (c *RegistryRepairCache) Snapshot() RegistryRepairSnapshot {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return RegistryRepairSnapshot{c.count, c.checkedAt, c.ok, c.plan, c.planKnown}
+}
+
 // Plan returns the cached rebuild/restore split and whether it is known. It is
 // unknown when never checked, after a failed scan, and after SetFromRepair
 // (there the count is failed writes, not a plan).

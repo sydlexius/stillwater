@@ -1024,7 +1024,9 @@ components:
             How count splits, from the last background check. Absent when ok is
             false, and after a library-wide repair finished (count is then
             failed writes, not a plan) until the next check. When present,
-            rebuild + restore equals count.
+            rebuild + restore equals count. After a single-artist repair the plan
+            is not recomputed until the next background check, so read it
+            together with checked_at.
           required: [rebuild, restore]
           properties:
             rebuild:

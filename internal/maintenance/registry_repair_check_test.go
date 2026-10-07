@@ -332,3 +332,49 @@ func TestRegistryRepairCache_PlanClearedByRepairErrorAndStaleScan(t *testing.T) 
 		t.Fatalf("stale scan overwrote the commit's count: %d", count)
 	}
 }
+
+// Snapshot is one consistent read: with a writer alternating two plans that
+// share a total but differ in split, every snapshot's split must be the one
+// stored with its checked_at. A Get-then-Plan pair tears under this load.
+func TestRegistryRepairCache_SnapshotIsConsistent(t *testing.T) {
+	cache := &RegistryRepairCache{}
+	plans := [2]RegistryRepairPlan{{Rebuild: 1, Restore: 2}, {Rebuild: 2, Restore: 1}}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			// Spin until the clock passes the previous stamp so every write has a
+			// distinct checked_at (the wall clock can be coarser than one write).
+			for last := cache.Snapshot().CheckedAt; !time.Now().After(last); {
+			}
+			gen, _ := cache.begin()
+			cache.finish(gen, plans[i%2], nil)
+		}
+	}()
+	// The writer stamps time.Now() inside finish, so tie plan to timestamp by
+	// recording each timestamp's plan parity: consecutive writes alternate, and
+	// a consistent read pairs the plan with the write that produced its time.
+	seen := map[time.Time]RegistryRepairPlan{}
+	torn := 0
+	for deadline := time.Now().Add(300 * time.Millisecond); time.Now().Before(deadline); {
+		s := cache.Snapshot()
+		if !s.PlanKnown {
+			continue
+		}
+		if prev, ok := seen[s.CheckedAt]; ok && prev != s.Plan {
+			torn++
+		}
+		seen[s.CheckedAt] = s.Plan
+	}
+	close(stop)
+	<-done
+	if torn != 0 {
+		t.Fatalf("%d torn reads: a plan was served with another write's checked_at", torn)
+	}
+}
