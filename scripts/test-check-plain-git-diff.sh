@@ -12,7 +12,7 @@
 #      checks exit non-zero instead of reading as "no changes".
 #   D. -M and "$@" are pinned (rename-only commit; pathspec with a space).
 #   E. check-plain-git-diff.sh rejects raw parsed diffs and accepts the rest.
-# GATE_SH / STYLELINT_SH / CHECKGEN_SH / LIB_SH override what is tested (used to
+# GATE_SH / STYLELINT_SH / CHECKGEN_SH / LIB_SH / GUARD_SH override what is tested (used to
 # show each case RED against an older copy). Run: bash scripts/test-check-plain-git-diff.sh
 # shellcheck disable=SC2016,SC2015  # single-quoted fixtures; A && B || C is report-only
 set -euo pipefail
@@ -21,9 +21,14 @@ GATE_SH="${GATE_SH:-$REPO_ROOT/scripts/pre-push-gate.sh}"
 STYLELINT_SH="${STYLELINT_SH:-$REPO_ROOT/scripts/stylelint-diff-gate.sh}"
 CHECKGEN_SH="${CHECKGEN_SH:-$REPO_ROOT/scripts/check-generated.sh}"
 LIB_SH="${LIB_SH:-$REPO_ROOT/scripts/lib/git-plain.sh}"
+GUARD_SH="${GUARD_SH:-$REPO_ROOT/scripts/check-plain-git-diff.sh}"
 # shellcheck source=scripts/lib/git-clean-env.sh
 . "$REPO_ROOT/scripts/lib/git-clean-env.sh"
 git_clean_env_unset
+# git_clean_env_unset keeps the config-injection variables by design; this suite
+# takes a "clean" baseline, so a caller's `git -c k=v push` (which exports them)
+# would make a variant equal the baseline. Strip them here.
+for v in $(env | sed -n -E 's/^(GIT_CONFIG_(COUNT|PARAMETERS|KEY_[0-9]+|VALUE_[0-9]+))=.*/\1/p'); do unset "$v"; done
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 W=$(mktemp -d); W=$(cd "$W" && pwd -P); trap 'rm -rf "$W"' EXIT
 rc=0
@@ -32,7 +37,7 @@ fail() { echo "  FAIL  $1" >&2; rc=1; }
 
 # The arms run with the SCRIPT_DIR the real scripts use, holding the lib under test.
 mkdir -p "$W/sd/lib"; cp "$LIB_SH" "$W/sd/lib/git-plain.sh"
-srcline() { grep -m1 '^\. "\$SCRIPT_DIR/lib/git-plain.sh"$' "$1" || true; }
+srcline() { grep -m1 '^\. .*lib/git-plain\.sh"$' "$1" || true; }
 
 # Fixture: base, then a head commit that leaks err.Error() in a handler, edits two
 # NON-ADJACENT spots in x.css, adds a non-ASCII CSS file and a spaced directory.
@@ -111,24 +116,39 @@ for v in "${VARIANTS[@]}"; do
 done
 setup ""
 
+echo "B2. a replace ref cannot hide the leak"
+HEADSHA=$(git -C "$R" rev-parse HEAD); git -C "$R" replace -f "$HEADSHA" "$BASE"
+[ -z "$(git -C "$R" diff "$BASE"..HEAD -- internal/api/handlers_x.go)" ] && pass "precondition: the replace ref empties raw git diff" || fail "replace variant is vacuous"
+out=$(cd "$R" && bash -c 'SCRIPT_DIR=$1; BASE=$2; eval "$3"; . "$4"' _ "$W/sd" "$BASE" "$GATE_SRC" "$W/leak.sh" 2>&1) && s=0 || s=$?
+git -C "$R" replace -d "$HEADSHA" >/dev/null
+[ "$s" -eq 1 ] && grep -q CRITICAL <<<"$out" && pass "leak detected despite a replace ref" || fail "LEAK MISSED under a replace ref (exit $s)"
+
 echo "C. a failing git fails closed (diff.orderFile names a missing file)"
 # git only reads the order file when there is a diff to sort, so dirty tracked files.
 echo more >> "$R/gen_templ.go"; echo more >> "$R/web/static/css/styles.css"
 BROKEN=(env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=diff.orderFile GIT_CONFIG_VALUE_0="$W/missing-orderfile")
-failclosed() { # <name> <script file> -- the script must exit non-zero and not print OK
-  local out s=0
-  out=$(cd "$R" && "${BROKEN[@]}" bash -c 'set -euo pipefail; SCRIPT_DIR=$1; BASE=$2; CSS_GLOB="web/static/css/*.css"; WORK_DIR=$4; ADDED_LINES=$4/a; . "$1/lib/git-plain.sh"; . "$3"' _ "$W/sd" "$BASE" "$2" "$W" 2>&1) || s=$?
-  if [ "$s" -ne 0 ] && ! grep -qx 'OK' <<<"$out"; then pass "fails closed (exit $s): $1"; else fail "READ A FAILED GIT AS NO CHANGES (exit $s): $1"; fi
+# mkarm <script> <cut> <out> [prelude]: a runner holding the script's OWN lib source line.
+mkarm() { { echo 'set -euo pipefail'; echo "SCRIPT_DIR=$W/sd BASE=$BASE CSS_GLOB='web/static/css/*.css' WORK_DIR=$W ADDED_LINES=$W/a"
+  echo "${4:-:}"; srcline "$1"; cat "$2"; } > "$3"; }
+# failclosed <name> <script> <cut> [prelude]: broken git -> exit 2 with a FAIL line; healthy git -> not 2.
+failclosed() {
+  local out s=0 h=0 broken=("${BROKEN[@]}")
+  [ -z "${4:-}" ] || broken=(env X=1)
+  mkarm "$2" "$3" "$W/sd/arm-b.sh" "${4:-}"; mkarm "$2" "$3" "$W/sd/arm-h.sh"
+  out=$(cd "$R" && "${broken[@]}" bash "$W/sd/arm-b.sh" 2>&1) || s=$?
+  if [ "$s" -eq 2 ] && grep -q 'FAIL' <<<"$out"; then pass "fails closed (exit 2 + FAIL line): $1"; else fail "READ A FAILED GIT AS NO CHANGES (exit $s): $1"; fi
+  (cd "$R" && bash "$W/sd/arm-h.sh" >"$W/h.out" 2>&1) || h=$?
+  [ "$h" -ne 2 ] && pass "healthy control does not exit 2: $1" || fail "healthy git exited 2: $1: $(head -2 "$W/h.out")"
 }
-cp "$W/leak.sh" "$W/c-leak.sh"; failclosed "leak arm" "$W/c-leak.sh"
-sed -nE '/^(changed_css=|if \[ -z "\$\(git_plain_diff)/,/^fi$/p' "$STYLELINT_SH" > "$W/c-skip.sh"
-failclosed "stylelint skip decision" "$W/c-skip.sh"
-cp "$W/lines.sh" "$W/c-lines.sh"; failclosed "stylelint extraction" "$W/c-lines.sh"
-sed -n '/^dirty_templ=/p' "$CHECKGEN_SH" > "$W/c-gen1.sh"; failclosed "check-generated templ check" "$W/c-gen1.sh"
-sed -nE '/^(dirty_tracked=|wholesale_dirty=\$\($)/,/^(wholesale_dirty=.*sort -u|\))$/p' "$CHECKGEN_SH" > "$W/c-gen2.sh"
-failclosed "check-generated wholesale check" "$W/c-gen2.sh"
-sed -nE '/^changed_go_raw=/,/^MODIFIED_GO_FILES=/p; /^MODIFIED_GO_FILES=\$\(git_plain_diff/,/templ/p' "$GATE_SH" > "$W/c-go.sh"
-failclosed "gate changed-Go list" "$W/c-go.sh"
+failclosed "leak arm" "$GATE_SH" "$W/leak.sh"
+sed -nE '/^changed_css=/,/^fi$/p' "$STYLELINT_SH" > "$W/c-skip.sh"; failclosed "stylelint skip decision" "$STYLELINT_SH" "$W/c-skip.sh"
+failclosed "stylelint extraction" "$STYLELINT_SH" "$W/lines.sh"
+sed -n '/^dirty_templ=/p' "$CHECKGEN_SH" > "$W/c-gen1.sh"; failclosed "check-generated templ check" "$CHECKGEN_SH" "$W/c-gen1.sh"
+sed -n '/^  dirty_css=/p' "$CHECKGEN_SH" > "$W/c-gen3.sh"; failclosed "check-generated styles.css check" "$CHECKGEN_SH" "$W/c-gen3.sh"
+sed -n '/^dirty_tracked=/,/^wholesale_dirty=/p' "$CHECKGEN_SH" > "$W/c-gen2.sh"; failclosed "check-generated wholesale diff" "$CHECKGEN_SH" "$W/c-gen2.sh"
+sed -n '/^dirty_untracked=/p' "$CHECKGEN_SH" > "$W/c-gen4.sh"
+failclosed "check-generated ls-files" "$CHECKGEN_SH" "$W/c-gen4.sh" 'git() { case "$1" in ls-files) return 1;; *) command git "$@";; esac; }'
+sed -nE '/^changed_go_raw=/,/^MODIFIED_GO_FILES=/p' "$GATE_SH" > "$W/c-go.sh"; failclosed "gate changed-Go list" "$GATE_SH" "$W/c-go.sh"
 
 git -C "$R" checkout -q -- gen_templ.go web/static/css/styles.css
 
@@ -150,8 +170,28 @@ want=$(cd "$R" && env GIT_GLOB_PATHSPECS=0 git diff --name-only "$BASE" -- '*.go
 got=$(cd "$R" && env GIT_GLOB_PATHSPECS=1 bash -c '. "$1"; git_plain_diff --name-only "$2" -- "*.go"' _ "$W/sd/lib/git-plain.sh" "$BASE")
 [ "$got" = "$want" ] && pass "git_plain_diff ignores GIT_GLOB_PATHSPECS" || fail "GIT_GLOB_PATHSPECS changed the changed-file list: [$got]"
 
+got=$(cd "$R" && bash -c 'git() { echo HIJACK; return 3; }; . "$1"; git_plain_diff --name-only "$2" -- "*.go"' _ "$W/sd/lib/git-plain.sh" "$BASE")
+[ "$got" = "internal/api/handlers_x.go" ] && pass "an exported/defined git function cannot hijack the helper" || fail "git function hijacked the helper: [$got]"
+
+echo "F. OpenAPI base read: skip only on a positive 'absent'"
+sed -n '/^  if git show main:internal\/api\/openapi.yaml/,/^  fi$/p' "$GATE_SH" > "$W/oa.sh"
+grep -q 'ls-tree' "$W/oa.sh" || fail "openapi arm cut is wrong"
+printf '#!/bin/sh\nexit 0\n' > "$W/oasdiff"; chmod +x "$W/oasdiff"
+R3="$W/repo3"; git -c init.defaultBranch=main init -q "$R3"; git -C "$R3" config user.name T; git -C "$R3" config user.email t@localhost
+oarun() { # <expect-rc> <expect-text> <name> <prelude>
+  { echo 'set -euo pipefail'; echo "tmp_openapi=$W/o.yaml oasdiff_err=$W/oerr oasdiff_bin=$W/oasdiff"; echo "$4"; cat "$W/oa.sh"; } > "$W/oa-run.sh"
+  local o r=0; o=$(cd "$R3" && bash "$W/oa-run.sh" 2>&1) || r=$?
+  [ "$r" -eq "$1" ] && grep -q "$2" <<<"$o" && pass "$3" || fail "$3 (exit $r): $o"
+}
+git -C "$R3" commit -q --allow-empty -m none
+oarun 0 "Skipped" "absent on main: skipped" ':'
+mkdir -p "$R3/internal/api"; echo 'openapi: 3.1.0' > "$R3/internal/api/openapi.yaml"; git -C "$R3" add -A; git -C "$R3" commit -qm spec
+oarun 0 "No breaking" "present on main: compared" ':'
+oarun 1 "FAIL" "git cannot answer: FAIL, not skip" 'git() { case "$1" in show|ls-tree) return 128;; *) command git "$@";; esac; }'
+oarun 1 "although the file exists" "present but unreadable: FAIL" 'git() { case "$1" in show) return 128;; *) command git "$@";; esac; }'
+
 echo "E. check-plain-git-diff.sh guard"
-guard() { bash "$REPO_ROOT/scripts/check-plain-git-diff.sh" "$1" >"$W/g.out" 2>&1 && return 0 || return 1; }
+guard() { bash "$GUARD_SH" "$1" >"$W/g.out" 2>&1 && return 0 || return 1; }
 mk() { rm -rf "$W/t"; mkdir -p "$W/t/scripts/lib" "$W/t/.githooks"; printf '%s\n' "$1" > "$W/t/$2"; }
 mk 'x=$(git_plain_diff --name-only "$B")
 git show main:a/b.yaml > f
@@ -161,17 +201,20 @@ y=$(git diff "$B") # plain-git-exempt: names only, reason
 # git diff in a comment' scripts/ok.sh
 guard "$W/t" && pass "accepts helper, blob shows, exemption with reason, comment" || fail "rejected a clean tree"
 mk 'git diff --name-only -z' .githooks/pre-commit
-guard "$W/t" && pass "accepts a hook --name-only listing" || fail "rejected hook name listing"
+guard "$W/t" && fail "accepted a raw hook name listing" || pass "rejects a raw hook --name-only call (no special case)"
+mk 'x=$(git diff "$B") # not --name-only' scripts/bad.sh
+guard "$W/t" && fail "accepted a diff with --name-only in a comment" || pass "rejects --name-only mentioned in a comment"
 for bad in 'x=$(git diff "$BASE"..HEAD)' 'x=$(git -c a=b diff --unified=0 "$B")' 'git log -p -1' 'git show HEAD' \
   'x=$(git diff|grep "^+")' 'git diff>"$o"' 'git diff;' 'x=`git diff`' 'x=$(git --no-pager diff "$B")' 'x=$(git -C "$my dir" diff "$B")' \
   'x=$(git diff-tree -p "$B" HEAD)' 'x=$(git diff-index -p "$B")' 'x=$(git diff-files -p)' \
-  'x=$(git show --format=%H:%s HEAD | grep x)' 'x=$(git diff "$B") # plain-git-exempt:' 'x=$(git diff "$B"); echo "plain-git-exempt: r"' \
+  'x=$(git show --format=%H:%s HEAD | grep x)' 'x=$(git diff "$B") # plain-git-exempt:' 'x=$(git diff "$B"); echo "plain-git-exempt: r"' 'x=$(git diff "$B"); echo "# plain-git-exempt: r"' \
   'x=$(git diff --no-ext-diff --no-textconv --no-color -U0 "$B")'; do
+  okk=1
   for where in scripts/probe.sh scripts/lib/probe.sh .githooks/probe; do
     mk "$bad" "$where"
-    guard "$W/t" && fail "accepted in $where: $bad" || { grep -q 'probe' "$W/g.out" || fail "no location in $where: $bad"; }
+    if guard "$W/t"; then okk=0; fail "accepted in $where: $bad"; elif ! grep -q 'probe' "$W/g.out"; then okk=0; fail "no location in $where: $bad"; fi
   done
-  pass "rejects in scripts, scripts/lib and .githooks: $bad"
+  [ "$okk" -eq 1 ] && pass "rejects in scripts, scripts/lib and .githooks: $bad"
 done
 mk 'r = sh(["git", "diff", "--name-status", rng])' scripts/bad.py
 guard "$W/t" && fail "accepted raw python diff (double quotes)" || pass "rejects raw python diff argv"
@@ -184,5 +227,25 @@ r = sh(GIT_PLAIN_DIFF + ["--name-status"])
 d = {"diff": 1}
 s = subprocess.run(["git", "show", f"{b}:{p}"])' scripts/ok.py
 guard "$W/t" && pass "accepts GIT_PLAIN_DIFF, a dict key and blob show in python" || fail "rejected clean python"
+mk 'r = sh(["git", "diff", "--x"], note="plain-git-exempt: r")' scripts/bad.py
+guard "$W/t" && fail "accepted a python string carrying the exempt marker" || pass "rejects the exempt marker inside a python string"
+mk 'r = ["git", "diff"]  # plain-git-exempt: names only' scripts/ok.py
+guard "$W/t" && pass "accepts a python trailing-comment exemption with a reason" || fail "rejected a valid python exemption"
+mk 'x = (' scripts/bad.py
+guard "$W/t" && fail "accepted an unparsable python file" || { grep -q 'cannot parse' "$W/g.out" && pass "names the interpreter when python cannot parse" || fail "unparsable python reported badly"; }
+rm -rf "$W/t"; mkdir "$W/t"
+guard "$W/t" && fail "guard exits 0 having scanned nothing" || pass "scanning 0 files is a failure"
+mk 'x=1' scripts/ok.sh; mkdir -p "$W/empty"
+s=0; out=$(env PATH="$W/empty" "$BASH" "$GUARD_SH" "$W/t" 2>&1) || s=$?
+[ "$s" -eq 2 ] && grep -q 'needs python3' <<<"$out" && pass "missing python3 FAILs naming the interpreter" || fail "missing python3 not reported (exit $s)"
 guard "$REPO_ROOT" && pass "repo scripts/ and .githooks/ are clean" || { fail "repo has a raw parsed git diff"; cat "$W/g.out" >&2; }
+# S. a caller exporting diff config (git -c k=v push does) must not change the verdict.
+if [ -z "${SW_PLAIN_SELFCHECK:-}" ]; then
+  echo "S. the suite passes when the CALLER injects diff config"
+  selfcheck() { local name=$1; shift
+    if env SW_PLAIN_SELFCHECK=1 "$@" "$BASH" "${BASH_SOURCE[0]}" >"$W/self.out" 2>&1; then pass "suite green with caller config: $name"
+    else fail "suite red with caller config: $name"; grep -E '^\s+FAIL' "$W/self.out" | head -3 >&2; fi; }
+  selfcheck "GIT_CONFIG_COUNT color.ui=always + interHunkContext=3" GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=color.ui GIT_CONFIG_VALUE_0=always GIT_CONFIG_KEY_1=diff.interHunkContext GIT_CONFIG_VALUE_1=3
+  selfcheck "GIT_CONFIG_PARAMETERS diff.noprefix" "GIT_CONFIG_PARAMETERS='diff.noprefix'='true'"
+fi
 exit $rc

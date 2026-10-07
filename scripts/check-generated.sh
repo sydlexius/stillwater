@@ -30,7 +30,7 @@ if ! go tool templ generate 2>"$TEMPL_LOG"; then
   cat "$TEMPL_LOG"
   exit 1
 fi
-dirty_templ=$(git_plain_diff --name-only -- '*_templ.go')
+dirty_templ=$(git_plain_diff --name-only -- '*_templ.go') || { echo "FAIL: check-generated: git could not list dirty *_templ.go files" >&2; exit 2; }
 if [ -n "$dirty_templ" ]; then
   echo "ERROR: *_templ.go files are stale or were generated with a different templ version."
   echo "Run: go tool templ generate && git add <generated files>"
@@ -53,7 +53,7 @@ if command -v tailwindcss >/dev/null 2>&1; then
     cat "$TAILWIND_LOG"
     exit 1
   fi
-  dirty_css=$(git_plain_diff --name-only -- web/static/css/styles.css)
+  dirty_css=$(git_plain_diff --name-only -- web/static/css/styles.css) || { echo "FAIL: check-generated: git could not list dirty styles.css" >&2; exit 2; }
   if [ -n "$dirty_css" ]; then
     echo "ERROR: web/static/css/styles.css is stale. Run: make tailwind && git add web/static/css/styles.css"
     exit 1
@@ -76,8 +76,8 @@ fi
 # unrelated dirty working tree does not produce a false positive.
 # Each git call is its own assignment: bash ignores set -e inside a group
 # feeding a pipe, so a failed diff there would read as "nothing dirty".
-dirty_tracked=$(git_plain_diff --name-only -- '*_templ.go' web/static/css/styles.css)
-dirty_untracked=$(git ls-files --others --exclude-standard -- '*_templ.go' web/static/css/styles.css)
+dirty_tracked=$(git_plain_diff --name-only -- '*_templ.go' web/static/css/styles.css) || { echo "FAIL: check-generated: git could not list dirty generated files" >&2; exit 2; }
+dirty_untracked=$(git ls-files --others --exclude-standard -- '*_templ.go' web/static/css/styles.css) || { echo "FAIL: check-generated: git could not list untracked generated files" >&2; exit 2; }
 wholesale_dirty=$(printf '%s\n%s\n' "$dirty_tracked" "$dirty_untracked" | sed '/^$/d' | sort -u)
 if [ -n "$wholesale_dirty" ]; then
   echo "ERROR: generated files are stale or newly untracked after regeneration."

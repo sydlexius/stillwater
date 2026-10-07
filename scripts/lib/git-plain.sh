@@ -23,12 +23,15 @@
 #   diff.interHunkContext -> nearby --unified=0 hunks fuse, line numbers drift.
 #   GIT_LITERAL_PATHSPECS / GIT_NOGLOB_PATHSPECS / GIT_GLOB_PATHSPECS /
 #   GIT_ICASE_PATHSPECS -> pathspec'd diffs come back empty or widened.
+#   a replace ref (git replace) -> the diff reads the replacement commit; the
+#                         variable's mere presence disables replacement.
 # This is a function, not a bare flag list: GIT_DIFF_OPTS is an environment
 # variable and cannot be switched off by an argument.
 #
 # `git show <rev>:<path>` (a blob, no patch) was probed against all of the above
 # and is unaffected, so it needs no wrapper. scripts/check-plain-git-diff.sh
-# fails when a parsed `git diff` in scripts/ or .githooks/ bypasses this helper.
+# flags the common spellings of a patch-producing git call in scripts/ and
+# .githooks/ that skip this helper; its header lists what it cannot see.
 # Callers must also check git's own failure: capture the output in an
 # assignment (`d=$(git_plain_diff ...)`) so a failed git is not read as "no diff".
 #
@@ -36,7 +39,7 @@
 
 git_plain_diff() {
     GIT_DIFF_OPTS='' GIT_LITERAL_PATHSPECS=0 GIT_GLOB_PATHSPECS=0 \
-    GIT_NOGLOB_PATHSPECS=0 GIT_ICASE_PATHSPECS=0 \
+    GIT_NOGLOB_PATHSPECS=0 GIT_ICASE_PATHSPECS=0 GIT_NO_REPLACE_OBJECTS=1 \
     command git -c core.quotePath=false diff \
         --no-ext-diff --no-textconv --no-color --text --inter-hunk-context=0 -M \
         --src-prefix=a/ --dst-prefix=b/ "$@"

@@ -753,6 +753,12 @@ jobs:
       - name: Plain git diff guard and gate-check self-test
         run: bash scripts/test-check-plain-git-diff.sh
 
+      - name: Pre-commit hook diff handling self-test
+        run: bash scripts/test-pre-commit-plain-diff.sh
+
+      - name: prefs-coverage diff handling self-test
+        run: bash scripts/test-prefs-coverage.sh
+
       - name: Release blockers check self-test
         run: bash scripts/test-check-release-blockers.sh
 

@@ -56,9 +56,14 @@ warn() {
 # shellcheck source=scripts/lib/git-plain.sh
 . "$(git rev-parse --show-toplevel)/scripts/lib/git-plain.sh"
 # Captured first: a failed git must block the commit, not read as "no markers".
-staged_diff=$(git_plain_diff --cached -U0 --diff-filter=ACMR --) \
-    || { echo "FAIL conflict-markers: the staged diff could not be read" >&2; exit 1; }
-MARKERS=$(printf '%s\n' "$staged_diff" | grep -nE '^\+(<{7}|={7}|>{7})( |$)' || true)
+# --no-text last: a binary file must print "Binary files differ" here, not be
+# scanned as text (null bytes, a `=======` line in a binary, minutes on a big PNG).
+# The diff goes to a file, not a variable, for the same size reason.
+staged_diff=$(mktemp)
+git_plain_diff --cached -U0 --diff-filter=ACMR --no-text -- > "$staged_diff" \
+    || { rm -f "$staged_diff"; echo "FAIL conflict-markers: the staged diff could not be read" >&2; exit 1; }
+MARKERS=$(grep -nE '^\+(<{7}|={7}|>{7})( |$)' "$staged_diff" || true)
+rm -f "$staged_diff"
 if [ -n "$MARKERS" ]; then
     echo -e "${RED}${BOLD}FAIL${RESET} conflict-markers: unresolved merge conflict markers in staged content:"
     echo "$MARKERS" | head -20 | sed 's/^/  /'
@@ -66,7 +71,7 @@ if [ -n "$MARKERS" ]; then
     echo "Resolve the conflicts (search for '<<<<<<<') and re-stage."
     exit 1
 fi
-if git diff --cached --name-only --diff-filter=ACMR -- | grep -q .; then
+if git_plain_diff --cached --name-only --diff-filter=ACMR -- | grep -q .; then
     pass "conflict-markers"
 else
     warn "conflict-markers (no staged files)"
@@ -91,11 +96,11 @@ bash "$SIGNING_CHECK"
 # --------------------------------------------------------------------------
 # 1. typos -- spell check staged files
 # --------------------------------------------------------------------------
-if git diff --cached --name-only --diff-filter=ACM -- | grep -q .; then
+if git_plain_diff --cached --name-only --diff-filter=ACM -- | grep -q .; then
     if ! command -v typos &>/dev/null; then
         warn "typos (not installed, skipping)"
     else
-        if ! TYPOS_OUTPUT=$(git diff --cached --name-only -z --diff-filter=ACM -- | xargs -0 typos --force-exclude -- 2>&1); then
+        if ! TYPOS_OUTPUT=$(git_plain_diff --cached --name-only -z --diff-filter=ACM -- | xargs -0 typos --force-exclude -- 2>&1); then
             echo -e "${RED}${BOLD}FAIL${RESET} typos:"
             echo "$TYPOS_OUTPUT"
             exit 1
@@ -110,7 +115,7 @@ fi
 # 2. gofmt -- check staged .go files (excluding generated _templ.go)
 # --------------------------------------------------------------------------
 # Go files cannot contain whitespace in their names, so newline-delimited is safe here.
-STAGED_GO=$(git diff --cached --name-only --diff-filter=ACM -- '*.go' | grep -v '_templ\.go$' || true)
+STAGED_GO=$(git_plain_diff --cached --name-only --diff-filter=ACM -- '*.go' | grep -v '_templ\.go$' || true)
 if [ -n "$STAGED_GO" ]; then
     UNFORMATTED=$(echo "$STAGED_GO" | xargs gofmt -l -- 2>/dev/null || true)
     if [ -n "$UNFORMATTED" ]; then
@@ -129,7 +134,7 @@ fi
 # 3. templ freshness -- if any .templ files are staged, regenerate and check
 #    that _templ.go files are up to date.
 # --------------------------------------------------------------------------
-STAGED_TEMPL=$(git diff --cached --name-only --diff-filter=ACM -- '*.templ' || true)
+STAGED_TEMPL=$(git_plain_diff --cached --name-only --diff-filter=ACM -- '*.templ')
 if [ -n "$STAGED_TEMPL" ]; then
     # Always use the version pinned in go.mod via the tool directive.
     TEMPL_CMD="go tool templ"
@@ -141,7 +146,8 @@ if [ -n "$STAGED_TEMPL" ]; then
     fi
 
     # Check if any _templ.go files are now dirty (unstaged changes)
-    DIRTY_TEMPL=$(git diff --name-only | grep -E '_templ\.go$' || true)
+    dirty_names=$(git_plain_diff --name-only -- '*_templ.go') || fail "templ: git could not list dirty generated files"
+    DIRTY_TEMPL=$(printf '%s\n' "$dirty_names" | grep -E '_templ\.go$' || true)
     if [ -n "$DIRTY_TEMPL" ]; then
         echo -e "${RED}${BOLD}FAIL${RESET} templ: generated files are out of date:"
         echo "$DIRTY_TEMPL" | sed 's/^/  /'
@@ -161,7 +167,7 @@ fi
 #     templ-generate check at section 3 so contributors get a fail-fast
 #     instead of finding out via CI's Gate / Generated Files job (#1656).
 # --------------------------------------------------------------------------
-STAGED_TAILWIND_SRC=$(git diff --cached --name-only --diff-filter=ACMRD -- '*.templ' 'web/static/css/input.css' || true)
+STAGED_TAILWIND_SRC=$(git_plain_diff --cached --name-only --diff-filter=ACMRD -- '*.templ' 'web/static/css/input.css')
 if [ -n "$STAGED_TAILWIND_SRC" ]; then
     if ! command -v tailwindcss >/dev/null 2>&1; then
         echo -e "${RED}${BOLD}FAIL${RESET} tailwind: 'tailwindcss' binary not on PATH."
@@ -174,7 +180,7 @@ if [ -n "$STAGED_TAILWIND_SRC" ]; then
         cat /tmp/pre-commit-tailwind.log | head -20
         exit 1
     fi
-    DIRTY_CSS=$(git diff --name-only -- web/static/css/styles.css || true)
+    DIRTY_CSS=$(git_plain_diff --name-only -- web/static/css/styles.css) || fail "tailwind: git could not list the dirty styles.css"
     if [ -n "$DIRTY_CSS" ]; then
         echo -e "${RED}${BOLD}FAIL${RESET} tailwind: web/static/css/styles.css is out of date."
         echo "      The regenerated output differs from what is committed."
@@ -189,8 +195,8 @@ fi
 # --------------------------------------------------------------------------
 # 3b. OpenAPI spec reminder -- warn if API handlers changed without the spec
 # --------------------------------------------------------------------------
-STAGED_API_GO=$(git diff --cached --name-only --diff-filter=ACM -- 'internal/api/handlers.go' 'internal/api/handlers_*.go' | grep -v '_test\.go$' || true)
-STAGED_OPENAPI=$(git diff --cached --name-only --diff-filter=ACM -- 'internal/api/openapi.yaml' || true)
+STAGED_API_GO=$(git_plain_diff --cached --name-only --diff-filter=ACM -- 'internal/api/handlers.go' 'internal/api/handlers_*.go' | grep -v '_test\.go$' || true)
+STAGED_OPENAPI=$(git_plain_diff --cached --name-only --diff-filter=ACM -- 'internal/api/openapi.yaml')
 if [ -n "$STAGED_API_GO" ] && [ -z "$STAGED_OPENAPI" ]; then
     echo -e "${YELLOW}WARN${RESET} openapi: API handler files changed but openapi.yaml is not staged."
     echo "      If response fields changed, update internal/api/openapi.yaml and stage it."
@@ -202,7 +208,7 @@ fi
 # --------------------------------------------------------------------------
 # 4. go build -- make sure everything compiles
 # --------------------------------------------------------------------------
-STAGED_GO_ANY=$(git diff --cached --name-only --diff-filter=ACM -- '*.go' 'go.mod' 'go.sum' || true)
+STAGED_GO_ANY=$(git_plain_diff --cached --name-only --diff-filter=ACM -- '*.go' 'go.mod' 'go.sum')
 if [ -n "$STAGED_GO_ANY" ]; then
     if ! go build ./... 2>/tmp/pre-commit-build.log; then
         echo -e "${RED}${BOLD}FAIL${RESET} go build:"
@@ -255,7 +261,7 @@ fi
 # checkpoint, and CI's security.yml runs it again against the live DB as the
 # authoritative backstop (see reference_govulncheck_local_vs_ci), so nothing is
 # lost by scoping this earlier commit-time check to staged dependency changes.
-STAGED_GO_MOD=$(git diff --cached --name-only --diff-filter=ACM -- 'go.mod' 'go.sum' || true)
+STAGED_GO_MOD=$(git_plain_diff --cached --name-only --diff-filter=ACM -- 'go.mod' 'go.sum')
 if [ -n "$STAGED_GO_MOD" ]; then
     if ! command -v govulncheck &>/dev/null; then
         warn "govulncheck (not installed, skipping)"
@@ -274,7 +280,7 @@ fi
 # --------------------------------------------------------------------------
 # 7. hadolint -- Dockerfile best-practice linting
 # --------------------------------------------------------------------------
-STAGED_DOCKER=$(git diff --cached --name-only --diff-filter=ACM -- '*Dockerfile*' || true)
+STAGED_DOCKER=$(git_plain_diff --cached --name-only --diff-filter=ACM -- '*Dockerfile*')
 if [ -n "$STAGED_DOCKER" ]; then
     if ! command -v hadolint &>/dev/null; then
         warn "hadolint (not installed, skipping)"
@@ -321,7 +327,7 @@ fi
 STAGED_MD=()
 while IFS= read -r -d '' f; do
     STAGED_MD+=("$f")
-done < <(git diff --cached --name-only -z --diff-filter=ACMR -- '*.md')
+done < <(git_plain_diff --cached --name-only -z --diff-filter=ACMR -- '*.md')
 if [ "${#STAGED_MD[@]}" -gt 0 ]; then
     if command -v npx &>/dev/null; then
         MDL_CMD=(npx -y "markdownlint-cli2@${MARKDOWNLINT_CLI2_VERSION}")
@@ -362,7 +368,7 @@ PROSE_CLIENT="${PROSE_TOOLING_DIR}/bin/prose_check.py"
 STAGED_PROSE=()
 while IFS= read -r -d '' f; do
     STAGED_PROSE+=("$f")
-done < <(git diff --cached --name-only -z --diff-filter=ACM -- '*.md' '*.txt')
+done < <(git_plain_diff --cached --name-only -z --diff-filter=ACM -- '*.md' '*.txt')
 if [ "${#STAGED_PROSE[@]}" -gt 0 ]; then
     if [ -x "$PROSE_PY" ] && [ -f "$PROSE_CLIENT" ]; then
         set +e
@@ -419,7 +425,7 @@ fi
 STAGED_MERMAID=()
 while IFS= read -r -d '' f; do
     git show ":$f" 2>/dev/null | grep -q '```mermaid' && STAGED_MERMAID+=("$f")
-done < <(git diff --cached --name-only -z --diff-filter=ACMR -- '*.md')
+done < <(git_plain_diff --cached --name-only -z --diff-filter=ACMR -- '*.md')
 if [ "${#STAGED_MERMAID[@]}" -gt 0 ]; then
     if command -v mmdc &>/dev/null; then
         MERMAID_OUT_DIR=$(mktemp -d)

@@ -162,6 +162,8 @@ HELPERS=(
     test-link-worktree-settings.sh
     test-check-release-blockers.sh
     test-check-plain-git-diff.sh
+    test-pre-commit-plain-diff.sh
+    test-prefs-coverage.sh
 )
 
 # check-commit-signing.sh runs `git init` too but is deliberately NOT above: a

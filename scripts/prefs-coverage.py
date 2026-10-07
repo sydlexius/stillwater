@@ -74,7 +74,7 @@ GIT_PLAIN_DIFF = ["git", "-c", "core.quotePath=false", "diff",
 # Pathspec modes and GIT_DIFF_OPTS are environment, so they ride in env.
 GIT_PLAIN_ENV = {"GIT_DIFF_OPTS": "", "GIT_LITERAL_PATHSPECS": "0",
                  "GIT_GLOB_PATHSPECS": "0", "GIT_NOGLOB_PATHSPECS": "0",
-                 "GIT_ICASE_PATHSPECS": "0"}
+                 "GIT_ICASE_PATHSPECS": "0", "GIT_NO_REPLACE_OBJECTS": "1"}
 
 
 def sh(args, timeout=120, env=None):

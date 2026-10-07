@@ -216,6 +216,8 @@ echo "=== parsed git diffs use plain output (#3446) ==="
 # what a check parses. Mirrored by CI's "Gate Invariant" job (gate.yml).
 bash "$SCRIPT_DIR/check-plain-git-diff.sh"
 bash "$SCRIPT_DIR/test-check-plain-git-diff.sh"
+bash "$SCRIPT_DIR/test-pre-commit-plain-diff.sh"
+bash "$SCRIPT_DIR/test-prefs-coverage.sh"
 
 echo ""
 echo "=== release-blockers check self-test (#2905) ==="
@@ -843,7 +845,10 @@ if command -v go &>/dev/null; then
         exit 1
         ;;
     esac
-  elif git cat-file -e main:internal/api/openapi.yaml 2>/dev/null; then
+  elif ! base_entry=$(git ls-tree --name-only main -- internal/api/openapi.yaml 2>/dev/null); then
+    echo "FAIL: could not ask git whether main has openapi.yaml" >&2
+    exit 1
+  elif [ -n "$base_entry" ]; then
     echo "FAIL: reading openapi.yaml from main failed although the file exists" >&2
     exit 1
   else
