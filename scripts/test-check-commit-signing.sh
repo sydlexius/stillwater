@@ -30,6 +30,9 @@ install_check() {
     mkdir -p "$1/scripts/lib"
     cp "$CHECK" "$1/scripts/check-commit-signing.sh"
     cp "$CHECK_LIB" "$1/scripts/lib/git-clean-env.sh"
+    # The real pre-commit hook sources this library at its top and refuses every
+    # commit when it is missing (fail closed); fixtures installing the hook need it.
+    cp "$REPO_ROOT/scripts/lib/git-plain.sh" "$1/scripts/lib/git-plain.sh"
     chmod +x "$1/scripts/check-commit-signing.sh"
 }
 HOOK="$REPO_ROOT/.githooks/pre-commit"
