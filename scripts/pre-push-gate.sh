@@ -172,8 +172,9 @@ echo "=== Conflict markers (tracked files) ==="
 # Markers checked: <<<<<<< (start), ======= (separator), >>>>>>> (end), each
 # requiring a trailing space or EOL to avoid matching legitimate content like
 # a markdown ASCII rule of exactly seven equals.
-markers=$(git ls-files -z \
-    | xargs -0 grep -nE '^(<{7}|={7}|>{7})( |$)' 2>/dev/null \
+tracked_z="$SW_RUN_DIR/tracked-files.z"
+git ls-files -z > "$tracked_z" || { echo "FAIL: git could not list tracked files for the conflict-marker scan" >&2; exit 2; }
+markers=$(xargs -0 grep -nE '^(<{7}|={7}|>{7})( |$)' 2>/dev/null < "$tracked_z" \
     | head -50 || true)
 if [ -n "$markers" ]; then
     echo "FAIL: unresolved merge conflict markers in tracked files:"

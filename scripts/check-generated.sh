@@ -77,7 +77,7 @@ fi
 # Each git call is its own assignment: bash ignores set -e inside a group
 # feeding a pipe, so a failed diff there would read as "nothing dirty".
 dirty_tracked=$(git_plain_diff --name-only -- '*_templ.go' web/static/css/styles.css) || { echo "FAIL: check-generated: git could not list dirty generated files" >&2; exit 2; }
-dirty_untracked=$(git ls-files --others --exclude-standard -- '*_templ.go' web/static/css/styles.css) || { echo "FAIL: check-generated: git could not list untracked generated files" >&2; exit 2; }
+dirty_untracked=$(GIT_LITERAL_PATHSPECS=0 GIT_GLOB_PATHSPECS=0 GIT_NOGLOB_PATHSPECS=0 GIT_ICASE_PATHSPECS=0 git ls-files --others --exclude-standard -- '*_templ.go' web/static/css/styles.css) || { echo "FAIL: check-generated: git could not list untracked generated files" >&2; exit 2; }
 wholesale_dirty=$(printf '%s\n%s\n' "$dirty_tracked" "$dirty_untracked" | sed '/^$/d' | sort -u)
 if [ -n "$wholesale_dirty" ]; then
   echo "ERROR: generated files are stale or newly untracked after regeneration."

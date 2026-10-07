@@ -30,13 +30,14 @@ printf '%s\n' 'import importlib.util, sys' \
   '    entries, base_sha = m.changed_files(sys.argv[2])' \
   '    print("\n".join(sorted(f"{h}<-{b}" for h, b in entries)))' \
   '    print("base=" + str(base_sha))' \
+  '    print("modbase=" + repr(m.base_content(base_sha, "mod.txt")))' \
   'except m.GitError:' \
   '    print("GITERROR")' > "$W/probe.py"
 rc=0
 # list <env...>: the sorted entries, or "GITERROR" when changed_files raises GitError.
 list() { (cd "$R" && env "$@" python3 -I "$W/probe.py" "$PY" "$BASE"); }
 WANT=$(list X=1)
-[ "$(printf '%s\n' "$WANT" | wc -l | tr -d ' ')" = 5 ] \
+[ "$(printf '%s\n' "$WANT" | wc -l | tr -d ' ')" = 6 ] \
   && echo "  PASS  clean list has the 4 expected entries (2 added, 1 modified, 1 renamed) and a merge-base" \
   || { echo "  FAIL  clean list wrong: $WANT" >&2; rc=1; }
 check() { # <name> <env...>
@@ -56,8 +57,11 @@ check "GIT_DIFF_OPTS" GIT_DIFF_OPTS=-u5
 # A replace ref must not change the list OR lose the merge-base (the worktree matches the real
 # HEAD here, so the list alone would coincide; base= is what a replaced HEAD breaks) (mirrors section B2 of test-check-plain-git-diff.sh).
 HEADSHA=$(git -C "$R" rev-parse HEAD); git -C "$R" replace -f "$HEADSHA" "$BASE"
+# ...and a replaced BASE commit with different content: base_content() must still read the real blob.
+FTREE=$(printf '100644 blob %s\tmod.txt\n' "$(echo zzz | git -C "$R" hash-object -w --stdin)" | git -C "$R" mktree)
+FAKE=$(git -C "$R" commit-tree -m fake "$FTREE"); git -C "$R" replace -f "$BASE" "$FAKE"
 [ -z "$(git -C "$R" diff --name-only "$BASE" HEAD)" ] \
   && echo "  PASS  precondition: the replace ref empties raw git diff" || { echo "  FAIL  replace variant is vacuous" >&2; rc=1; }
 check "a replace ref (git replace)" X=1
-git -C "$R" replace -d "$HEADSHA" >/dev/null
+git -C "$R" replace -d "$HEADSHA" >/dev/null; git -C "$R" replace -d "$BASE" >/dev/null
 exit $rc

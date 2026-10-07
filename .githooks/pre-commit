@@ -45,6 +45,13 @@ warn() {
     echo -e "${YELLOW}SKIP${RESET} $1"
 }
 
+# A failed git must block the hook, never read as "nothing staged": a pipeline
+# or process substitution hides git's status, so listings are captured first.
+# plain_list_z <outfile> <git_plain_diff args>: NUL-delimited listing in a file.
+LIST_DIR=$(mktemp -d)
+trap 'rm -rf "$LIST_DIR"' EXIT
+plain_list_z() { local f=$1; shift; git_plain_diff "$@" > "$f" || fail "git could not list staged files"; }
+
 # --------------------------------------------------------------------------
 # 0. conflict markers -- catch unresolved merge markers in staged files
 # --------------------------------------------------------------------------
@@ -71,7 +78,8 @@ if [ -n "$MARKERS" ]; then
     echo "Resolve the conflicts (search for '<<<<<<<') and re-stage."
     exit 1
 fi
-if git_plain_diff --cached --name-only --diff-filter=ACMR -- | grep -q .; then
+staged_acmr=$(git_plain_diff --cached --name-only --diff-filter=ACMR --) || fail "conflict-markers: git could not list staged files"
+if [ -n "$staged_acmr" ]; then
     pass "conflict-markers"
 else
     warn "conflict-markers (no staged files)"
@@ -96,11 +104,13 @@ bash "$SIGNING_CHECK"
 # --------------------------------------------------------------------------
 # 1. typos -- spell check staged files
 # --------------------------------------------------------------------------
-if git_plain_diff --cached --name-only --diff-filter=ACM -- | grep -q .; then
+staged_acm=$(git_plain_diff --cached --name-only --diff-filter=ACM --) || fail "typos: git could not list staged files"
+if [ -n "$staged_acm" ]; then
     if ! command -v typos &>/dev/null; then
         warn "typos (not installed, skipping)"
     else
-        if ! TYPOS_OUTPUT=$(git_plain_diff --cached --name-only -z --diff-filter=ACM -- | xargs -0 typos --force-exclude -- 2>&1); then
+        plain_list_z "$LIST_DIR/typos" --cached --name-only -z --diff-filter=ACM --
+        if ! TYPOS_OUTPUT=$(xargs -0 typos --force-exclude -- < "$LIST_DIR/typos" 2>&1); then
             echo -e "${RED}${BOLD}FAIL${RESET} typos:"
             echo "$TYPOS_OUTPUT"
             exit 1
@@ -115,7 +125,8 @@ fi
 # 2. gofmt -- check staged .go files (excluding generated _templ.go)
 # --------------------------------------------------------------------------
 # Go files cannot contain whitespace in their names, so newline-delimited is safe here.
-STAGED_GO=$(git_plain_diff --cached --name-only --diff-filter=ACM -- '*.go' | grep -v '_templ\.go$' || true)
+staged_go_raw=$(git_plain_diff --cached --name-only --diff-filter=ACM -- '*.go') || fail "gofmt: git could not list staged files"
+STAGED_GO=$(printf '%s\n' "$staged_go_raw" | grep -v '_templ\.go$' || true)
 if [ -n "$STAGED_GO" ]; then
     UNFORMATTED=$(echo "$STAGED_GO" | xargs gofmt -l -- 2>/dev/null || true)
     if [ -n "$UNFORMATTED" ]; then
@@ -195,7 +206,8 @@ fi
 # --------------------------------------------------------------------------
 # 3b. OpenAPI spec reminder -- warn if API handlers changed without the spec
 # --------------------------------------------------------------------------
-STAGED_API_GO=$(git_plain_diff --cached --name-only --diff-filter=ACM -- 'internal/api/handlers.go' 'internal/api/handlers_*.go' | grep -v '_test\.go$' || true)
+staged_api_raw=$(git_plain_diff --cached --name-only --diff-filter=ACM -- 'internal/api/handlers.go' 'internal/api/handlers_*.go') || fail "openapi: git could not list staged files"
+STAGED_API_GO=$(printf '%s\n' "$staged_api_raw" | grep -v '_test\.go$' || true)
 STAGED_OPENAPI=$(git_plain_diff --cached --name-only --diff-filter=ACM -- 'internal/api/openapi.yaml')
 if [ -n "$STAGED_API_GO" ] && [ -z "$STAGED_OPENAPI" ]; then
     echo -e "${YELLOW}WARN${RESET} openapi: API handler files changed but openapi.yaml is not staged."
@@ -324,10 +336,11 @@ if [ -z "$MARKDOWNLINT_CLI2_VERSION" ]; then
     echo -e "${RED}${BOLD}FAIL${RESET} markdownlint: $MDL_VERSION_FILE is missing or empty"
     exit 1
 fi
+plain_list_z "$LIST_DIR/md" --cached --name-only -z --diff-filter=ACMR -- '*.md'
 STAGED_MD=()
 while IFS= read -r -d '' f; do
     STAGED_MD+=("$f")
-done < <(git_plain_diff --cached --name-only -z --diff-filter=ACMR -- '*.md')
+done < "$LIST_DIR/md"
 if [ "${#STAGED_MD[@]}" -gt 0 ]; then
     if command -v npx &>/dev/null; then
         MDL_CMD=(npx -y "markdownlint-cli2@${MARKDOWNLINT_CLI2_VERSION}")
@@ -365,10 +378,11 @@ fi
 PROSE_TOOLING_DIR="${PROSE_TOOLING_DIR:-${HOME}/Developer/prose-tooling}"
 PROSE_PY="${PROSE_TOOLING_DIR}/.venv/bin/python"
 PROSE_CLIENT="${PROSE_TOOLING_DIR}/bin/prose_check.py"
+plain_list_z "$LIST_DIR/prose" --cached --name-only -z --diff-filter=ACM -- '*.md' '*.txt'
 STAGED_PROSE=()
 while IFS= read -r -d '' f; do
     STAGED_PROSE+=("$f")
-done < <(git_plain_diff --cached --name-only -z --diff-filter=ACM -- '*.md' '*.txt')
+done < "$LIST_DIR/prose"
 if [ "${#STAGED_PROSE[@]}" -gt 0 ]; then
     if [ -x "$PROSE_PY" ] && [ -f "$PROSE_CLIENT" ]; then
         set +e
@@ -424,8 +438,9 @@ fi
 # style linters above because this gate's whole job is to block broken diagrams.
 STAGED_MERMAID=()
 while IFS= read -r -d '' f; do
-    git show ":$f" 2>/dev/null | grep -q '```mermaid' && STAGED_MERMAID+=("$f")
-done < <(git_plain_diff --cached --name-only -z --diff-filter=ACMR -- '*.md')
+    blob=$(git show ":$f") || fail "mermaid: git could not read the staged $f"
+    ! grep -q '```mermaid' <<<"$blob" || STAGED_MERMAID+=("$f")
+done < "$LIST_DIR/md"
 if [ "${#STAGED_MERMAID[@]}" -gt 0 ]; then
     if command -v mmdc &>/dev/null; then
         MERMAID_OUT_DIR=$(mktemp -d)

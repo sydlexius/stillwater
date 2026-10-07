@@ -78,6 +78,7 @@ GIT_PLAIN_ENV = {"GIT_DIFF_OPTS": "", "GIT_LITERAL_PATHSPECS": "0",
 
 
 def sh(args, timeout=120, env=None):
+    env = env if env is not None else {**os.environ, **GIT_PLAIN_ENV}  # every git read is plain
     # Bounded so a hung git op fails fast (rc 124) instead of burning the job budget.
     try:
         return subprocess.run(args, capture_output=True, text=True, timeout=timeout,
@@ -183,7 +184,8 @@ def base_content(base_sha, path):
         return None
     try:
         res = subprocess.run(["git", "show", f"{base_sha}:{path}"],
-                              capture_output=True, timeout=120)
+                              capture_output=True, timeout=120,
+                              env={**os.environ, **GIT_PLAIN_ENV})
     except subprocess.TimeoutExpired:
         raise GitError(f"git show {base_sha}:{path} timed out after 120s")
     if res.returncode == 0:

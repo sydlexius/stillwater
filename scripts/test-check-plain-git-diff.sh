@@ -148,6 +148,12 @@ sed -n '/^  dirty_css=/p' "$CHECKGEN_SH" > "$W/c-gen3.sh"; failclosed "check-gen
 sed -n '/^dirty_tracked=/,/^wholesale_dirty=/p' "$CHECKGEN_SH" > "$W/c-gen2.sh"; failclosed "check-generated wholesale diff" "$CHECKGEN_SH" "$W/c-gen2.sh"
 sed -n '/^dirty_untracked=/p' "$CHECKGEN_SH" > "$W/c-gen4.sh"
 failclosed "check-generated ls-files" "$CHECKGEN_SH" "$W/c-gen4.sh" 'git() { case "$1" in ls-files) return 1;; *) command git "$@";; esac; }'
+# An untracked generated file must be listed even under GIT_LITERAL_PATHSPECS=1.
+touch "$R/zz_templ.go"
+{ cat "$W/c-gen2.sh"; echo 'echo "DIRTY[$wholesale_dirty]"'; } > "$W/c-gen5.sh"; mkarm "$CHECKGEN_SH" "$W/c-gen5.sh" "$W/sd/arm-c.sh"
+out=$(cd "$R" && GIT_LITERAL_PATHSPECS=1 bash "$W/sd/arm-c.sh" 2>&1) || true
+rm -f "$R/zz_templ.go"
+tr '\n' ' ' <<<"$out" | grep -q 'DIRTY\[.*zz_templ.go' && pass "check-generated lists an untracked generated file under GIT_LITERAL_PATHSPECS=1" || fail "untracked generated file dropped under GIT_LITERAL_PATHSPECS=1: $out"
 sed -nE '/^changed_go_raw=/,/^MODIFIED_GO_FILES=/p' "$GATE_SH" > "$W/c-go.sh"; failclosed "gate changed-Go list" "$GATE_SH" "$W/c-go.sh"
 
 git -C "$R" checkout -q -- gen_templ.go web/static/css/styles.css

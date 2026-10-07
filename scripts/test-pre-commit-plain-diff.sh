@@ -84,4 +84,22 @@ printf '%s\n' '#!/bin/sh' 'd=0; c=0; for a in "$@"; do [ "$a" = diff ] && d=1; [
 SHIM_PATH="$W/shim:$W/bin:$PATH"
 stage_templ; run sec3 1 "could not list" "templ: failing unstaged diff blocks (not read as clean)" STALE_GEN=1 PATH="$SHIM_PATH"
 stage_css; run sec3a 1 "could not list" "tailwind: failing unstaged diff blocks (not read as clean)" STALE_GEN=1 PATH="$SHIM_PATH"
+# Listings whose failure must block, one row per mechanism: a pipeline (`| grep -q`, section 0),
+# a process substitution (the Markdown loop) and a blob read (`git show | grep`, mermaid scan).
+mkdir -p "$W/shim2" "$W/shim3"
+printf '%s\n' '#!/bin/sh' 'c=0; n=0; for a in "$@"; do [ "$a" = --cached ] && c=1; [ "$a" = --name-only ] && n=1; done' \
+  "[ \$c = 1 ] && [ \$n = 1 ] && exit 1" "exec $REALGIT \"\$@\"" > "$W/shim2/git"
+printf '%s\n' '#!/bin/sh' '[ "$1" = show ] && exit 1' "exec $REALGIT \"\$@\"" > "$W/shim3/git"
+chmod +x "$W/shim2/git" "$W/shim3/git"
+mdstart=$(hln '^MDL_VERSION_FILE='); mm=$(hln '^STAGED_MERMAID=()')
+mdend1=$(awk -v s="$(hln '^STAGED_MD=()')" 'NR>s && /^done </{print NR; exit}' "$HOOK_SH")
+mdend2=$(awk -v s="$mm" 'NR>s && /^done </{print NR; exit}' "$HOOK_SH")
+{ hcut 1 "$pre"; echo "$src"; hcut "$mdstart" "$mdend1"; hcut "$mm" "$mdend2"; echo 'echo SECTION-DONE'; } > "$W/secmd.sh"
+echo '1.0.0' > "$R/.markdownlint-cli2-version"; git -C "$R" add .markdownlint-cli2-version; git -C "$R" commit -qm mdl
+stage_md() { reset; printf '# t\n\n```mermaid\ngraph TD\n```\n' > "$R/d.md"; git -C "$R" add d.md; }
+reset; printf 'a\n' > "$R/a.txt"; git -C "$R" add a.txt
+run sec0 1 "could not list" "pipeline site: a failing staged listing blocks (not 'no staged files')" PATH="$W/shim2:$PATH"
+stage_md; run secmd 0 SECTION-DONE "markdown sections pass on a healthy git"
+stage_md; run secmd 1 "could not list" "process-substitution site: a failing staged listing blocks" PATH="$W/shim2:$PATH"
+stage_md; run secmd 1 "could not read the staged" "mermaid blob read: a failing git show blocks" PATH="$W/shim3:$PATH"
 exit $rc
