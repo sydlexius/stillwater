@@ -239,24 +239,31 @@ for (const theme of ['light', 'dark']) {
   });
 }
 
-// applyTheme must not lose to the page's own preference load: with the saved
-// preferences delayed, the page re-applies the server's theme AFTER a naive
-// apply. The theme set here must still hold once that load has settled.
-test('applyTheme holds when the preference load resolves late', async ({ page }) => {
+// applyTheme must not lose to the page's own preference load. The PAGE's first
+// preferences response is read from the server at once (so it carries the theme
+// saved BEFORE the helper runs) but delivered 2 s late, after the helper's call;
+// later requests are untouched. The page then re-applies that stale theme when
+// it resolves, so the helper must wait for THAT request, not start its own.
+test('applyTheme holds when the page preference load resolves late', async ({ page }) => {
+  let first = true;
   await page.route('**/api/v1/preferences', async (route) => {
-    await new Promise((r) => setTimeout(r, 1200));
-    await route.continue();
+    if (!first) return route.continue();
+    first = false;
+    const response = await route.fetch();
+    await new Promise((r) => setTimeout(r, 2000));
+    await route.fulfill({ response });
   });
   await page.goto('/activity');
+  expect(first, 'precondition: the page started its own preference load').toBe(false);
   await applyTheme(expect, page, 'light');
   await page.waitForTimeout(2500);
   expect(await page.evaluate(() => document.documentElement.classList.contains('dark')), 'html is dark after the late load').toBe(false);
 });
 
-// A long unbreakable value label wraps inside the popover instead of widening
-// the panel. The DOM text stands in for a 90-character token. Desktop panel only:
+// A long unbreakable metadata label wraps inside its line and inside the popover
+// instead of widening the panel. The DOM text stands in for a 90-character token. Desktop panel only:
 // below the breakpoint the history opens as a sheet, which is not this panel.
-test('a long value label wraps inside the popover at 1280px', async ({ page }) => {
+test('a long metadata label wraps inside the popover at 1280px', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(`/artists/${artistId}`);
   await page.locator('body').press('e');
@@ -264,8 +271,12 @@ test('a long value label wraps inside the popover at 1280px', async ({ page }) =
   await page.locator(`#field-biography-${artistId} button[aria-controls^="ctx-panel-fh-"]`).click();
   const panel = page.locator(`#ctx-panel-fh-biography-${artistId}`);
   await expect(panel).toBeVisible();
-  await panel.locator('button[role="menuitem"] span.text-xs').first().evaluate((el, t) => { el.textContent = t; }, `Value: from ${'x'.repeat(90)}`);
+  const line = panel.locator('button[role="menuitem"] span.text-xs').first();
+  await line.evaluate((el, t) => { el.textContent = t; }, `Value: from ${'x'.repeat(90)}`);
+  // A box check alone cannot see text spilling out of the line itself.
+  const overflow = await line.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+  expect(overflow.scroll, 'metadata line scrollWidth <= clientWidth').toBeLessThanOrEqual(overflow.client);
   const box = await panel.boundingBox();
   expect(box.x, 'panel left edge').toBeGreaterThanOrEqual(0);
-  expect(box.width, 'panel width with a 90-character token').toBeLessThanOrEqual(260);
+  expect(box.width, 'panel width with a 90-character metadata label').toBeLessThanOrEqual(260);
 });

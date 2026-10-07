@@ -196,8 +196,8 @@ func TestHistoryProducerDisplay_PopoverUndoItemHasNoValueLabel(t *testing.T) {
 	if strings.Contains(item, "Value:") || strings.Contains(item, chipUnrecorded) {
 		t.Errorf("the Undo item carries a value label: %s", item)
 	}
-	if !strings.Contains(body, "max-w-[12rem] break-words") {
-		t.Errorf("the second line is not width-capped and wrapping")
+	if !strings.Contains(item, "max-w-[12rem] break-words") {
+		t.Errorf("the Undo item second line is not width-capped and wrapping: %s", item)
 	}
 }
 
