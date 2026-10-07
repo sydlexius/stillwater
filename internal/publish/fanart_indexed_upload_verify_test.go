@@ -899,8 +899,8 @@ func (b *blockAfterReads) GetArtistDetail(ctx context.Context, _ string) (*conne
 }
 
 // "Settled" is the LAST two completed reads being equal, read when the budget
-// cuts a read mid-flight. Not covered: the same expression at the select site
-// (budget ends between reads), which needs a clock seam.
+// cuts a read mid-flight. The same expression at the select site (budget ends
+// between reads) is pinned by TestPollCount_SettledWhenDeadlineWinsTheTimer.
 func TestPollCount_SettledIsTheLastTwoCompletedReads(t *testing.T) {
 	shrinkPollTiming(t)
 	for _, c := range []struct {
@@ -917,5 +917,47 @@ func TestPollCount_SettledIsTheLastTwoCompletedReads(t *testing.T) {
 		if ok || err != nil || settled != c.settled {
 			t.Errorf("seq %v: got (ok %v, settled %v, err %v), want (false, %v, nil)", c.seq, ok, settled, err, c.settled)
 		}
+	}
+}
+
+// seqCounts is an instant reader that serves seq in order (then repeats the
+// last value) and never blocks, so the budget can only end in pollCount's timer
+// wait between reads, not mid-read.
+type seqCounts struct {
+	seq   []int
+	calls int
+}
+
+func (s *seqCounts) GetArtistDetail(context.Context, string) (*connection.ArtistPlatformState, error) {
+	i := min(s.calls, len(s.seq)-1)
+	s.calls++
+	return &connection.ArtistPlatformState{BackdropCount: s.seq[i]}, nil
+}
+
+// Pins `settled` at the select site where the deadline wins the timer wait:
+// with a 150 ms budget and a 100 ms poll interval, reads land at 0 and 100 ms
+// and the deadline fires before the 200 ms tick, so exactly two reads complete.
+// The call count proves the timer branch was taken after two reads, not three.
+func TestPollCount_SettledWhenDeadlineWinsTheTimer(t *testing.T) {
+	shrinkPollTiming(t) // 150 ms budget; restores both timing vars on cleanup
+	indexedUploadPollInterval = 100 * time.Millisecond
+	for _, c := range []struct {
+		name    string
+		seq     []int
+		settled bool
+	}{
+		{"two equal reads", []int{3}, true},
+		{"two differing reads", []int{3, 4}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := &seqCounts{seq: c.seq}
+			count, ok, settled, err := pollCount(context.Background(), r, "p1", 5)
+			if r.calls != 2 {
+				t.Fatalf("reads = %d, want exactly 2: the deadline did not win the timer wait after two reads", r.calls)
+			}
+			if count != c.seq[len(c.seq)-1] || ok || settled != c.settled || err != nil {
+				t.Fatalf("got (count %d, ok %v, settled %v, err %v), want (%d, false, %v, nil)", count, ok, settled, err, c.seq[len(c.seq)-1], c.settled)
+			}
+		})
 	}
 }
