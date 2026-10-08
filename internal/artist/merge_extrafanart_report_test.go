@@ -436,6 +436,49 @@ func TestMergeArtists_ExtraFanartCountFailureIsAWarningNotAnAbort(t *testing.T) 
 	if !found {
 		t.Errorf("Warnings = %v, want one saying the extrafanart images could not be counted", res.Warnings)
 	}
+	// The warning reaches the HTTP response, so it must not leak a server path.
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "could not count") && (strings.Contains(w, "/") || strings.Contains(w, os.TempDir())) {
+			t.Errorf("warning %q leaks a filesystem path", w)
+		}
+	}
+}
+
+// An untraversable artist directory makes Lstat on its extrafanart/ fail with
+// something other than "does not exist". That must be a recorded warning, not
+// read as "no folder" (which would be silence). Survivor and loser sides.
+func TestReportSurvivorExtraFanart_UnreadableParentWarns(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission bits")
+	}
+	for _, dry := range []bool{false, true} {
+		t.Run(map[bool]string{false: "survivor", true: "loser(dry)"}[dry], func(t *testing.T) {
+			root := t.TempDir()
+			surv, lose := filepath.Join(root, "s"), filepath.Join(root, "l")
+			writeFiles(t, filepath.Join(surv, "extrafanart"), map[string]string{"a.jpg": "a"})
+			writeFiles(t, filepath.Join(lose, "extrafanart"), map[string]string{"b.jpg": "b"})
+			locked := surv
+			if dry {
+				locked = lose
+			}
+			if err := os.Chmod(locked, 0); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+			if _, err := os.Lstat(filepath.Join(locked, "extrafanart")); err == nil || os.IsNotExist(err) {
+				t.Fatalf("precondition: Lstat must fail with a non-NotExist error, got %v", err)
+			}
+			res := &MergeResult{}
+			reportSurvivorExtraFanart(context.Background(), &NearDuplicateArtist{ID: "s", Name: "Surv", Path: surv},
+				[]NearDuplicateArtist{{ID: "l", Path: lose}}, dry, res)
+			if res.ExtraFanart != nil {
+				t.Errorf("ExtraFanart = %+v, want nil", *res.ExtraFanart)
+			}
+			if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "could not count the extrafanart images for Surv") {
+				t.Errorf("Warnings = %v, want one count-failure warning", res.Warnings)
+			}
+		})
+	}
 }
 
 // The report names the SURVIVOR, not a loser, when the two names differ.

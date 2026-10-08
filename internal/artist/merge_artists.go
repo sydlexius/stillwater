@@ -511,8 +511,12 @@ func reportSurvivorExtraFanart(ctx context.Context, survivor *NearDuplicateArtis
 	}
 	count, err := countSurvivorExtraFanart(ctx, survivor.Path, losers, dryRun)
 	if err != nil {
+		// The error carries a server filesystem path, so it goes to the log and
+		// the operator-facing warning stays generic.
+		slog.Warn("could not count the survivor's extrafanart images",
+			"survivor_id", survivor.ID, "error", err)
 		result.Warnings = append(result.Warnings,
-			fmt.Sprintf("could not count the extrafanart images for %s: %v", survivor.Name, err))
+			fmt.Sprintf("could not count the extrafanart images for %s; see the server log", survivor.Name))
 		return
 	}
 	if count > 0 {
@@ -522,17 +526,29 @@ func reportSurvivorExtraFanart(ctx context.Context, survivor *NearDuplicateArtis
 
 // isRealDir reports whether path exists and is a directory itself (a symlink to
 // a directory is NOT, matching the migration's refusal and the merge's Lstat).
-func isRealDir(path string) bool {
+// Only a missing path is "no folder"; any other Lstat error (an untraversable
+// parent, a stale handle) is returned, so the caller records a warning instead
+// of reading it as "nothing to migrate".
+func isRealDir(path string) (bool, error) {
 	fi, err := os.Lstat(path)
-	return err == nil && fi.IsDir()
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return fi.IsDir(), nil
 }
 
 // countSurvivorExtraFanart returns the survivor's extrafanart/ image count, read
 // from disk (dryRun false) or projected across the losers (dryRun true).
 func countSurvivorExtraFanart(ctx context.Context, survivorPath string, losers []NearDuplicateArtist, dryRun bool) (int, error) {
 	survDir := filepath.Join(survivorPath, extraFanartDirName)
-	hasDir := isRealDir(survDir)
-	if _, err := os.Lstat(survDir); err == nil && !hasDir {
+	hasDir, err := isRealDir(survDir)
+	if err != nil {
+		return 0, err
+	}
+	if _, lerr := os.Lstat(survDir); lerr == nil && !hasDir {
 		return 0, nil
 	}
 	count := 0
@@ -547,7 +563,14 @@ func countSurvivorExtraFanart(ctx context.Context, survivorPath string, losers [
 		return count, nil
 	}
 	for _, l := range losers {
-		if l.Path == "" || !isRealDir(filepath.Join(l.Path, extraFanartDirName)) {
+		if l.Path == "" {
+			continue
+		}
+		loserHas, lerr := isRealDir(filepath.Join(l.Path, extraFanartDirName))
+		if lerr != nil {
+			return 0, lerr
+		}
+		if !loserHas {
 			continue
 		}
 		files, err := image.ListArtworkSubdirFiles(ctx, l.Path, extraFanartDirName)

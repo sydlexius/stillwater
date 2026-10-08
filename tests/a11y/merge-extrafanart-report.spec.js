@@ -49,6 +49,27 @@ async function openMerge(browser, theme = 'dark') {
   return { context, page };
 }
 
+// commitAndAwaitMerge clicks Confirm and waits for the merge POST's own response,
+// asserting its status and body BEFORE any DOM check, so a failed or slow merge
+// says why instead of reading as "the dialog did not change". The wait is bounded
+// by MERGE_MS. MEASURED: the handler runs the rule pass synchronously after the
+// merge (runRulesAfterRefresh), 2.6-3.2 s on a quiet dev machine (the reconcile
+// itself is under 30 ms) and capped server-side at 30 s, so a slower CI runner
+// legitimately exceeds the default 5 s expect timeout; 45 s covers the cap.
+const MERGE_MS = 45_000;
+async function commitAndAwaitMerge(page) {
+  const started = Date.now();
+  const respP = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && r.url().endsWith('/api/v1/artists/merge') && !r.request().postDataJSON().dry_run,
+    { timeout: MERGE_MS });
+  await page.locator('#merge-modal-confirm').click();
+  const resp = await respP;
+  const body = await resp.json().catch(() => ({}));
+  console.log(`merge POST: ${resp.status()} in ${Date.now() - started} ms`);
+  expect(resp.status(), `merge POST failed: ${JSON.stringify(body)}`).toBe(200);
+  return { resp, body };
+}
+
 function survivorImageCount() {
   let n = 0;
   // Scan every artist folder: the merge may rename the survivor to its canonical
@@ -85,7 +106,8 @@ for (const theme of ['dark', 'light']) test(`dry run and real merge both report 
   expect(results.violations, formatViolations(results.violations)).toEqual([]);
 
   // Real merge: the dialog stays open with the "now" sentence and the same count.
-  await page.locator('#merge-modal-confirm').click();
+  const merged = await commitAndAwaitMerge(page);
+  expect(merged.body.extrafanart_report, 'the merge response carries the report').toEqual({ artist_name: MERGE_FIXTURE.artistName, file_count: EXPECTED_IMAGES });
   await expect(note).toContainText(`Image files now in the extrafanart folder for ${MERGE_FIXTURE.artistName}: ${EXPECTED_IMAGES}.`);
   await expect(note.locator('a')).toHaveAttribute('href', `${BASE_PATH}/reports/extrafanart-migration`);
   await expect(page.locator('#merge-modal-cancel')).toHaveText('Close');
@@ -101,7 +123,7 @@ for (const theme of ['dark', 'light']) test(`dry run and real merge both report 
   await expect(page.locator('#merge-modal-cancel')).toBeFocused();
   const status = page.locator('#merge-status');
   await expect(status).toHaveAttribute('role', 'status');
-  await expect(status).toHaveText(await note.innerText());
+  await expect(status).toContainText(await note.innerText());
   await expect(status).toContainText(`${EXPECTED_IMAGES}`);
   expect(await note.evaluate((el) => !!el.closest('[role="status"], [role="alert"], [aria-live]')), 'the note must not also be a live region').toBe(false);
   // The dialog title is an <h3> under the page <h1> (heading-order): pre-existing
@@ -133,10 +155,31 @@ test('a merge with no extrafanart images says nothing and reloads as before', as
   await seedMergeFixture(server, libDir, false);
   const { context, page } = await openMerge(browser);
   await expect(page.locator(NOTE), 'nothing to migrate, so nothing is reported in the preview').toHaveCount(0);
-  await page.locator('#merge-modal-confirm').click();
+  const merged = await commitAndAwaitMerge(page);
+  expect(merged.body.extrafanart_report, 'nothing to migrate, so no report in the response').toBeUndefined();
   // No report: the dialog closes itself and the page reloads to the empty list.
   await expect(page.locator('#merge-modal')).toBeHidden();
   await expect(page.locator('[data-merge-open]')).toHaveCount(0);
   await expect(page.locator(NOTE)).toHaveCount(0);
+  await context.close();
+});
+
+test('warnings without a report are shown in the finished dialog, announced once, and Close reloads', async ({ browser }) => {
+  await seedMergeFixture(server, libDir, false, true);
+  const { context, page } = await openMerge(browser);
+  await expect(page.locator(NOTE)).toHaveCount(0);
+  const merged = await commitAndAwaitMerge(page);
+  expect(merged.body.extrafanart_report, 'no report').toBeUndefined();
+  const symlinkWarnings = (merged.body.warnings || []).filter(w => w.includes('skipped symlink'));
+  expect(symlinkWarnings.length, 'precondition: the merge warned about the symlink').toBeGreaterThan(0);
+  // The dialog stays open with the warning (it used to reload and lose it).
+  await expect(page.locator('#merge-modal')).toBeVisible();
+  await expect(page.locator('#merge-warnings li').first()).toContainText('skipped symlink');
+  await expect(page.locator('#merge-survivor-fieldset')).toBeHidden();
+  await expect(page.locator('#merge-modal-cancel')).toHaveText('Close');
+  await expect(page.locator('#merge-modal-cancel')).toBeFocused();
+  await expect(page.locator('#merge-status')).toContainText('skipped symlink');
+  await Promise.all([page.waitForLoadState('load'), page.locator('#merge-modal-cancel').click()]);
+  await expect(page.locator('#merge-modal')).toBeHidden();
   await context.close();
 });

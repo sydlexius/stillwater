@@ -56,7 +56,7 @@ export async function cleanupMergeFixture(server, libDir) {
  * withExtraFanart=false builds the same pair with NO extrafanart/ folders, for
  * the silent case.
  */
-export async function seedMergeFixture(server, libDir, withExtraFanart = true) {
+export async function seedMergeFixture(server, libDir, withExtraFanart = true, withSymlink = false) {
   await cleanupMergeFixture(server, libDir);
   const dirs = { [MERGE_FIXTURE.dirA]: {}, [MERGE_FIXTURE.dirB]: {} };
   if (withExtraFanart) {
@@ -74,6 +74,14 @@ export async function seedMergeFixture(server, libDir, withExtraFanart = true) {
       const target = path.join(root, 'extrafanart', name);
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.writeFileSync(target, data);
+    }
+  }
+  if (withSymlink) {
+    // A top-level symlink in BOTH folders: whichever one is the loser, the merge
+    // skips it and says so in `warnings` (no product hook needed), with no report.
+    for (const dir of Object.keys(dirs)) {
+      fs.symlinkSync(path.join(libDir, dir, 'artist.nfo'), path.join(libDir, dir, 'linked.nfo'));
+      if (!fs.lstatSync(path.join(libDir, dir, 'linked.nfo')).isSymbolicLink()) throw new Error(`seed: ${dir}/linked.nfo is not a symlink`);
     }
   }
   const created = await serverFetch(server, 'POST', '/api/v1/libraries', { name: MERGE_FIXTURE.libraryName, path: libDir, type: 'regular' });

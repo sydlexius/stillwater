@@ -1067,7 +1067,7 @@ templ ArtistMergeModal() {
 			confirmBtn.disabled = true;
 			postMerge(false).then(function(out) {
 				if (out.kind === 'success') {
-					if (out.body && out.body.extrafanart_report) {
+					if (out.body && (out.body.extrafanart_report || (out.body.warnings || []).length > 0)) {
 						renderMergeDone(out.body);
 						return;
 					}
@@ -1153,25 +1153,32 @@ templ ArtistMergeModal() {
 				override.textContent = tx('warning_override');
 				previewBody.appendChild(override);
 			}
-			if (warnings.length > 0) {
-				var warnHeading = document.createElement('p');
-				warnHeading.className = 'mt-3 text-sm font-medium text-amber-700 dark:text-amber-300';
-				warnHeading.textContent = tx('warnings_heading');
-				previewBody.appendChild(warnHeading);
-				var wul = document.createElement('ul');
-				wul.className = 'mt-1 list-disc list-inside space-y-1 text-xs text-amber-700 dark:text-amber-300';
-				warnings.forEach(function(w) {
-					var li = document.createElement('li');
-					li.textContent = w;
-					wul.appendChild(li);
-				});
-				previewBody.appendChild(wul);
-			}
+			appendWarnings(warnings);
 			appendExtraFanartReport(body.extrafanart_report, 'extrafanart_preview');
 			var platformNote = document.createElement('p');
 			platformNote.className = 'mt-3 text-xs text-gray-500 dark:text-gray-400';
 			platformNote.textContent = tx('platform_rescan_note');
 			previewBody.appendChild(platformNote);
+		}
+
+		// appendWarnings lists the merge's warnings (textContent only), in the
+		// dry-run preview and in the finished dialog, so a committed merge's
+		// warnings are never lost to the reload.
+		function appendWarnings(warnings) {
+			if (warnings.length === 0) return;
+			var warnHeading = document.createElement('p');
+			warnHeading.className = 'mt-3 text-sm font-medium text-amber-700 dark:text-amber-300';
+			warnHeading.textContent = tx('warnings_heading');
+			previewBody.appendChild(warnHeading);
+			var wul = document.createElement('ul');
+			wul.id = 'merge-warnings';
+			wul.className = 'mt-1 list-disc list-inside space-y-1 text-xs text-amber-700 dark:text-amber-300';
+			warnings.forEach(function(w) {
+				var li = document.createElement('li');
+				li.textContent = w;
+				wul.appendChild(li);
+			});
+			previewBody.appendChild(wul);
 		}
 
 		// appendExtraFanartReport shows the survivor's extrafanart/ count (#3180)
@@ -1200,11 +1207,11 @@ templ ArtistMergeModal() {
 			previewBody.innerHTML = '';
 			optionsRoot.innerHTML = '';
 			appendExtraFanartReport(body.extrafanart_report, 'extrafanart_done');
+			appendWarnings(body.warnings || []);
 			if (cancelBtn) cancelBtn.textContent = tx('close_label');
 			doneHidden.forEach(function(el) { el.hidden = true; });
 			if (disambWarning) disambWarning.hidden = true;
-			var note = document.getElementById('merge-extrafanart-report');
-			if (statusEl && note) statusEl.textContent = note.textContent;
+			if (statusEl) statusEl.textContent = previewBody.textContent;
 			// Confirm is disabled now, so focus would fall to <body>. Close is the
 			// only remaining action; focusing a button (not the note) keeps the
 			// result announced once, by the live region above.
