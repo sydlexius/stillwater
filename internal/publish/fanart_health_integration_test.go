@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -29,8 +28,8 @@ var _ publish.FanartHealthReporter = (*rule.Service)(nil)
 
 // TestFanartUnreadable_RealProducerAndRealRuleService drives the real snapshot
 // (a real unreadable file on disk) through the real publisher sync into the real
-// rule service on SQLite: the finding opens with the slot's position in its
-// message, and resolves once the file is readable again. Not covered here: the
+// rule service on SQLite: the finding opens with the file's name (and no position
+// number) in its message, and resolves once the file is readable again. Not covered here: the
 // reconciler and Jellyfin paths (fanart_health_report_test.go covers them with a
 // fake reporter), and the HTTP rendering of the finding.
 func TestFanartUnreadable_RealProducerAndRealRuleService(t *testing.T) {
@@ -71,7 +70,7 @@ func TestFanartUnreadable_RealProducerAndRealRuleService(t *testing.T) {
 	if err := jpeg.Encode(&buf, img, nil); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"fanart.jpg", "fanart2.jpg", "fanart3.jpg"} {
+	for _, name := range []string{"fanart.jpg", "fanart1.jpg", "fanart2.jpg"} {
 		if err := os.WriteFile(filepath.Join(dir, name), buf.Bytes(), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -84,7 +83,7 @@ func TestFanartUnreadable_RealProducerAndRealRuleService(t *testing.T) {
 		t.Fatalf("mapping artist: %v", err)
 	}
 
-	bad := filepath.Join(dir, "fanart3.jpg") // slot index 2, shown as position 3
+	bad := filepath.Join(dir, "fanart2.jpg") // slot index 2: position 3, but the name carries a 2
 	if err := os.Chmod(bad, 0); err != nil {
 		t.Fatal(err)
 	}
@@ -118,11 +117,9 @@ func TestFanartUnreadable_RealProducerAndRealRuleService(t *testing.T) {
 	if n != 1 || status != rule.ViolationStatusOpen {
 		t.Fatalf("after syncing with an unreadable file: %d rows, status %q, want 1 open", n, status)
 	}
-	if !strings.Contains(message, "file(s) 3 could not be read") {
-		t.Errorf("message = %q, want it to name backdrop position 3", message)
-	}
-	if !strings.Contains(message, "fanart3.jpg") {
-		t.Errorf("message = %q, want it to name the unreadable file fanart3.jpg", message)
+	want := "1 backdrop file could not be read, so Stillwater is not sending it to your media servers: fanart2.jpg. Check that the file exists, can be read and is not too large."
+	if message != want {
+		t.Errorf("message = %q, want %q (file name only, no position 3)", message, want)
 	}
 
 	if err := os.Chmod(bad, 0o600); err != nil {

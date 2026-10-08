@@ -63,13 +63,13 @@ func fanartUnreadableRows(t *testing.T, db *sql.DB, artistID string) (count int,
 	return count, status, message
 }
 
-func TestFanartUnreadable_RaiseIsIdempotentAndUpdatesSlots(t *testing.T) {
+func TestFanartUnreadable_RaiseIsIdempotentAndUpdatesTheMessage(t *testing.T) {
 	db := setupTestDB(t)
 	a, svc, _ := seedFanartUnreadable(t, db, []int{1})
 
 	_, _, first := fanartUnreadableRows(t, db, a.ID)
-	if !strings.Contains(first, " 2 ") {
-		t.Fatalf("first message should name position 2 (slot index 1): %q", first)
+	if !strings.Contains(first, "could not be read") || strings.ContainsAny(first, "0123456789") {
+		t.Fatalf("a raise with no reason should store the generic sentence with no position number: %q", first)
 	}
 	var firstID string
 	if err := db.QueryRow(`SELECT id FROM rule_violations WHERE rule_id = ?`, RuleFanartUnreadable).Scan(&firstID); err != nil {
@@ -86,8 +86,8 @@ func TestFanartUnreadable_RaiseIsIdempotentAndUpdatesSlots(t *testing.T) {
 	if status != ViolationStatusOpen {
 		t.Errorf("status = %q, want open", status)
 	}
-	if !strings.Contains(msg, "Backdrop file(s) 2, 4 could not") || !strings.Contains(msg, "not readable") {
-		t.Errorf("second raise did not replace the slot list (want sorted, de-duplicated 2, 4): %q", msg)
+	if msg != "The file is not readable." {
+		t.Errorf("second raise did not replace the message with the caller's reason: %q", msg)
 	}
 	var secondID string
 	if err := db.QueryRow(`SELECT id FROM rule_violations WHERE rule_id = ?`, RuleFanartUnreadable).Scan(&secondID); err != nil {

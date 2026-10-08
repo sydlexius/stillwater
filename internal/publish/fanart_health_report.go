@@ -14,8 +14,10 @@ import (
 // the method set matches that type exactly so no adapter is needed; publish must
 // not import rule, so the interface lives here.
 //
-// slots are 0-based local backdrop indexes (the snapshot's own numbering). The
-// reporter owns how they are shown to the operator.
+// slots are 0-based local backdrop indexes (the snapshot's own numbering). They
+// are never shown to the operator: the rule service only validates them (a
+// non-empty, in-range list). reason is the complete operator-facing message and
+// names files by base name.
 type FanartHealthReporter interface {
 	RaiseFanartUnreadable(ctx context.Context, artistID string, slots []int, reason string) error
 	ResolveFanartUnreadable(ctx context.Context, artistID string) error
@@ -57,6 +59,36 @@ func fanartNameList(names []string) string {
 		return strings.Join(names, ", ")
 	}
 	return fmt.Sprintf("%s and %d more", strings.Join(names[:maxReportedFanartNames], ", "), len(names)-maxReportedFanartNames)
+}
+
+// fanartHealthReason builds the whole operator-facing sentence for the finding
+// (#3469). Files are identified by base name only: a position number does not
+// match the name (fanart2.jpg can sit at position 3), so none is shown. The two
+// kinds get their own clause because they mean different things: an unreadable
+// file is a fault to fix, while a file left out by the snapshot budget is
+// readable and only waiting for a smaller set. Each clause has its own
+// singular and plural form.
+func fanartHealthReason(unreadable, skipped []string) string {
+	var clauses []string
+	if n := len(unreadable); n > 0 {
+		if n == 1 {
+			clauses = append(clauses, "1 backdrop file could not be read, so Stillwater is not sending it to your media servers: "+
+				fanartNameList(unreadable)+". Check that the file exists, can be read and is not too large.")
+		} else {
+			clauses = append(clauses, fmt.Sprintf("%d backdrop files could not be read, so Stillwater is not sending them to your media servers: %s. Check that each file exists, can be read and is not too large.",
+				n, fanartNameList(unreadable)))
+		}
+	}
+	if n := len(skipped); n > 0 {
+		if n == 1 {
+			clauses = append(clauses, "1 backdrop file was left out of this push because the set is over the size or count limit for one push: "+
+				fanartNameList(skipped)+". The file itself may be fine.")
+		} else {
+			clauses = append(clauses, fmt.Sprintf("%d backdrop files were left out of this push because the set is over the size or count limit for one push: %s. The files themselves may be fine.",
+				n, fanartNameList(skipped)))
+		}
+	}
+	return strings.Join(clauses, " ")
 }
 
 // snapshotFanartAndReport is snapshotFanart for a snapshot of the artist's FULL
@@ -132,14 +164,8 @@ func (p *Publisher) snapshotFanartAndReport(ctx context.Context, artistID string
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fanartReportTimeout)
 	defer cancel()
 	if len(slots) > 0 {
-		var reason []string
-		if len(unreadable) > 0 {
-			reason = append(reason, "Unreadable: "+fanartNameList(unreadable)+". Check that each file exists, can be read and is not too large.")
-		}
-		if len(skipped) > 0 {
-			reason = append(reason, "Left out because the backdrop set is over the size or count limit for one push, though the file may be fine: "+fanartNameList(skipped)+".")
-		}
-		if rerr := p.fanartHealth.RaiseFanartUnreadable(rctx, artistID, slots, strings.Join(reason, " ")); rerr != nil {
+		reason := fanartHealthReason(unreadable, skipped)
+		if rerr := p.fanartHealth.RaiseFanartUnreadable(rctx, artistID, slots, reason); rerr != nil {
 			p.logger.Warn("could not record the unreadable fanart finding",
 				slog.String("artist_id", artistID), slog.Any("slots", slots), slog.Any("error", rerr))
 		}

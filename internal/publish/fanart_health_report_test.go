@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -130,7 +131,7 @@ func TestFanartHealth_NilSlotRaisesWithTheZeroBasedSlotList(t *testing.T) {
 	if !open || raises != 1 {
 		t.Fatalf("finding open=%v after %d raises, want open after exactly 1", open, raises)
 	}
-	// 0-based: the rule service shows index+1 as the position.
+	// 0-based local backdrop indexes, as the publish path reports them (the finding names files, not positions).
 	if !reflect.DeepEqual(slots, []int{1}) {
 		t.Errorf("slots = %v, want [1]", slots)
 	}
@@ -383,7 +384,7 @@ func TestFanartHealth_ReasonNamesTheFilesAndEverySlot(t *testing.T) {
 	if !reflect.DeepEqual(slots, []int{1, 3}) {
 		t.Errorf("slots = %v, want [1 3]", slots)
 	}
-	want := "Unreadable: fanart1.jpg, fanart4.jpg. Check that each file exists, can be read and is not too large."
+	want := "2 backdrop files could not be read, so Stillwater is not sending them to your media servers: fanart1.jpg, fanart4.jpg. Check that each file exists, can be read and is not too large."
 	if reason != want {
 		t.Errorf("reason = %q, want %q", reason, want)
 	}
@@ -395,6 +396,21 @@ func TestFanartHealth_ReasonNamesTheFilesAndEverySlot(t *testing.T) {
 	_, reason = reportedReason(t, missingFanart(t, nil, many...))
 	if !strings.Contains(reason, "b10.jpg and 2 more.") || strings.Contains(reason, "b11") {
 		t.Errorf("reason = %q, want the list capped at 10 names then \"and 2 more\"", reason)
+	}
+}
+
+// The name cap is a boundary: exactly maxReportedFanartNames names are listed in
+// full with no "and N more" tail, and one more name triggers the tail.
+func TestFanartNameList_CapBoundary(t *testing.T) {
+	names := make([]string, 0, maxReportedFanartNames+1)
+	for i := 0; i < maxReportedFanartNames+1; i++ {
+		names = append(names, fmt.Sprintf("b%02d.jpg", i))
+	}
+	if got := fanartNameList(names[:maxReportedFanartNames]); strings.Contains(got, "more") || !strings.HasSuffix(got, "b09.jpg") {
+		t.Errorf("exactly %d names = %q, want all listed and no tail", maxReportedFanartNames, got)
+	}
+	if got := fanartNameList(names); !strings.HasSuffix(got, "and 1 more") || strings.Contains(got, "b10") {
+		t.Errorf("%d names = %q, want the first %d then \"and 1 more\"", len(names), got, maxReportedFanartNames)
 	}
 }
 
@@ -411,8 +427,64 @@ func TestFanartHealth_BudgetSkippedFileIsNotCalledUnreadable(t *testing.T) {
 	if !reflect.DeepEqual(slots, []int{maxFanartSnapshotFiles}) {
 		t.Fatalf("slots = %v, want only the over-budget slot", slots)
 	}
-	if !strings.Contains(reason, "fanart101.jpg") || !strings.Contains(reason, "over the size or count limit") || strings.Contains(reason, "Unreadable") {
+	if !strings.Contains(reason, "fanart101.jpg") || !strings.Contains(reason, "over the size or count limit") || strings.Contains(reason, "could not be read") {
 		t.Errorf("reason = %q, want the file named with the limit as the cause, not a read failure", reason)
+	}
+}
+
+// The three message shapes (#3469), each singular and plural, produced by the
+// real snapshot. Files are named by base name only: the position of fanart2.jpg
+// in a Kodi-style set is 3, and that digit must never appear.
+func TestFanartHealth_MessageShapes(t *testing.T) {
+	// numbered builds a set of n backdrops fanart.jpg, fanart1.jpg, ... in which
+	// the names listed in missing are absent. Over the snapshot budget the tail
+	// is left out as readable-but-skipped.
+	numbered := func(t *testing.T, n int, missing ...string) []string {
+		names := []string{"fanart.jpg"}
+		for i := 1; i < n; i++ {
+			names = append(names, fmt.Sprintf("fanart%d.jpg", i))
+		}
+		ok := map[string]bool{}
+		for _, nm := range names {
+			ok[nm] = !slices.Contains(missing, nm)
+		}
+		return missingFanart(t, ok, names...)
+	}
+	const (
+		unread1 = "1 backdrop file could not be read, so Stillwater is not sending it to your media servers: fanart2.jpg. Check that the file exists, can be read and is not too large."
+		skip1   = "1 backdrop file was left out of this push because the set is over the size or count limit for one push: fanart100.jpg. The file itself may be fine."
+		skip2   = "2 backdrop files were left out of this push because the set is over the size or count limit for one push: fanart100.jpg, fanart101.jpg. The files themselves may be fine."
+		// An unreadable file does not use up the read budget, so with one missing
+		// file in a 102-file set only the last file is left out.
+		skipLast = "1 backdrop file was left out of this push because the set is over the size or count limit for one push: fanart101.jpg. The file itself may be fine."
+		unread2  = "2 backdrop files could not be read, so Stillwater is not sending them to your media servers: fanart2.jpg, fanart3.jpg. Check that each file exists, can be read and is not too large."
+	)
+	cases := []struct {
+		name string
+		n    int
+		miss []string
+		want string
+	}{
+		{"one unreadable, position differs from name", 4, []string{"fanart2.jpg"}, unread1},
+		{"two unreadable", 5, []string{"fanart2.jpg", "fanart3.jpg"}, unread2},
+		{"one over the limit", maxFanartSnapshotFiles + 1, nil, skip1},
+		{"two over the limit", maxFanartSnapshotFiles + 2, nil, skip2},
+		{"both kinds, each under its own clause", maxFanartSnapshotFiles + 2, []string{"fanart2.jpg"}, unread1 + " " + skipLast},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, reason := reportedReason(t, numbered(t, tc.n, tc.miss...))
+			if reason != tc.want {
+				t.Errorf("reason = %q, want %q", reason, tc.want)
+			}
+			if strings.Contains(tc.want, "left out") && !strings.Contains(tc.want, "could not be read") && strings.Contains(reason, "could not be read") {
+				t.Errorf("an over-limit-only message says the file could not be read: %q", reason)
+			}
+		})
+	}
+	// Position 3 (fanart2.jpg) must not leak as a number beside the name.
+	if _, reason := reportedReason(t, numbered(t, 4, "fanart2.jpg")); strings.Contains(reason, "3") {
+		t.Errorf("reason shows a position number: %q", reason)
 	}
 }
 
