@@ -1531,6 +1531,10 @@ func (s *Service) RaiseMBIDValidationFailure(ctx context.Context, artistID, arti
 // Enabled toggle, #2970) and Fixable is hard-coded FALSE: nothing may ever act
 // on the operator's file. A raise with no slots, or an invalid slot (negative or math.MaxInt), is refused
 // rather than stored as an empty or nonsensical finding.
+//
+// CALLER CONTRACT: see ResolveFanartUnreadable. A caller must serialize
+// "take the snapshot, then report" per artist, so raises and resolves arrive in
+// the order their snapshots were taken.
 func (s *Service) RaiseFanartUnreadable(ctx context.Context, artistID string, slots []int, reason string) error {
 	if len(slots) == 0 {
 		return errors.New("raising fanart_unreadable: no slots given")
@@ -1572,6 +1576,13 @@ func (s *Service) RaiseFanartUnreadable(ctx context.Context, artistID string, sl
 // the violation and its rule_results row move together here in one
 // transaction, which keeps the pair from disagreeing (a stale failing row
 // would show up if an operator later enabled the rule).
+//
+// CALLER CONTRACT: the ordering guard compares the time this call runs, not the
+// time the snapshot was taken. It therefore protects against a late-arriving
+// write only when calls arrive in the order their snapshots were taken. A
+// caller must serialize "take the snapshot, then report" per artist (hold one
+// per-artist lock from snapshot through the Raise or Resolve call); otherwise a
+// delayed clean snapshot can clear a newer finding.
 func (s *Service) ResolveFanartUnreadable(ctx context.Context, artistID string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
