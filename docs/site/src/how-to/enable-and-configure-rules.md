@@ -20,7 +20,7 @@ If you cannot remember which tab a setting lives on, use the search box at the t
 
 A disabled rule never evaluates. It doesn't appear in violation counts and doesn't surface in the artist's violations list. Re-enable to start finding violations again; the next rule run picks them up.
 
-Some rules behave differently on disable. Their findings are not produced by a rule run -- they are recorded at the moment a matching event happens (a backdrop is imported or pushed, an artist's MusicBrainz ID is re-checked, a backdrop file turns out to be unreadable when it is about to be sent), so nothing can recreate a missed finding afterward. For these rules the Enabled toggle never stops recording: a finding is still written to the Action Queue and still counted toward compliance, whether the toggle is on or off. To clear an existing finding, dismiss or resolve it individually.
+Some rules behave differently on disable. Their findings are not produced by a rule run -- they are recorded at the moment a matching event happens (a backdrop is imported or pushed, an artist's MusicBrainz ID is re-checked, a backdrop file turns out to be unreadable when it is about to be sent), so nothing can recreate a missed finding afterward. For these rules the Enabled toggle never stops recording: a finding is still written to the Action Queue and still appears on the artist page and in the compliance export, whether the toggle is on or off. These findings do not change an artist's health score. To clear an existing finding, dismiss or resolve it individually.
 
 What disabling *does* control for these rules is the pop-up notification shown at the moment the finding is raised:
 
