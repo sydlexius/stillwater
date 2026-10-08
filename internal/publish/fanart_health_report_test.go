@@ -538,3 +538,93 @@ func TestFanartHealth_ReportIsBoundedByATimeout(t *testing.T) {
 		t.Fatal("the report was not bounded by its timeout")
 	}
 }
+
+// parkHolder starts a clean pass for "a1" and parks it right after its snapshot,
+// so it holds the artist's gate. The returned func releases it and waits.
+func parkHolder(t *testing.T, p *Publisher) (release func()) {
+	t.Helper()
+	in, rel := make(chan struct{}), make(chan struct{})
+	var parkedOnce atomic.Bool
+	fanartSnapshotTakenHook = func(string) {
+		if parkedOnce.CompareAndSwap(false, true) {
+			close(in)
+			<-rel
+		}
+	}
+	t.Cleanup(func() { fanartSnapshotTakenHook = nil })
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _, _ = p.snapshotFanartAndReport(context.Background(), "a1", cleanFanartPaths(t))
+	}()
+	<-in
+	var once sync.Once
+	release = func() { once.Do(func() { close(rel); <-done }) }
+	t.Cleanup(release)
+	return release
+}
+
+// runBehindHolder runs a failing pass for "a1" and returns what it handed back
+// to its caller, or fails if it does not return within a second.
+func runBehindHolder(t *testing.T, p *Publisher, ctx context.Context) ([]fanartSnapshot, error) {
+	t.Helper()
+	type result struct {
+		snap []fanartSnapshot
+		err  error
+	}
+	got := make(chan result, 1)
+	go func() {
+		snap, _, err := p.snapshotFanartAndReport(ctx, "a1", mixedFanartPaths(t))
+		got <- result{snap, err}
+	}()
+	select {
+	case r := <-got:
+		return r.snap, r.err
+	case <-time.After(time.Second):
+		t.Fatal("the pass behind a stalled holder did not return: its gate wait is not cancelable or bounded")
+		return nil, nil
+	}
+}
+
+// A push waiting behind a stalled earlier pass returns promptly when its request
+// ends and does not report. The request is over, so its own snapshot stops with
+// the cancel error, exactly as a canceled push always has; the abandoned wait
+// itself adds no failure.
+func TestFanartHealth_WaitBehindAStalledPassEndsWithTheRequest(t *testing.T) {
+	rep := newFakeFanartHealth()
+	p := New(Deps{Logger: silentLogger()})
+	p.SetFanartHealthReporter(rep)
+	parkHolder(t, p)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(100*time.Millisecond, cancel)
+	if _, err := runBehindHolder(t, p, ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want the request's own cancel", err)
+	}
+	if _, _, raises, resolves := rep.state("a1"); raises != 0 || resolves != 0 {
+		t.Errorf("an unordered pass reported: raises=%d resolves=%d, want none", raises, resolves)
+	}
+}
+
+// A wait that times out has the same outcome with no cancel at all.
+func TestFanartHealth_GateWaitTimeoutStillPushesWithoutReporting(t *testing.T) {
+	rep := newFakeFanartHealth()
+	p := New(Deps{Logger: silentLogger()})
+	p.SetFanartHealthReporter(rep)
+	prev := fanartGateWait
+	fanartGateWait = 50 * time.Millisecond
+	t.Cleanup(func() { fanartGateWait = prev })
+	release := parkHolder(t, p)
+
+	snap, err := runBehindHolder(t, p, context.Background())
+	if err != nil || len(snap) != 3 {
+		t.Errorf("the timed-out pass returned %d slots, err %v; want its full snapshot of 3 and no error so the push goes on", len(snap), err)
+	}
+	if _, _, raises, _ := rep.state("a1"); raises != 0 {
+		t.Errorf("the timed-out pass raised %d time(s), want 0", raises)
+	}
+	release()
+	if open, _, raises, resolves := rep.state("a1"); open || raises != 0 || resolves != 1 {
+		t.Errorf("after the holder finished: open=%v raises=%d resolves=%d, want only the holder's own resolve", open, raises, resolves)
+	}
+}

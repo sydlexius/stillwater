@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -37,10 +36,14 @@ func (p *Publisher) SetFanartHealthReporter(r FanartHealthReporter) {
 const maxReportedFanartNames = 10
 
 // fanartReportTimeout bounds the report so a stuck database cannot hold the
-// per-artist lock (and with it the next push for that artist) for long. A var so
-// a test can shorten it. The wait to TAKE the lock is not cancelable; only the
-// report under it is bounded.
+// per-artist gate (and with it the next push for that artist) for long. A var so
+// a test can shorten it.
 var fanartReportTimeout = 3 * time.Second
+
+// fanartGateWait bounds how long a pass waits for the artist's gate behind an
+// earlier pass. A var so a test can shorten it. The wait also ends when the
+// caller's context does.
+var fanartGateWait = 3 * time.Second
 
 // fanartSnapshotTakenHook, when set, runs inside snapshotFanartAndReport right
 // after the snapshot is taken and before it is reported. nil in production; a
@@ -76,7 +79,7 @@ func fanartNameList(names []string) string {
 // snapshot only when the server holds fewer backdrops than there are files, so
 // it can leave a fixed file's finding open until the next push.
 //
-// THE PER-ARTIST LOCK is what makes snapshot-then-report atomic. The rule
+// THE PER-ARTIST GATE is what makes snapshot-then-report atomic. The rule
 // service stamps a resolve with the clock at the time of the call, so without
 // it a clean snapshot taken BEFORE a newer failing one, but reported AFTER it
 // (a manual sync overlapping the reconciler), would resolve a finding the newer
@@ -85,15 +88,26 @@ func fanartNameList(names []string) string {
 // snapshotFanart nor the reporter touches lockPhashTarget), and a caller that
 // holds a phash target lock takes this one second, so the order cannot cycle.
 //
+// THE WAIT FOR THE GATE IS CANCELABLE AND BOUNDED (caller's context, and
+// fanartGateWait). A pass that gives up waiting (a stalled reporter ahead of it)
+// still takes its snapshot and the push goes on exactly as before, but it does
+// NOT report: it is no longer ordered against the pass ahead, and an unordered
+// report is the stale-resolve seam the gate exists to close. One warn line names
+// the artist. Passes that do hold the gate keep the ordering guarantee.
+//
 // A reporter failure is logged and never reaches the caller: it must not fail
 // or shorten the sync.
 func (p *Publisher) snapshotFanartAndReport(ctx context.Context, artistID string, fanartPaths []string) ([]fanartSnapshot, []string, error) {
 	if p.fanartHealth == nil {
 		return p.snapshotFanart(ctx, fanartPaths)
 	}
-	mu := p.fanartReportLock(artistID)
-	mu.Lock()
-	defer mu.Unlock()
+	gate := p.fanartReportGate(artistID)
+	if !acquireFanartGate(ctx, gate) {
+		p.logger.Warn("not reporting unreadable fanart for this pass: gave up waiting behind an earlier pass for the same artist",
+			slog.String("artist_id", artistID))
+		return p.snapshotFanart(ctx, fanartPaths)
+	}
+	defer func() { <-gate }()
 
 	snapshot, warnings, err := p.takeFanartSnapshot(ctx, artistID, fanartPaths)
 	if err != nil {
@@ -147,10 +161,30 @@ func (p *Publisher) takeFanartSnapshot(ctx context.Context, artistID string, fan
 	return snapshot, warnings, err
 }
 
-// fanartReportLock returns the artist's snapshot-and-report mutex. Entries are
-// one small mutex per artist ever pushed and are never removed, like
-// phashTargetLocks.
-func (p *Publisher) fanartReportLock(artistID string) *sync.Mutex {
-	m, _ := p.fanartReportLocks.LoadOrStore(artistID, &sync.Mutex{})
-	return m.(*sync.Mutex)
+// fanartReportGate returns the artist's snapshot-and-report gate: a channel with
+// room for one holder. Entries are one small channel per artist ever pushed and
+// are never removed, like phashTargetLocks.
+func (p *Publisher) fanartReportGate(artistID string) chan struct{} {
+	g, _ := p.fanartReportLocks.LoadOrStore(artistID, make(chan struct{}, 1))
+	return g.(chan struct{})
+}
+
+// acquireFanartGate takes the gate, or reports false when ctx ends or
+// fanartGateWait passes first.
+func acquireFanartGate(ctx context.Context, gate chan struct{}) bool {
+	select {
+	case gate <- struct{}{}:
+		return true
+	default:
+	}
+	t := time.NewTimer(fanartGateWait)
+	defer t.Stop()
+	select {
+	case gate <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return false
+	}
 }

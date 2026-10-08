@@ -121,6 +121,9 @@ func TestFanartUnreadable_RealProducerAndRealRuleService(t *testing.T) {
 	if !strings.Contains(message, "file(s) 3 could not be read") {
 		t.Errorf("message = %q, want it to name backdrop position 3", message)
 	}
+	if !strings.Contains(message, "fanart3.jpg") {
+		t.Errorf("message = %q, want it to name the unreadable file fanart3.jpg", message)
+	}
 
 	if err := os.Chmod(bad, 0o600); err != nil {
 		t.Fatal(err)

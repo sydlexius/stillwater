@@ -287,7 +287,8 @@ type Publisher struct {
 	// fanartHealth is told whether a full-set fanart snapshot could read every
 	// backdrop (#3200). Optional; see FanartHealthReporter.
 	fanartHealth FanartHealthReporter
-	// fanartReportLocks serializes "snapshot, then report" per artist. See
+	// fanartReportLocks holds a per-artist gate (a chan struct{} with room for
+	// one) that serializes "snapshot, then report". See
 	// snapshotFanartAndReport.
 	fanartReportLocks sync.Map
 
