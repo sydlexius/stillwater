@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -155,8 +156,8 @@ func runExtrafanartMigration(t *testing.T, dir string) {
 	if err != nil {
 		t.Fatalf("planning: %v", err)
 	}
-	if missing := missingFromInventory(before, contentInventory(t, dir)); len(missing) != 0 || len(plan.Entries) != proofExtraFiles {
-		t.Fatalf("a dry run must write nothing and plan %d moves: planned %d, missing %v", proofExtraFiles, len(plan.Entries), missing)
+	if d := inventoryDiff(before, contentInventory(t, dir)); len(d) != 0 || len(plan.Entries) != proofExtraFiles {
+		t.Fatalf("a dry run must write nothing and plan %d moves: planned %d, inventory diff %v", proofExtraFiles, len(plan.Entries), d)
 	}
 	res, err := img.ApplyExtraFanartMigration(ctx, noopInvalidator{}, "proof-artist", plan)
 	if err != nil {
@@ -200,8 +201,8 @@ func TestExtrafanartProof_NonLiveHalf(t *testing.T) {
 	if err != nil || len(plan.Entries) != 0 {
 		t.Fatalf("second plan: err=%v entries=%d, want none", err, len(plan.Entries))
 	}
-	if missing := missingFromInventory(post, contentInventory(t, dir)); len(missing) != 0 {
-		t.Fatalf("second plan changed the directory: %v", missing)
+	if d := inventoryDiff(post, contentInventory(t, dir)); len(d) != 0 {
+		t.Fatalf("second plan changed the directory: %v", d)
 	}
 }
 
@@ -344,4 +345,186 @@ func TestExtrafanartProof_ControlCountsOnlyExtrafanartLoss(t *testing.T) {
 			t.Fatalf("a deleted extrafanart file must count as the loss: %v", missing)
 		}
 	})
+}
+
+// inventoryDiff compares two COMPLETE inventories (paths and hashes, both ways), so
+// an ADDED file or a changed one is reported as well as a missing one.
+func inventoryDiff(before, after []proofFile) []string {
+	b, a := map[string]string{}, map[string]string{}
+	for _, f := range before {
+		b[f.rel] = f.sha
+	}
+	for _, f := range after {
+		a[f.rel] = f.sha
+	}
+	var out []string
+	for rel, sha := range b {
+		if got, ok := a[rel]; !ok {
+			out = append(out, "removed "+rel)
+		} else if got != sha {
+			out = append(out, "changed "+rel)
+		}
+	}
+	for rel := range a {
+		if _, ok := b[rel]; !ok {
+			out = append(out, "added "+rel)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// checkSandboxDir is the safety gate for the live proof's folder: absolute, the
+// synthetic artist name, a REAL directory (a symlink is refused, since the cleanup
+// would delete through it), holding only the sentinel and the proof's own album folder.
+func checkSandboxDir(dir string) error {
+	if dir == "" || !filepath.IsAbs(dir) || filepath.Base(dir) != proofArtistName {
+		return fmt.Errorf("must be the absolute host path of a folder named %q (got %q)", proofArtistName, dir)
+	}
+	if fi, err := os.Lstat(dir); err != nil {
+		return err
+	} else if !fi.IsDir() {
+		return fmt.Errorf("%s is not a real directory (a symlink is refused: cleanup would delete through it)", dir)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	sentinel := false
+	for _, e := range entries {
+		switch {
+		case e.Name() == proofSentinel && e.Type().IsRegular():
+			sentinel = true
+		case e.Name() == proofAlbumDir && e.IsDir():
+		default:
+			return fmt.Errorf("%s holds %q; only the sentinel and the proof's own album folder are allowed", dir, e.Name())
+		}
+	}
+	if !sentinel {
+		return fmt.Errorf("sentinel %s is missing in %s", proofSentinel, dir)
+	}
+	return nil
+}
+
+// wipeSandbox empties the sandbox back to the sentinel and the album, refusing a symlinked dir.
+func wipeSandbox(dir string) error {
+	fi, err := os.Lstat(dir)
+	if err != nil {
+		return fmt.Errorf("refusing to wipe %s: %w", dir, err)
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("refusing to wipe %s: not a real directory (a symlink?)", dir)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.Name() != proofSentinel && e.Name() != proofAlbumDir {
+			if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// underSandbox reports whether an Emby-side path lies inside the sandbox folder and is
+// not Emby's own metadata copy (its container path differs from the host's).
+func underSandbox(p string) bool {
+	return strings.Contains(p, "/"+proofArtistName+"/") && !strings.Contains(p, "/"+proofAlbumDir+"/") && !strings.Contains(p, "/metadata/")
+}
+
+// redactPath keeps a persisted Emby path free of the library root: relative to the
+// sandbox folder when inside it, else only the base name.
+func redactPath(p string) string {
+	if p == "" {
+		return ""
+	}
+	if i := strings.Index(p, "/"+proofArtistName+"/"); i >= 0 {
+		if strings.Contains(p, "/metadata/") {
+			return "[emby-metadata]/" + p[i+1:]
+		}
+		return p[i+1:]
+	}
+	return "[outside-sandbox]/" + path.Base(p)
+}
+
+func TestExtrafanartProof_SymlinkedSandboxIsRefusedAndSurvives(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "real")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{proofSentinel, "precious.txt"} {
+		if err := os.WriteFile(filepath.Join(target, n), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(t.TempDir(), proofArtistName)
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := checkSandboxDir(link); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("a symlinked sandbox must be refused as a symlink, got %v", err)
+	}
+	if err := wipeSandbox(link); err == nil {
+		t.Fatal("wipe must refuse a symlinked sandbox")
+	}
+	if _, err := os.Stat(filepath.Join(target, "precious.txt")); err != nil {
+		t.Fatalf("the symlink target's file did not survive: %v", err)
+	}
+}
+
+func TestExtrafanartProof_RedactPath(t *testing.T) {
+	root := "/very/private/library/root"
+	for in, want := range map[string]string{
+		root + "/" + proofArtistName + "/fanart.jpg":                       proofArtistName + "/fanart.jpg",
+		"/config/metadata/musicartists/" + proofArtistName + "/fanart.jpg": "[emby-metadata]/" + proofArtistName + "/fanart.jpg",
+		"/data/other/thing.jpg":                                            "[outside-sandbox]/thing.jpg",
+	} {
+		if got := redactPath(in); got != want || strings.Contains(got, "private") {
+			t.Errorf("redactPath(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+const proofSentinel = ".stillwater-live-proof-sandbox"
+
+const proofAlbumDir = "SW Proof 3179 Album"
+
+const proofArtistName = "SW Proof 3179 Artist"
+
+// An ADDED or changed file is invisible to missingFromInventory (it only reports
+// losses) but must be caught wherever the claim is "this wrote nothing".
+func TestExtrafanartProof_InventoryDiffSeesAddedAndChanged(t *testing.T) {
+	dir := t.TempDir()
+	seedExtrafanartFixture(t, dir)
+	before := contentInventory(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, "stray.jpg"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), []byte("changed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	after := contentInventory(t, dir)
+	if got := inventoryDiff(before, after); len(got) != 2 || got[0] != "added stray.jpg" || got[1] != "changed fanart.jpg" {
+		t.Fatalf("want added stray.jpg and changed fanart.jpg, got %v", got)
+	}
+	if len(inventoryDiff(before, before)) != 0 {
+		t.Fatal("identical inventories must have no diff")
+	}
+}
+
+func TestExtrafanartProof_UnderSandbox(t *testing.T) {
+	for p, want := range map[string]bool{
+		"/music/" + proofArtistName + "/fanart.jpg":                        true,
+		"/music/" + proofArtistName + "/extrafanart/a.jpg":                 true,
+		"/config/metadata/musicartists/" + proofArtistName + "/fanart.jpg": false,
+		"/music/" + proofArtistName + "/" + proofAlbumDir + "/cover.jpg":   false,
+		"/music/Someone Else/fanart.jpg":                                   false,
+	} {
+		if got := underSandbox(p); got != want {
+			t.Errorf("underSandbox(%q) = %v, want %v", p, got, want)
+		}
+	}
 }

@@ -49,9 +49,6 @@ import (
 // the loss is observed, so the script can require both.
 
 const (
-	proofSentinel    = ".stillwater-live-proof-sandbox"
-	proofAlbumDir    = "SW Proof 3179 Album"
-	proofArtistName  = "SW Proof 3179 Artist"
 	proofPushes      = 3
 	proofLiveTimeout = 5 * time.Minute
 )
@@ -76,25 +73,8 @@ func newExtraProofRig(ctx context.Context, t *testing.T) *extraProofRig {
 		t.Skip("SW_LIVE_EMBY_URL / _API_KEY / _USER_ID not all set; skipping live extrafanart proof")
 	}
 	dir := os.Getenv("SW_LIVE_EMBY_ARTIST_DIR")
-	if dir == "" || !filepath.IsAbs(dir) || filepath.Base(dir) != proofArtistName {
-		t.Fatalf("LIVE-PROOF-SETUP: SW_LIVE_EMBY_ARTIST_DIR must be the absolute host path of a folder named %q (got %q)", proofArtistName, dir)
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("LIVE-PROOF-SETUP: reading %s: %v", dir, err)
-	}
-	sentinel := false
-	for _, e := range entries {
-		switch {
-		case e.Name() == proofSentinel && e.Type().IsRegular():
-			sentinel = true
-		case e.Name() == proofAlbumDir && e.IsDir():
-		default:
-			t.Fatalf("LIVE-PROOF-SETUP: refusing %s: it holds %q; only the sentinel and the proof's own album folder are allowed (this test deletes what it finds on exit)", dir, e.Name())
-		}
-	}
-	if !sentinel {
-		t.Fatalf("LIVE-PROOF-SETUP: refusing %s: sentinel %s is missing", dir, proofSentinel)
+	if err := checkSandboxDir(dir); err != nil {
+		t.Fatalf("LIVE-PROOF-SETUP: SW_LIVE_EMBY_ARTIST_DIR: %v (this test deletes what it finds on exit)", err)
 	}
 	if err := writeProofAlbum(filepath.Join(dir, proofAlbumDir)); err != nil {
 		t.Fatalf("LIVE-PROOF-SETUP: writing the fixture album: %v", err)
@@ -120,26 +100,60 @@ func newExtraProofRig(ctx context.Context, t *testing.T) *extraProofRig {
 		defer cancel()
 		r.wipe(t)
 		r.rescan(cctx, t, 0)
-		clearAllBackdrops(cctx, t, r.env.itemID, client)
+		r.clearIfProven(cctx, t, false)
 	})
-	clearAllBackdrops(ctx, t, r.env.itemID, client)
+	// ORDER: the item was discovered by name only, so nothing destructive happens
+	// until clearIfProven has shown it belongs to the sandbox (or has nothing to clear).
+	r.clearIfProven(ctx, t, true)
 	return r
 }
 
-// wipe empties the sandbox back to its sentinel.
-func (r *extraProofRig) wipe(t *testing.T) {
+// itemBound reports positive evidence that the discovered item is the sandbox's
+// artist: it is credited on the proof's own album tracks (folder-independent, so it
+// works with zero backdrops), or it has backdrops and every one lies in the sandbox.
+func (r *extraProofRig) itemBound(ctx context.Context, t *testing.T) bool {
 	t.Helper()
-	entries, err := os.ReadDir(r.dir)
-	if err != nil {
-		t.Errorf("cleanup: reading %s: %v", r.dir, err)
+	var res struct{ Items []struct{ Path string } }
+	q := "/Items?Recursive=true&IncludeItemTypes=Audio&Fields=Path&ArtistIds=" + url.QueryEscape(r.env.itemID)
+	if err := r.embyGET(ctx, q, &res); err != nil {
+		t.Logf("binding proof by tracks unavailable: %v", err)
+	}
+	for _, it := range res.Items {
+		if strings.Contains(it.Path, "/"+proofArtistName+"/"+proofAlbumDir+"/") {
+			return true
+		}
+	}
+	_, _, bds := r.snapshot(ctx, t, "binding-proof")
+	ok := len(bds) > 0
+	for _, b := range bds {
+		ok = ok && underSandbox(b.Path)
+	}
+	return ok
+}
+
+// clearIfProven empties the item's backdrops only when that cannot touch a foreign
+// item: zero backdrops (a no-op) or itemBound. Setup (fatal) fails; cleanup reports.
+func (r *extraProofRig) clearIfProven(ctx context.Context, t *testing.T, fatal bool) {
+	t.Helper()
+	if st, err := r.client.GetArtistDetail(ctx, r.env.itemID); err == nil && st.BackdropCount == 0 {
 		return
 	}
-	for _, e := range entries {
-		if e.Name() != proofSentinel && e.Name() != proofAlbumDir {
-			if err := os.RemoveAll(filepath.Join(r.dir, e.Name())); err != nil {
-				t.Errorf("cleanup: removing %s: %v", e.Name(), err)
-			}
+	if !r.itemBound(ctx, t) {
+		msg := fmt.Sprintf("LIVE-PROOF-SETUP: refusing to clear backdrops of item %s: nothing proves it belongs to the sandbox", r.env.itemID)
+		if fatal {
+			t.Fatal(msg)
 		}
+		t.Error(msg)
+		return
+	}
+	clearAllBackdrops(ctx, t, r.env.itemID, r.client)
+}
+
+// wipe empties the sandbox back to the sentinel and the album (wipeSandbox refuses a symlink).
+func (r *extraProofRig) wipe(t *testing.T) {
+	t.Helper()
+	if err := wipeSandbox(r.dir); err != nil {
+		t.Errorf("cleanup: %v", err)
 	}
 }
 
@@ -165,13 +179,7 @@ func (r *extraProofRig) refresh(ctx context.Context, t *testing.T, want int, rep
 	last := -1
 	for attempt := 0; ctx.Err() == nil; attempt++ {
 		if attempt%5 == 0 {
-			req, _ := http.NewRequestWithContext(ctx, http.MethodPost, u, http.NoBody)
-			req.Header.Set("X-Emby-Token", r.env.apiKey)
-			if resp, err := http.DefaultClient.Do(req); err == nil {
-				_ = resp.Body.Close()
-			} else {
-				t.Logf("rescan request failed: %v", err)
-			}
+			r.post(ctx, t, u)
 		}
 		time.Sleep(time.Second)
 		if st, err := r.client.GetArtistDetail(ctx, r.env.itemID); err == nil {
@@ -225,7 +233,7 @@ func (r *extraProofRig) execute(ctx context.Context, t *testing.T, migrate bool)
 				reach = true
 			}
 		}
-		t.Logf("LIVE-PROOF-REACH push_touches_indexes=0..%d extrafanart_within_reach=%v seeded_order=%v savelocalmetadata=%q", proofRootFiles-1, reach, seeded, os.Getenv("SW_PROOF_SAVE_LOCAL_METADATA"))
+		t.Logf("LIVE-PROOF-REACH push_touches_indexes=0..%d extrafanart_within_reach=%v seeded_order=%v savelocalmetadata=%q", proofRootFiles-1, reach, redactImages(seeded), os.Getenv("SW_PROOF_SAVE_LOCAL_METADATA"))
 	}
 	baseline := contentInventory(t, r.dir)
 	t.Logf("LIVE-PROOF-COUNT migrate=%v baseline_files=%d", migrate, len(baseline))
@@ -292,9 +300,32 @@ func TestLiveEmby_ExtrafanartMigration_ControlUnmigratedLoses(t *testing.T) {
 	}
 }
 
+// post sends an authenticated empty POST and logs a failure or a non-2xx answer.
+func (r *extraProofRig) post(ctx context.Context, t *testing.T, u string) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, http.NoBody)
+	if err != nil {
+		t.Logf("building POST request: %v", err)
+		return
+	}
+	req.Header.Set("X-Emby-Token", r.env.apiKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Logf("POST failed: %v", err)
+		return
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		t.Logf("POST answered HTTP %d", resp.StatusCode)
+	}
+}
+
 // embyGET reads a JSON answer from Emby (token in a header, never in a URL or log).
 func (r *extraProofRig) embyGET(ctx context.Context, path string, out any) error {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(r.env.url, "/")+path, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(r.env.url, "/")+path, http.NoBody)
+	if err != nil {
+		return err
+	}
 	req.Header.Set("X-Emby-Token", r.env.apiKey)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -314,11 +345,7 @@ func (r *extraProofRig) discoverItem(ctx context.Context, t *testing.T) string {
 	deadline := time.Now().Add(3 * time.Minute)
 	for attempt := 0; time.Now().Before(deadline) && ctx.Err() == nil; attempt++ {
 		if attempt%12 == 0 { // (re)start a scan every minute
-			req, _ := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(r.env.url, "/")+"/Library/Refresh", http.NoBody)
-			req.Header.Set("X-Emby-Token", r.env.apiKey)
-			if resp, err := http.DefaultClient.Do(req); err == nil {
-				_ = resp.Body.Close()
-			}
+			r.post(ctx, t, strings.TrimRight(r.env.url, "/")+"/Library/Refresh")
 		}
 		var res struct {
 			Items []struct{ Id, Name, Path string }
@@ -354,12 +381,6 @@ type embyImage struct {
 	Path       string
 }
 
-// underSandbox reports whether an Emby-side path lies inside the sandbox folder
-// (its container path differs from the host's, so match on the folder name).
-func underSandbox(p string) bool {
-	return strings.Contains(p, "/"+proofArtistName+"/") && !strings.Contains(p, "/"+proofAlbumDir+"/")
-}
-
 // snapshot reads the item (per-item endpoint, Path requested) and its image
 // listing, writes both to the diagnostics file, and returns them. Only synthetic
 // names and paths are recorded; no header or key ever is.
@@ -374,7 +395,13 @@ func (r *extraProofRig) snapshot(ctx context.Context, t *testing.T, stage string
 			backdrops = append(backdrops, im)
 		}
 	}
-	rec, _ := json.Marshal(map[string]any{"stage": stage, "item": item, "images": imgs, "itemErr": fmt.Sprint(e1), "imagesErr": fmt.Sprint(e2)})
+	red := make([]embyImage, len(imgs))
+	for i, im := range imgs {
+		red[i] = embyImage{im.ImageType, im.ImageIndex, redactPath(im.Path)}
+	}
+	shown := item
+	shown.Path = redactPath(item.Path)
+	rec, _ := json.Marshal(map[string]any{"stage": stage, "item": shown, "images": red, "itemErr": fmt.Sprint(e1), "imagesErr": fmt.Sprint(e2)})
 	t.Logf("LIVE-PROOF-DIAG %s", rec)
 	if dir := os.Getenv("SW_PROOF_DIAG_DIR"); dir != "" {
 		if f, err := os.OpenFile(filepath.Join(dir, "live-3179-diag.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
@@ -407,11 +434,20 @@ func (r *extraProofRig) requireBound(ctx context.Context, t *testing.T, stage st
 		if time.Now().After(deadline) || ctx.Err() != nil {
 			var ps []string
 			for _, b := range bds {
-				ps = append(ps, fmt.Sprintf("%d:%q", b.ImageIndex, b.Path))
+				ps = append(ps, fmt.Sprintf("%d:%q", b.ImageIndex, redactPath(b.Path)))
 			}
 			t.Fatalf("LIVE-PROOF-SETUP (%s): item %s type=%q path=%q (suffix matches folder: %v) has %d backdrops with paths [%s]; need >=1 and each under /%s/. See live-3179-diag.jsonl",
-				stage, r.env.itemID, itemType, itemPath, path.Base(itemPath) == proofArtistName, len(bds), strings.Join(ps, " "), proofArtistName)
+				stage, r.env.itemID, itemType, redactPath(itemPath), path.Base(itemPath) == proofArtistName, len(bds), strings.Join(ps, " "), proofArtistName)
 		}
 		time.Sleep(3 * time.Second)
 	}
+}
+
+// redactImages is images with every path made library-root free, for logging.
+func redactImages(in []embyImage) []embyImage {
+	out := make([]embyImage, len(in))
+	for i, im := range in {
+		out[i] = embyImage{im.ImageType, im.ImageIndex, redactPath(im.Path)}
+	}
+	return out
 }
