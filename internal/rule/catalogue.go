@@ -403,6 +403,22 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 			"An artist whose stored ID resolves to a different act of the same name in another genre, whose release list has no titles in common with the folder.",
 		},
 	},
+	RuleFanartUnreadable: {
+		// Detection only, and it will stay that way: the cause is the
+		// operator's own file, so nothing may fix it automatically.
+		FixBehavior: "",
+		Conditional: false,
+		Caveats: []string{
+			"Informational only. Stillwater never changes, moves or deletes the unreadable file, because the cause (permissions, a failing disk, a mount that dropped) is something only you can judge.",
+			"Raised when Stillwater prepares a backdrop push to a connected media server, and cleared the next time it prepares one and every backdrop file reads cleanly. It is not raised by Run Rules.",
+			"Disabling this rule does not stop findings from being recorded: the finding is raised at the moment of the push and cannot be recreated later, so the Enabled toggle here changes nothing about whether it appears.",
+		},
+		Guards: "A backdrop file Stillwater cannot read cannot be sent to Emby or Jellyfin. On Emby the files after it are still sent, in order; on Jellyfin the whole backdrop set for that artist is held back until every file reads. Stillwater never touches the unreadable file itself. This rule makes the problem visible on the artist instead of leaving it in the log, and names which backdrop positions are affected.",
+		Examples: []string{
+			"A backdrop file whose permissions were changed so the Stillwater service account can no longer open it.",
+			"A backdrop on a network share that dropped partway through a sync.",
+		},
+	},
 }
 
 // CatalogueEntry returns the documentation metadata for a rule ID.

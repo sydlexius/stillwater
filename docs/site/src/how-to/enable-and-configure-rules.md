@@ -6,7 +6,7 @@ description: Turn rules on and off, switch between manual and auto modes, tune t
 
 # Enable and configure rules
 
-Stillwater ships with 28 built-in rules. Some are enabled out of the box; the rest are opinionated, or make destructive changes, and start disabled. This page covers turning them on and off, picking the right automation mode, tuning thresholds, and scheduling recurring evaluation.
+Stillwater ships with 29 built-in rules. Some are enabled out of the box; the rest are opinionated, or make destructive changes, and start disabled. This page covers turning them on and off, picking the right automation mode, tuning thresholds, and scheduling recurring evaluation.
 
 For the *concept* (the three states, fix-all, the conflict gate), see [rules in core concepts](../core-concepts/rules.md). For the full per-rule reference, see [rules catalog](../reference/rules-catalogue.md).
 
@@ -20,12 +20,13 @@ If you cannot remember which tab a setting lives on, use the search box at the t
 
 A disabled rule never evaluates. It doesn't appear in violation counts and doesn't surface in the artist's violations list. Re-enable to start finding violations again; the next rule run picks them up.
 
-Some rules behave differently on disable. Their findings are not produced by a rule run -- they are recorded at the moment a matching event happens (a backdrop is imported or pushed, an artist's MusicBrainz ID is re-checked), so nothing can recreate a missed finding afterward. For these rules the Enabled toggle never stops recording: a finding is still written to the Action Queue and still counted toward compliance, whether the toggle is on or off. To clear an existing finding, dismiss or resolve it individually.
+Some rules behave differently on disable. Their findings are not produced by a rule run -- they are recorded at the moment a matching event happens (a backdrop is imported or pushed, an artist's MusicBrainz ID is re-checked, a backdrop file turns out to be unreadable when it is about to be sent), so nothing can recreate a missed finding afterward. For these rules the Enabled toggle never stops recording: a finding is still written to the Action Queue and still counted toward compliance, whether the toggle is on or off. To clear an existing finding, dismiss or resolve it individually.
 
 What disabling *does* control for these rules is the pop-up notification shown at the moment the finding is raised:
 
 - **Cross-artist backdrop collision** -- disabling stops the pop-up notification shown at the moment a collision is detected. Turning it off just means you will not see the pop-up in the moment; re-enable it to see the pop-up again for future collisions. This rule has a fix path.
 - **Stored MusicBrainz ID resolves to this artist** -- disabling stops the summary notification the background re-validation pass posts when it finds a failure. This rule is detection-only: there is no automated fix, so findings are reviewed and resolved by hand on the Action Queue regardless of the toggle's position.
+- **Fanart file cannot be read** -- the toggle does not suppress the finding. It is detection-only: Stillwater never changes the unreadable file, so check its permissions or storage yourself. The finding clears the next time a push finds every backdrop file readable.
 
 <!-- SCREENSHOT: Settings > Rules | state: rules tab with mix of enabled/disabled + manual/auto + a conflict-gated chip | annotation: enable toggle + mode picker + conflict-gate indicator -->
 

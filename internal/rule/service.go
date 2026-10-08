@@ -7,6 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -72,6 +75,20 @@ const (
 	// verdict raises a violation at all; validated and not-checkable stay in
 	// the ledger.
 	RuleMBIDResolves = "mbid_resolves"
+
+	// RuleFanartUnreadable flags an artist with a local backdrop (fanart) file
+	// Stillwater could not read when it prepared a push (#3200). A file it
+	// cannot read cannot be sent, so it never reaches the media server, and on
+	// Jellyfin the whole backdrop set is held back. Event-driven like the two
+	// rules above: the publish path raises it when it takes its snapshot of the
+	// artist's fanart and clears it when a snapshot comes back clean, and the
+	// engine never evaluates it (re-deriving it would mean re-reading the file).
+	//
+	// INFORMATIONAL AND NOT FIXABLE, deliberately and permanently. The cause is
+	// the operator's own file (permissions, a failing disk, a mount), so no
+	// automated step may chmod, delete or re-fetch over it. There is no Fixer
+	// for this rule id.
+	RuleFanartUnreadable = "fanart_unreadable"
 
 	// Deprecated rule IDs kept for migration. These rules have been merged
 	// into other rules but may still have violations in the database.
@@ -358,6 +375,26 @@ var defaultRules = []Rule{
 		AutomationMode: AutomationModeManual,
 		Config:         RuleConfig{Severity: "warning"},
 	},
+	{
+		ID:          RuleFanartUnreadable,
+		Name:        "Fanart file cannot be read",
+		Description: "Flags an artist with a local backdrop file Stillwater could not read when it prepared a push to your media servers. An unreadable file is not sent, and on Jellyfin it holds the whole backdrop set back. Findings are raised by the push itself rather than during Run Rules, and are informational: Stillwater never changes or removes the file.",
+		Category:    RuleCategoryImage,
+		// Seeded DISABLED, exactly as the two event-driven rules above, after
+		// tracing what disabled costs (#3200). It costs the finding nothing: the
+		// raise never consults Enabled, and every violation read path (Action
+		// Queue, artist findings, reports) reads rule_violations without
+		// filtering on rules.enabled -- fanart_unreadable_test.go drives all
+		// three against the seeded row. Only the rule_results aggregates (the
+		// compliance breakdown and pass rates) hide a disabled rule, which is
+		// right for a finding that is not a pass/fail measure of the artist.
+		// Seeding it ENABLED would buy nothing and would make ListDirtyIDs
+		// re-evaluate the whole library once on upgrade for a rule the engine
+		// never runs.
+		Enabled:        false,
+		AutomationMode: AutomationModeManual,
+		Config:         RuleConfig{Severity: "info"},
+	},
 }
 
 // filesystemRules is the set of rule IDs that are truly filesystem-only with
@@ -406,6 +443,10 @@ var eventDrivenRules = map[string]bool{
 	// to reach -- so an evaluation pass would resolve every open entry with no
 	// way to bring it back.
 	RuleMBIDResolves: true,
+	// fanart_unreadable is raised by the publish path's fanart snapshot (#3200).
+	// The engine has no cheap way to re-read the file, so an evaluation pass
+	// would record a pass and resolve the operator's open entry.
+	RuleFanartUnreadable: true,
 }
 
 // IsEventDriven reports whether a rule's violations are raised outside engine
@@ -1475,6 +1516,101 @@ func (s *Service) RaiseMBIDValidationFailure(ctx context.Context, artistID, arti
 		Fixable:    false,
 		Status:     ViolationStatusOpen,
 	})
+}
+
+// RaiseFanartUnreadable records, or refreshes, the informational entry for an
+// artist whose local backdrop files could not be read when a push was prepared
+// (#3200). slots are the 0-based local backdrop indexes the publish path uses;
+// the message shows them as positions (index + 1), matching fanart.jpg,
+// fanart2.jpg, ... on Emby and Jellyfin. reason is a short cause for the
+// operator, appended as given; pass "" to omit it.
+//
+// Keyed on (rule_id, artist_id) by UpsertViolation, so a repeat raise replaces
+// the slot list on the one open entry instead of adding a second row. Like
+// RaiseMBIDValidationFailure it is UNCONDITIONAL (never consults the rule's
+// Enabled toggle, #2970) and Fixable is hard-coded FALSE: nothing may ever act
+// on the operator's file. A raise with no slots, or an invalid slot (negative or math.MaxInt), is refused
+// rather than stored as an empty or nonsensical finding.
+func (s *Service) RaiseFanartUnreadable(ctx context.Context, artistID string, slots []int, reason string) error {
+	if len(slots) == 0 {
+		return errors.New("raising fanart_unreadable: no slots given")
+	}
+	// A negative index is meaningless, and math.MaxInt would wrap when shown as a
+	// position (index + 1).
+	if slices.Min(slots) < 0 || slices.Max(slots) == math.MaxInt {
+		return errors.New("raising fanart_unreadable: a slot index is out of range")
+	}
+	var name string
+	if err := s.db.QueryRowContext(ctx, `SELECT name FROM artists WHERE id = ?`, artistID).Scan(&name); err != nil {
+		return fmt.Errorf("reading artist name for fanart_unreadable: %w", err)
+	}
+	sorted := slices.Compact(slices.Sorted(slices.Values(slots)))
+	positions := make([]string, len(sorted))
+	for i, slot := range sorted {
+		positions[i] = strconv.Itoa(slot + 1)
+	}
+	msg := fmt.Sprintf("Backdrop file(s) %s could not be read, so Stillwater is not sending them to your media servers.", strings.Join(positions, ", "))
+	if reason != "" {
+		msg += " " + reason
+	}
+	return s.UpsertViolation(ctx, &RuleViolation{
+		RuleID:     RuleFanartUnreadable,
+		ArtistID:   artistID,
+		ArtistName: name,
+		Severity:   s.configuredSeverity(ctx, RuleFanartUnreadable, "info"),
+		Message:    msg,
+		Fixable:    false,
+		Status:     ViolationStatusOpen,
+	})
+}
+
+// ResolveFanartUnreadable clears an artist's open fanart_unreadable entry once a
+// push snapshot came back clean. Nothing open is a no-op, not an error. A
+// dismissed entry stays dismissed.
+//
+// RecordRulePass cannot be used: it refuses event-driven rules on purpose. So
+// the violation and its rule_results row move together here in one
+// transaction, which keeps the pair from disagreeing (a stale failing row
+// would show up if an operator later enabled the rule).
+func (s *Service) ResolveFanartUnreadable(ctx context.Context, artistID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning fanart_unreadable resolve: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // sql.ErrTxDone after Commit; the real error is what callers act on
+
+	now := s.clock.Now()
+	stamp := now.UTC().Format(time.RFC3339)
+	res, err := tx.ExecContext(ctx, `
+		UPDATE rule_violations
+		   SET status = ?, resolved_at = ?, updated_at = ?
+		 WHERE rule_id = ? AND artist_id = ? AND status IN (?, ?)
+	`, ViolationStatusResolved, stamp, stamp,
+		RuleFanartUnreadable, artistID, ViolationStatusOpen, ViolationStatusPendingChoice)
+	if err != nil {
+		return fmt.Errorf("resolving fanart_unreadable: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("reading fanart_unreadable resolve count: %w", err)
+	}
+	if n == 0 {
+		return nil
+	}
+	// The ordering guard rejects a pass older than the stored verdict (#2972).
+	// The two writes are one verdict, so a rejected pass abandons the violation
+	// UPDATE too (the deferred Rollback), exactly as RecordRulePass does.
+	applied, err := upsertRuleResultPassExec(ctx, tx, artistID, RuleFanartUnreadable, now)
+	if err != nil {
+		return err
+	}
+	if !applied {
+		return nil
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing fanart_unreadable resolve: %w", err)
+	}
+	return nil
 }
 
 // isCanceled reports whether err is our own stop -- a canceled context or an
