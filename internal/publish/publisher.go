@@ -284,6 +284,13 @@ type Publisher struct {
 	collisionNotifier  *collision.Notifier
 	fanartIdentity     FanartIdentityIndexer
 	imageWriteGate     ImageWriteGate
+	// fanartHealth is told whether a full-set fanart snapshot could read every
+	// backdrop (#3200). Optional; see FanartHealthReporter.
+	fanartHealth FanartHealthReporter
+	// fanartReportLocks holds a per-artist gate (a chan struct{} with room for
+	// one) that serializes "snapshot, then report". See
+	// snapshotFanartAndReport.
+	fanartReportLocks sync.Map
 
 	// phashTargetLocks serializes the complete read-modify-verify of a single
 	// phash backdrop target (ConnectionID+PlatformArtistID) across concurrent
@@ -1467,6 +1474,9 @@ func (p *Publisher) resyncFanartLocked(ctx context.Context, a *artist.Artist, pi
 		return false, false, truncateWarning(fmt.Sprintf("%s: failed to read fanart directory for resync", conn.Name))
 	}
 	if len(fanartPaths) == 0 {
+		// No local backdrop is left, so no file can be unreadable: clear a stale
+		// finding (#3200). Nothing is read; this only takes the report path.
+		_, _, _ = p.snapshotFanartAndReport(ctx, a.ID, fanartPaths)
 		// resolveFanartReplaceTarget already ruled out noop against `data`
 		// (the primary), so an empty local set here means the primary was
 		// removed between that read and this one -- an operator racing this
@@ -1475,7 +1485,7 @@ func (p *Publisher) resyncFanartLocked(ctx context.Context, a *artist.Artist, pi
 		return false, false, truncateWarning(fmt.Sprintf("%s: no local fanart found for resync", conn.Name))
 	}
 
-	snapshot, snapWarnings, snapErr := p.snapshotFanart(ctx, fanartPaths)
+	snapshot, snapWarnings, snapErr := p.snapshotFanartAndReport(ctx, a.ID, fanartPaths)
 	if snapErr != nil {
 		p.logger.Warn("fanart resync snapshot aborted", "artist", a.Name, "connection", conn.Name, "error", snapErr)
 		return false, false, truncateWarning(fmt.Sprintf("%s: fanart resync canceled before it could read the local set", conn.Name))
@@ -1767,6 +1777,10 @@ type fanartSnapshot struct {
 	// log so an operator can see how stale a restored copy is. Nothing branches
 	// on it -- see reassertLocalImage on why newness cannot arbitrate here.
 	mod time.Time
+	// skipped marks a slot whose file was NOT read because the snapshot budget
+	// (file count or total bytes) was already spent. Such a file may be perfectly
+	// readable; the health report must not call it unreadable (#3200).
+	skipped bool
 }
 
 // snapshotFanart reads EVERY fanart file BEFORE the first upload, returning the
@@ -2179,7 +2193,7 @@ func (p *Publisher) degradeFanartSlot(path string, index int, reason string) (fa
 		slog.String("path", path),
 		slog.Int("index", index),
 		slog.String("reason", reason))
-	return fanartSnapshot{path: path, index: index}, truncateWarning(reason)
+	return fanartSnapshot{path: path, index: index, skipped: true}, truncateWarning(reason)
 }
 
 // hasReadableFanart reports whether any snapshot entry actually captured bytes.
@@ -2574,6 +2588,9 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 		return warnings
 	}
 	if len(fanartPaths) == 0 {
+		// Every backdrop is gone, so none can be unreadable: clear a stale
+		// finding (#3200). Nothing is read; this only takes the report path.
+		_, _, _ = p.snapshotFanartAndReport(ctx, a.ID, fanartPaths)
 		return warnings
 	}
 
@@ -2582,7 +2599,7 @@ func (p *Publisher) syncAllFanartToPlatforms(ctx context.Context, a *artist.Arti
 	fanartIdentityIdx := p.fanartIdentityIndex(ctx, a)
 	collisionNotified := make(map[string]bool)
 
-	snapshot, snapWarnings, snapCancelErr := p.snapshotFanart(ctx, fanartPaths)
+	snapshot, snapWarnings, snapCancelErr := p.snapshotFanartAndReport(ctx, a.ID, fanartPaths)
 	warnings = append(warnings, snapWarnings...)
 	if snapCancelErr != nil {
 		// STOP BEFORE THE UPLOAD LOOP. Continuing here is what turned an
