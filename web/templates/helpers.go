@@ -305,6 +305,11 @@ func mergeI18nJSON(ctx context.Context) string {
 		"no_sources_selected":       t(ctx, "artist_duplicates.merge_modal.no_sources_selected"),
 		"keeping_badge":             t(ctx, "artist_duplicates.merge_modal.keeping_badge"),
 		"will_be_removed":           t(ctx, "artist_duplicates.merge_modal.will_be_removed"),
+		"extrafanart_preview":       t(ctx, "artist_duplicates.merge_modal.extrafanart_preview"),
+		"extrafanart_done":          t(ctx, "artist_duplicates.merge_modal.extrafanart_done"),
+		"extrafanart_hint":          t(ctx, "artist_duplicates.merge_modal.extrafanart_hint"),
+		"extrafanart_link":          t(ctx, "extrafanart_migration.page_title"),
+		"close_label":               t(ctx, "common.close"),
 	}
 	b, err := json.Marshal(m)
 	if err != nil {

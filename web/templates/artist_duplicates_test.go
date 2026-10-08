@@ -450,6 +450,13 @@ func TestMergeI18nJSON(t *testing.T) {
 		"no_sources_selected",
 		"keeping_badge",
 		"will_be_removed",
+		// #3180: the extrafanart report shown in the dry-run preview and after a
+		// committed merge, plus the link to the migration page and the Close label.
+		"extrafanart_preview",
+		"extrafanart_done",
+		"extrafanart_hint",
+		"extrafanart_link",
+		"close_label",
 	}
 	var m map[string]string
 	if err := json.Unmarshal([]byte(mergeI18nJSON(ctx)), &m); err != nil {
