@@ -247,7 +247,7 @@ templ ComplianceSummaryFragment(data ComplianceSummaryData) {
 			<p class={ "mt-2 text-3xl font-bold", templ.KV("text-green-700 dark:text-green-400", data.Overall.Score >= 80), templ.KV("text-yellow-700 dark:text-yellow-400", data.Overall.Score >= 50 && data.Overall.Score < 80), templ.KV("text-red-700 dark:text-red-400", data.Overall.Score < 50) }>
 				{ fmt.Sprintf("%.1f%%", data.Overall.Score) }
 			</p>
-			<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+			<p class="mt-1 text-xs text-gray-600 dark:text-gray-400">
 				{ tf(ctx, "report.x_of_y_compliant", data.Overall.CompliantArtists, data.Overall.TotalArtists) }
 			</p>
 		</div>
@@ -258,7 +258,7 @@ templ ComplianceSummaryFragment(data ComplianceSummaryData) {
 				<p class={ "mt-2 text-3xl font-bold", templ.KV("text-green-700 dark:text-green-400", lib.Score >= 80), templ.KV("text-yellow-700 dark:text-yellow-400", lib.Score >= 50 && lib.Score < 80), templ.KV("text-red-700 dark:text-red-400", lib.Score < 50) }>
 					{ fmt.Sprintf("%.1f%%", lib.Score) }
 				</p>
-				<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+				<p class="mt-1 text-xs text-gray-600 dark:text-gray-400">
 					{ tf(ctx, "report.x_of_y_compliant", lib.CompliantArtists, lib.TotalArtists) }
 				</p>
 			</div>
