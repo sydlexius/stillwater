@@ -1,4 +1,4 @@
-.PHONY: build run test test-shuffle test-race test-cover test-js test-a11y lint fmt clean clean-uat uat docker-build docker-run dev templ tailwind generate generate-docs docs-serve migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint vulncheck scan audit bruno-ci live-proof-3200
+.PHONY: build run test test-shuffle test-race test-cover test-js test-a11y lint fmt clean clean-uat uat docker-build docker-run dev templ tailwind generate generate-docs docs-serve migrate favicon hooks doctor worktree check-openapi sync-tool-versions hadolint vulncheck scan audit bruno-ci live-proof-3200 live-proof-3179
 
 # Use bash for all recipes so bash-only constructs (set -o pipefail) work even
 # where /bin/sh is dash (Debian/Ubuntu); plain sh lacks pipefail.
@@ -591,6 +591,10 @@ live-proof-3200:
 	scripts/live-emby-proof.sh --test 'TestLiveEmby_NilSlotFullPath_' --without 'edf27433^' --files internal/publish/live_nil_slot_full_path_integration_test.go --expect TestLiveEmby_NilSlotFullPath_ShortPeerCompactsWithoutDuplicates --expect TestLiveEmby_NilSlotFullPath_FullPeerStaysInPlace || rc=$$?; \
 	scripts/live-emby-proof.sh --test 'TestLiveEmby_NilSlotUnreadablePeer_' --without '014e4c24^' --files internal/publish/live_nil_slot_unreadable_peer_integration_test.go --expect TestLiveEmby_NilSlotUnreadablePeer_LaterSurvivorWaits || rc=$$?; \
 	exit $$rc
+
+## live-proof-3179: Prove the extrafanart/ migration keeps every file across 3 real pushes to a live Emby (needs SW_LIVE_EMBY_* and SW_LIVE_EMBY_ARTIST_DIR in the environment)
+live-proof-3179:
+	@scripts/live-extrafanart-proof.sh
 
 ## help: Show this help message
 help:
