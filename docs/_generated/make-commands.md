@@ -39,4 +39,5 @@
 | `make clean-uat` | Remove the staged ./.uat/ UAT copy (DB + key + run root) |
 | `make bruno-ci` | Build binary, run ephemeral server, execute Bruno API tests, clean up. |
 | `make live-proof-3200` | Prove the #3200 Emby fixes against a live Emby (needs SW_LIVE_EMBY_* in the environment) |
+| `make live-proof-3179` | Prove the extrafanart/ migration keeps every file across 3 real pushes to a live Emby (needs SW_LIVE_EMBY_* and SW_LIVE_EMBY_ARTIST_DIR in the environment) |
 | `make help` | Show this help message |
