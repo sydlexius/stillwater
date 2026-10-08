@@ -413,7 +413,7 @@ var rulesCatalogue = map[string]RuleCatalogueEntry{
 			"Raised when Stillwater prepares a backdrop push to a connected media server, and cleared the next time it prepares one and every backdrop file reads cleanly. It is not raised by Run Rules.",
 			"Disabling this rule does not stop findings from being recorded: the finding is raised at the moment of the push and cannot be recreated later, so the Enabled toggle here changes nothing about whether it appears.",
 		},
-		Guards: "A backdrop file Stillwater cannot read cannot be sent to Emby or Jellyfin. On Emby the files after it are still sent, in order; on Jellyfin the whole backdrop set for that artist is held back until every file reads. Stillwater never touches the unreadable file itself. This rule makes the problem visible on the artist instead of leaving it in the log, and names which backdrop positions are affected.",
+		Guards: "A backdrop file Stillwater cannot read cannot be sent to Emby or Jellyfin. On Emby the files after it are still sent, in order; on Jellyfin the whole backdrop set for that artist is held back until every file reads. Stillwater never touches the unreadable file itself. This rule makes the problem visible on the artist instead of leaving it in the log, and names the affected files.",
 		Examples: []string{
 			"A backdrop file whose permissions were changed so the Stillwater service account can no longer open it.",
 			"A backdrop on a network share that dropped partway through a sync.",

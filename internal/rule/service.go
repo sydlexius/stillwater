@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"math"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1521,16 +1520,18 @@ func (s *Service) RaiseMBIDValidationFailure(ctx context.Context, artistID, arti
 // RaiseFanartUnreadable records, or refreshes, the informational entry for an
 // artist whose local backdrop files could not be read when a push was prepared
 // (#3200). slots are the 0-based local backdrop indexes the publish path uses;
-// the message shows them as positions (index + 1), matching fanart.jpg,
-// fanart2.jpg, ... on Emby and Jellyfin. reason is a short cause for the
-// operator, appended as given; pass "" to omit it.
+// they are only validated here (a non-empty, in-range list) and never shown,
+// because a position does not match the file name. reason is the complete
+// operator-facing message, stored as given; pass "" for a generic sentence.
 //
-// Keyed on (rule_id, artist_id) by UpsertViolation, so a repeat raise replaces
-// the slot list on the one open entry instead of adding a second row. Like
+// Keyed on (rule_id, artist_id) by UpsertViolation, so a repeat raise refreshes
+// the one open entry (the slots are only validated, not stored) instead of
+// adding a second row. Like
 // RaiseMBIDValidationFailure it is UNCONDITIONAL (never consults the rule's
 // Enabled toggle, #2970) and Fixable is hard-coded FALSE: nothing may ever act
-// on the operator's file. A raise with no slots, or an invalid slot (negative or math.MaxInt), is refused
-// rather than stored as an empty or nonsensical finding.
+// on the operator's file. A raise with no slots, or an invalid slot (negative
+// or math.MaxInt), is refused rather than stored as an empty or nonsensical
+// finding.
 //
 // CALLER CONTRACT: see ResolveFanartUnreadable. A caller must serialize
 // "take the snapshot, then report" per artist, so raises and resolves arrive in
@@ -1539,8 +1540,8 @@ func (s *Service) RaiseFanartUnreadable(ctx context.Context, artistID string, sl
 	if len(slots) == 0 {
 		return errors.New("raising fanart_unreadable: no slots given")
 	}
-	// A negative index is meaningless, and math.MaxInt would wrap when shown as a
-	// position (index + 1).
+	// A negative index is meaningless. math.MaxInt is refused as a defensive
+	// upper bound on the index range.
 	if slices.Min(slots) < 0 || slices.Max(slots) == math.MaxInt {
 		return errors.New("raising fanart_unreadable: a slot index is out of range")
 	}
@@ -1548,14 +1549,12 @@ func (s *Service) RaiseFanartUnreadable(ctx context.Context, artistID string, sl
 	if err := s.db.QueryRowContext(ctx, `SELECT name FROM artists WHERE id = ?`, artistID).Scan(&name); err != nil {
 		return fmt.Errorf("reading artist name for fanart_unreadable: %w", err)
 	}
-	sorted := slices.Compact(slices.Sorted(slices.Values(slots)))
-	positions := make([]string, len(sorted))
-	for i, slot := range sorted {
-		positions[i] = strconv.Itoa(slot + 1)
-	}
-	msg := fmt.Sprintf("Backdrop file(s) %s could not be read, so Stillwater is not sending them to your media servers.", strings.Join(positions, ", "))
-	if reason != "" {
-		msg += " " + reason
+	// The message is the caller's reason as given: files are named by base name
+	// there, and no position number is shown (#3469). A caller with no reason
+	// still gets a generic sentence rather than an empty finding.
+	msg := reason
+	if msg == "" {
+		msg = "Some backdrop files could not be read, so Stillwater is not sending them to your media servers."
 	}
 	return s.UpsertViolation(ctx, &RuleViolation{
 		RuleID:     RuleFanartUnreadable,

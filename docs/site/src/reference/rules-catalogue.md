@@ -829,7 +829,7 @@ After:  Artist A's fanart2.jpg is quarantined and removed (locally and on platfo
 
 Flags an artist with a local backdrop file Stillwater could not read when it prepared a push to your media servers. An unreadable file is not sent, and on Jellyfin it holds the whole backdrop set back. Findings are raised by the push itself rather than during Run Rules, and are informational: Stillwater never changes or removes the file.
 
-A backdrop file Stillwater cannot read cannot be sent to Emby or Jellyfin. On Emby the files after it are still sent, in order; on Jellyfin the whole backdrop set for that artist is held back until every file reads. Stillwater never touches the unreadable file itself. This rule makes the problem visible on the artist instead of leaving it in the log, and names which backdrop positions are affected.
+A backdrop file Stillwater cannot read cannot be sent to Emby or Jellyfin. On Emby the files after it are still sent, in order; on Jellyfin the whole backdrop set for that artist is held back until every file reads. Stillwater never touches the unreadable file itself. This rule makes the problem visible on the artist instead of leaving it in the log, and names the affected files.
 
 **When this fires:**
 
