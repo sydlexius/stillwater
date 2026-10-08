@@ -406,11 +406,13 @@ func TestFanartNameList_CapBoundary(t *testing.T) {
 	for i := 0; i < maxReportedFanartNames+1; i++ {
 		names = append(names, fmt.Sprintf("b%02d.jpg", i))
 	}
-	if got := fanartNameList(names[:maxReportedFanartNames]); strings.Contains(got, "more") || !strings.HasSuffix(got, "b09.jpg") {
-		t.Errorf("exactly %d names = %q, want all listed and no tail", maxReportedFanartNames, got)
+	wantFull := strings.Join(names[:maxReportedFanartNames], ", ")
+	if got := fanartNameList(names[:maxReportedFanartNames]); got != wantFull {
+		t.Errorf("exactly %d names = %q, want %q with no tail", maxReportedFanartNames, got, wantFull)
 	}
-	if got := fanartNameList(names); !strings.HasSuffix(got, "and 1 more") || strings.Contains(got, "b10") {
-		t.Errorf("%d names = %q, want the first %d then \"and 1 more\"", len(names), got, maxReportedFanartNames)
+	wantCapped := wantFull + " and 1 more"
+	if got := fanartNameList(names); got != wantCapped {
+		t.Errorf("%d names = %q, want %q", len(names), got, wantCapped)
 	}
 }
 

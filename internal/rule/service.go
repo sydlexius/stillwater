@@ -1529,8 +1529,9 @@ func (s *Service) RaiseMBIDValidationFailure(ctx context.Context, artistID, arti
 // adding a second row. Like
 // RaiseMBIDValidationFailure it is UNCONDITIONAL (never consults the rule's
 // Enabled toggle, #2970) and Fixable is hard-coded FALSE: nothing may ever act
-// on the operator's file. A raise with no slots, or an invalid slot (negative or math.MaxInt), is refused
-// rather than stored as an empty or nonsensical finding.
+// on the operator's file. A raise with no slots, or an invalid slot (negative
+// or math.MaxInt), is refused rather than stored as an empty or nonsensical
+// finding.
 //
 // CALLER CONTRACT: see ResolveFanartUnreadable. A caller must serialize
 // "take the snapshot, then report" per artist, so raises and resolves arrive in
@@ -1539,8 +1540,8 @@ func (s *Service) RaiseFanartUnreadable(ctx context.Context, artistID string, sl
 	if len(slots) == 0 {
 		return errors.New("raising fanart_unreadable: no slots given")
 	}
-	// A negative index is meaningless, and math.MaxInt is refused as a sentinel
-	// no real backdrop index can reach.
+	// A negative index is meaningless. math.MaxInt is refused as a defensive
+	// upper bound on the index range.
 	if slices.Min(slots) < 0 || slices.Max(slots) == math.MaxInt {
 		return errors.New("raising fanart_unreadable: a slot index is out of range")
 	}
