@@ -59,7 +59,7 @@ templ HealthSummaryFragment(data HealthSummaryData) {
 		>
 			{ fmt.Sprintf("%.1f%%", data.Score) }
 		</p>
-		<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+		<p class="mt-1 text-xs text-gray-600 dark:text-gray-400">
 			{ tf(ctx, "health.fully_compliant", data.CompliantArtists, data.TotalArtists) }
 		</p>
 	</div>

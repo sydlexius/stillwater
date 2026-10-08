@@ -5768,6 +5768,11 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   color: var(--swd-ink-3);
   white-space: nowrap;
 }
+/* Light only (#3469): --swd-ink-3 painted 4.73 here, a thin margin; ink-2 clears
+ * 5.5. Dark already measures 5.5 and is unchanged. */
+:root:not(.dark) .sw-next-artist-detail .sw-next-finding-unfixable {
+  color: var(--swd-ink-2);
+}
 
 /* M55 #1773: .sw-next-foreign-files surface backgrounds.
  * Single-layer model: only the .sw-card shell carries the opacity-aware fill;
@@ -6069,7 +6074,11 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
 
 .sw-rep-item-desc {
   font-size: 0.8214rem; /* #1894 F3: was 11.5px, scales with font-size pref */
-  color: var(--sw-content-text-secondary);
+  /* --swd-ink-2 for every state (#3469): the secondary text color measured
+   * painted 3.5-3.9 on inactive rows and the hovered row in light, and --swd-ink-3
+   * on the active row's accent tint measured 4.16-4.6. ink-2 clears 4.5 in both
+   * themes on the rest, active and hover fills (reports-contrast.spec.js). */
+  color: var(--swd-ink-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
