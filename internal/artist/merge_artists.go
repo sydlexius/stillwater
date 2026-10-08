@@ -39,6 +39,7 @@ import (
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/filesystem"
+	"github.com/sydlexius/stillwater/internal/image"
 )
 
 // Merge-related error sentinels. Handlers inspect these via errors.Is to map
@@ -282,6 +283,24 @@ type MergeResult struct {
 	// (survivor re-index + stale loser eviction). Populated only by
 	// MergeAndReconcile when a refresher is wired; empty otherwise.
 	PlatformRefresh []PlatformRefreshResult
+
+	// ExtraFanart is non-nil when the survivor ends the merge holding a
+	// non-empty extrafanart/ folder, so the operator learns there is something
+	// to migrate (#3180). Nil when the survivor has none or an empty one. It is
+	// a report only: the merge combines both sides' extrafanart/ contents
+	// exactly as it always did. On a dry run the count is projected from the
+	// same files the commit will move and equals what the real merge then
+	// reports; on a committed merge it is read back from disk after the
+	// filesystem phase. A merge that fails part-way returns before this is
+	// set, so a count is never claimed for a state that was not verified.
+	ExtraFanart *ExtraFanartReport
+}
+
+// ExtraFanartReport names the survivor and how many image files its
+// extrafanart/ folder holds (or, on a dry run, will hold) after the merge.
+type ExtraFanartReport struct {
+	ArtistName string
+	FileCount  int
 }
 
 // CanonicalRenameResult records the survivor's post-merge relocation to its
@@ -400,6 +419,7 @@ func (s *Service) MergeArtists(ctx context.Context, req MergeRequest) (*MergeRes
 	}
 
 	if req.DryRun {
+		reportSurvivorExtraFanart(ctx, survivor, losers, true, result)
 		return result, nil
 	}
 
@@ -427,6 +447,10 @@ func (s *Service) MergeArtists(ctx context.Context, req MergeRequest) (*MergeRes
 		}
 	}
 
+	// Filesystem phase finished for every loser: read the survivor's
+	// extrafanart/ back from disk and report it (#3180).
+	reportSurvivorExtraFanart(ctx, survivor, losers, false, result)
+
 	// Capture affected platform connections BEFORE the loser rows (and their
 	// platform_ids) are deleted by commitMergeDB. MergeAndReconcile refreshes
 	// this set post-commit.
@@ -450,6 +474,98 @@ func (s *Service) MergeArtists(ctx context.Context, req MergeRequest) (*MergeRes
 		"warnings", len(result.Warnings))
 
 	return result, nil
+}
+
+// extraFanartDirName is the folder the merge reports on and the migration
+// drains. The migration's own constant is private to internal/image, so the
+// literal is repeated here.
+const extraFanartDirName = "extrafanart"
+
+// reportSurvivorExtraFanart sets result.ExtraFanart when the survivor ends the
+// merge holding a non-empty extrafanart/ folder (#3180). It never moves,
+// renames or deletes anything and makes no platform call.
+//
+// WHY ONLY extrafanart/ AND NOT extrathumbs/: isAdditiveMergeDir covers both
+// names so the merge COMBINES both, but only extrafanart/ is reported. A
+// migration exists for extrafanart/ (the operator has something to act on) and
+// extrathumbs/ is outside that epic's scope, so reporting it would point at
+// nothing. extrathumbs/ behavior is unchanged.
+//
+// The files are counted with image.ListArtworkSubdirFiles, the same enumeration
+// the migration plans from (images only; dotfiles and nested folders are
+// excluded), so the number the operator sees is the number the migration will
+// find. If the survivor's extrafanart entry is not a real directory the
+// migration refuses it, so nothing is reported for it either.
+//
+// dryRun projects the post-merge count from the pre-merge disk without
+// writing: the survivor's own files, plus each loser's files in the order the
+// commit phase merges them. A loser's folder moves whole when the survivor has
+// none yet (everything listed comes along), and is merged file by file
+// otherwise (symlinks are skipped, exactly as mergeAdditiveDir does).
+//
+// A count that cannot be read is surfaced as a warning rather than dropped:
+// silence would read as "nothing to migrate".
+func reportSurvivorExtraFanart(ctx context.Context, survivor *NearDuplicateArtist, losers []NearDuplicateArtist, dryRun bool, result *MergeResult) {
+	if survivor.Path == "" {
+		return
+	}
+	count, err := countSurvivorExtraFanart(ctx, survivor.Path, losers, dryRun)
+	if err != nil {
+		result.Warnings = append(result.Warnings,
+			fmt.Sprintf("could not count the extrafanart images for %s: %v", survivor.Name, err))
+		return
+	}
+	if count > 0 {
+		result.ExtraFanart = &ExtraFanartReport{ArtistName: survivor.Name, FileCount: count}
+	}
+}
+
+// isRealDir reports whether path exists and is a directory itself (a symlink to
+// a directory is NOT, matching the migration's refusal and the merge's Lstat).
+func isRealDir(path string) bool {
+	fi, err := os.Lstat(path)
+	return err == nil && fi.IsDir()
+}
+
+// countSurvivorExtraFanart returns the survivor's extrafanart/ image count, read
+// from disk (dryRun false) or projected across the losers (dryRun true).
+func countSurvivorExtraFanart(ctx context.Context, survivorPath string, losers []NearDuplicateArtist, dryRun bool) (int, error) {
+	survDir := filepath.Join(survivorPath, extraFanartDirName)
+	hasDir := isRealDir(survDir)
+	if _, err := os.Lstat(survDir); err == nil && !hasDir {
+		return 0, nil
+	}
+	count := 0
+	if hasDir {
+		files, err := image.ListArtworkSubdirFiles(ctx, survivorPath, extraFanartDirName)
+		if err != nil {
+			return 0, err
+		}
+		count = len(files)
+	}
+	if !dryRun {
+		return count, nil
+	}
+	for _, l := range losers {
+		if l.Path == "" || !isRealDir(filepath.Join(l.Path, extraFanartDirName)) {
+			continue
+		}
+		files, err := image.ListArtworkSubdirFiles(ctx, l.Path, extraFanartDirName)
+		if err != nil {
+			return 0, err
+		}
+		if !hasDir {
+			count += len(files) // whole-directory move: contents come along intact
+			hasDir = true
+			continue
+		}
+		for _, f := range files {
+			if fi, lerr := os.Lstat(f); lerr == nil && fi.Mode().IsRegular() {
+				count++
+			}
+		}
+	}
+	return count, nil
 }
 
 // MergeAndReconcile runs a merge and then reconciles the survivor's directory

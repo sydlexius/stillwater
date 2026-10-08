@@ -237,6 +237,14 @@ type mergeCanonicalRenamePayload struct {
 	Platforms []mergePlatformPayload `json:"platforms,omitempty"`
 }
 
+// mergeExtraFanartPayload mirrors artist.ExtraFanartReport in snake_case: the
+// survivor's name and how many image files its extrafanart/ folder holds (dry
+// run: will hold) after the merge (#3180).
+type mergeExtraFanartPayload struct {
+	ArtistName string `json:"artist_name"`
+	FileCount  int    `json:"file_count"`
+}
+
 // mergeResultPayload mirrors artist.MergeResult in snake_case. Conflicts is
 // omitted when empty so success responses do not carry the field.
 type mergeResultPayload struct {
@@ -252,6 +260,7 @@ type mergeResultPayload struct {
 	LosersDeleted    []string                     `json:"losers_deleted,omitempty"`
 	CanonicalRename  *mergeCanonicalRenamePayload `json:"canonical_rename,omitempty"`
 	PlatformRefresh  []mergePlatformPayload       `json:"platform_refresh,omitempty"`
+	ExtraFanart      *mergeExtraFanartPayload     `json:"extrafanart_report,omitempty"`
 }
 
 // handleArtistsMerge processes POST /api/v1/artists/merge. Admin-only via
@@ -488,7 +497,12 @@ func toMergeResultPayload(r *artist.MergeResult) mergeResultPayload {
 	if r == nil {
 		return mergeResultPayload{}
 	}
+	var extra *mergeExtraFanartPayload
+	if r.ExtraFanart != nil {
+		extra = &mergeExtraFanartPayload{ArtistName: r.ExtraFanart.ArtistName, FileCount: r.ExtraFanart.FileCount}
+	}
 	return mergeResultPayload{
+		ExtraFanart:      extra,
 		DryRun:           r.DryRun,
 		SurvivorID:       r.SurvivorID,
 		SurvivorPath:     r.SurvivorPath,

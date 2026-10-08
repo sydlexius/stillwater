@@ -586,6 +586,24 @@ components:
             connections that mapped the survivor or any loser. Present only
             on a committed merge when a refresher is wired; absent on
             dry-run.
+        extrafanart_report:
+          type: object
+          required: [artist_name, file_count]
+          description: >-
+            Present when the survivor ends the merge holding a non-empty
+            extrafanart/ folder, so the operator knows there is something to
+            migrate. Absent when the survivor has none or an empty one. On a
+            dry-run it is the count the committed merge will report. The
+            merge still combines both artists' extrafanart/ contents; this
+            only reports. Counts the same image files the extrafanart
+            migration sees.
+          properties:
+            artist_name:
+              type: string
+              description: Name of the surviving artist.
+            file_count:
+              type: integer
+              description: Image files in the survivor's extrafanart/ folder after the merge.
       required: [survivor_id, survivor_path]
     MergePlatformResult:
       type: object

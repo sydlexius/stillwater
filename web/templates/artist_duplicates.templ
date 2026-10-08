@@ -501,9 +501,13 @@ templ ArtistMergeModal() {
 					</button>
 				</div>
 				<div class="px-6 py-4 overflow-y-auto flex-1 space-y-4">
-					<p class="text-sm text-gray-600 dark:text-gray-400">
+					<p id="merge-description" class="text-sm text-gray-600 dark:text-gray-400">
 						{ t(ctx, "artist_duplicates.merge_modal.description") }
 					</p>
+					// Pre-existing, empty live region: the finished merge's result is
+					// written here (#3180) so it is announced once, while focus moves
+					// to Close (a button, so the note itself is not read twice).
+					<div id="merge-status" role="status" class="sr-only"></div>
 					// #2527 Defect-2 soft gate. Server-rendered (copy comes from t(ctx,...),
 					// the JS only toggles [hidden]) and placed FIRST in the body so the
 					// warning is read before the survivor is chosen. Hidden unless the open
@@ -533,14 +537,14 @@ templ ArtistMergeModal() {
 							</span>
 						</label>
 					</div>
-					<fieldset>
+					<fieldset id="merge-survivor-fieldset">
 						<legend class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 							{ t(ctx, "artist_duplicates.merge_modal.survivor_legend") }
 						</legend>
 						<div id="merge-survivor-options" class="space-y-2"></div>
 					</fieldset>
 					<div class="border-t border-[var(--sw-glass-border)] pt-4">
-						<h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+						<h4 id="merge-preview-heading" class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 							{ t(ctx, "artist_duplicates.merge_modal.preview_heading") }
 						</h4>
 						<div id="merge-preview-body" class="text-sm text-gray-600 dark:text-gray-400">
@@ -554,6 +558,7 @@ templ ArtistMergeModal() {
 					<button
 						type="button"
 						class="rounded-md px-3 py-2 text-sm font-medium text-[color:var(--sw-content-text-secondary)] hover:text-[color:var(--sw-content-text)] hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+						id="merge-modal-cancel"
 						data-merge-close
 					>
 						{ t(ctx, "common.cancel") }
@@ -585,6 +590,21 @@ templ ArtistMergeModal() {
 		var optionsRoot = document.getElementById('merge-survivor-options');
 		var previewBody = document.getElementById('merge-preview-body');
 		var confirmBtn = document.getElementById('merge-modal-confirm');
+		var cancelBtn = document.getElementById('merge-modal-cancel');
+		var cancelLabel = cancelBtn ? cancelBtn.textContent : '';
+		// reloadOnClose: a committed merge that carries an extrafanart report
+		// keeps the modal open to show it (#3180); the page reload that every
+		// committed merge needs is deferred until the operator closes it.
+		var reloadOnClose = false;
+		// Choice UI hidden once a merge is done (#3180). A missing element is a
+		// template regression, so say so loudly instead of skipping it.
+		var doneHidden = ['merge-description', 'merge-survivor-fieldset', 'merge-preview-heading'].map(function(id) {
+			var el = document.getElementById(id);
+			if (!el) console.error('merge dialog: #' + id + ' missing; the done state will leave stale choice UI');
+			return el;
+		}).filter(Boolean);
+		var statusEl = document.getElementById('merge-status');
+		if (!statusEl) console.error('merge dialog: #merge-status missing; the merge result will not be announced');
 		// #2527 Defect-2 soft-gate elements.
 		var disambWarning = document.getElementById('merge-disamb-warning');
 		var disambOverride = document.getElementById('merge-disamb-override');
@@ -738,6 +758,13 @@ templ ArtistMergeModal() {
 			// Merge button), not at the top of the document.
 			if (lastFocused && typeof lastFocused.focus === 'function') lastFocused.focus();
 			lastFocused = null;
+			if (cancelBtn) cancelBtn.textContent = cancelLabel;
+			doneHidden.forEach(function(el) { el.hidden = false; });
+			if (statusEl) statusEl.textContent = '';
+			if (reloadOnClose) {
+				reloadOnClose = false;
+				window.location.reload();
+			}
 		}
 
 		// isSelectableSurvivor mirrors the server's ErrMergeSurvivorPathless
@@ -1040,6 +1067,10 @@ templ ArtistMergeModal() {
 			confirmBtn.disabled = true;
 			postMerge(false).then(function(out) {
 				if (out.kind === 'success') {
+					if (out.body && out.body.extrafanart_report) {
+						renderMergeDone(out.body);
+						return;
+					}
 					closeModal();
 					window.location.reload();
 					return;
@@ -1095,7 +1126,7 @@ templ ArtistMergeModal() {
 			previewBody.innerHTML = '';
 			var moved = body.moved || [];
 			var warnings = body.warnings || [];
-			if (moved.length === 0 && warnings.length === 0) {
+			if (moved.length === 0 && warnings.length === 0 && !body.extrafanart_report) {
 				var none = document.createElement('p');
 				none.className = 'text-sm';
 				none.textContent = tx('preview_empty');
@@ -1136,10 +1167,49 @@ templ ArtistMergeModal() {
 				});
 				previewBody.appendChild(wul);
 			}
+			appendExtraFanartReport(body.extrafanart_report, 'extrafanart_preview');
 			var platformNote = document.createElement('p');
 			platformNote.className = 'mt-3 text-xs text-gray-500 dark:text-gray-400';
 			platformNote.textContent = tx('platform_rescan_note');
 			previewBody.appendChild(platformNote);
+		}
+
+		// appendExtraFanartReport shows the survivor's extrafanart/ count (#3180)
+		// with a link to the migration page, in the same amber note style as the
+		// warnings above. The same note serves the dry-run preview and the
+		// committed merge; only the sentence differs (will be / now).
+		function appendExtraFanartReport(report, key) {
+			if (!report) return;
+			var note = document.createElement('p');
+			note.className = 'mt-3 text-xs text-amber-700 dark:text-amber-300';
+			note.id = 'merge-extrafanart-report';
+			note.textContent = tx(key).replace('%d', String(report.file_count)).replace('%s', function() { return report.artist_name; }) + ' ' + tx('extrafanart_hint') + ' ';
+			var link = document.createElement('a');
+			link.className = 'underline';
+			link.href = basePath + '/reports/extrafanart-migration';
+			link.textContent = tx('extrafanart_link');
+			note.appendChild(link);
+			previewBody.appendChild(note);
+		}
+
+		// renderMergeDone replaces the preview with the committed merge's
+		// extrafanart report and keeps the modal open until it is closed, which
+		// then reloads the page. The survivor radios are cleared so the finished
+		// group cannot be re-previewed.
+		function renderMergeDone(body) {
+			previewBody.innerHTML = '';
+			optionsRoot.innerHTML = '';
+			appendExtraFanartReport(body.extrafanart_report, 'extrafanart_done');
+			if (cancelBtn) cancelBtn.textContent = tx('close_label');
+			doneHidden.forEach(function(el) { el.hidden = true; });
+			if (disambWarning) disambWarning.hidden = true;
+			var note = document.getElementById('merge-extrafanart-report');
+			if (statusEl && note) statusEl.textContent = note.textContent;
+			// Confirm is disabled now, so focus would fall to <body>. Close is the
+			// only remaining action; focusing a button (not the note) keeps the
+			// result announced once, by the live region above.
+			if (cancelBtn) cancelBtn.focus();
+			reloadOnClose = true;
 		}
 
 		function renderConflicts(body) {
