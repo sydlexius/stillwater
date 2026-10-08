@@ -2,11 +2,11 @@
 description: Every built-in rule in Stillwater -- what it checks, what the fix does, what's configurable, and the default state.
 ---
 
-<!-- code: internal/rule/service.go (defaultRules, RuleNFO/Thumb/Fanart/Logo/Banner/etc constants, filesystemRules), internal/rule/fixers.go (NFOFixer, MetadataFixer, ImageFixer, ExtraneousImagesFixer, LogoPaddingFixer, DirectoryRenameFixer, BackdropSequencingFixer, ImageDuplicateFixer; CanFix mappings), internal/rule/fixers_language.go (NameLanguageFixer), internal/rule/collision_fixer.go (CrossArtistBackdropCollisionFixer), internal/database/migrations/001_initial_schema.sql (automation_mode DEFAULT 'auto'), internal/rule/service.go SeedDefaults (empty AutomationMode -> auto). 28 rules verified. -->
+<!-- code: internal/rule/service.go (defaultRules, RuleNFO/Thumb/Fanart/Logo/Banner/etc constants, filesystemRules), internal/rule/fixers.go (NFOFixer, MetadataFixer, ImageFixer, ExtraneousImagesFixer, LogoPaddingFixer, DirectoryRenameFixer, BackdropSequencingFixer, ImageDuplicateFixer; CanFix mappings), internal/rule/fixers_language.go (NameLanguageFixer), internal/rule/collision_fixer.go (CrossArtistBackdropCollisionFixer), internal/database/migrations/001_initial_schema.sql (automation_mode DEFAULT 'auto'), internal/rule/service.go SeedDefaults (empty AutomationMode -> auto). 29 rules verified. -->
 
 # Rules catalog
 
-Stillwater ships with 28 built-in rules across three categories: NFO, image, and metadata. Each section below covers one rule -- what it checks, what the fix does (if it's fixable), what's configurable, and how it ships.
+Stillwater ships with 29 built-in rules across three categories: NFO, image, and metadata. Each section below covers one rule -- what it checks, what the fix does (if it's fixable), what's configurable, and how it ships.
 
 For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-concepts/rules.md). This page is the enumeration.
 
@@ -43,6 +43,7 @@ For the *concept* behind enabled/disabled and manual/auto, see [rules](../core-c
 | [Minimum backdrop count](#minimum-backdrop-count) | Image | Disabled, manual | Detection-only |
 | [Logo excessive padding](#logo-excessive-padding) | Image | Disabled, manual | Yes |
 | [Cross-artist backdrop collision](#cross-artist-backdrop-collision) | Image | Disabled, manual | Sometimes |
+| [Fanart file cannot be read](#fanart-file-cannot-be-read) | Image | Disabled, manual | Detection-only |
 
 A rule marked **Detection-only** has no automated fix; you resolve the violations manually (or by adding artwork that satisfies the check).
 
@@ -819,4 +820,29 @@ After:  Artist A's fanart2.jpg is quarantined and removed (locally and on platfo
 - Detection is notify-only at import and push time: the backdrop is still written and still pushed. This rule records the finding and offers the back-out; it never blocks a write.
 - Only fanart/backdrop images are compared; thumbnails, logos, and banners are out of scope.
 - Disabling this rule does not stop findings from being recorded: findings are raised as collisions happen and cannot be recreated later, so the Enabled toggle here gates only the pop-up notification at the moment of detection, not the finding itself.
+
+---
+
+## Fanart file cannot be read
+
+**Category:** Image &middot; **Default:** Disabled, manual &middot; **Severity:** info
+
+Flags an artist with a local backdrop file Stillwater could not read when it prepared a push to your media servers. An unreadable file is not sent, and on Jellyfin it holds the whole backdrop set back. Findings are raised by the push itself rather than during Run Rules, and are informational: Stillwater never changes or removes the file.
+
+A backdrop file Stillwater cannot read cannot be sent to Emby or Jellyfin. On Emby the files after it are still sent, in order; on Jellyfin the whole backdrop set for that artist is held back until every file reads. Stillwater never touches the unreadable file itself. This rule makes the problem visible on the artist instead of leaving it in the log, and names which backdrop positions are affected.
+
+**When this fires:**
+
+- A backdrop file whose permissions were changed so the Stillwater service account can no longer open it.
+- A backdrop on a network share that dropped partway through a sync.
+
+**Fix:** No automated fix.
+
+**Configurable:** Severity only.
+
+**Caveats:**
+
+- Informational only. Stillwater never changes, moves or deletes the unreadable file, because the cause (permissions, a failing disk, a mount that dropped) is something only you can judge.
+- Raised when Stillwater prepares a backdrop push to a connected media server, and cleared the next time it prepares one and every backdrop file reads cleanly. It is not raised by Run Rules.
+- Disabling this rule does not stop findings from being recorded: the finding is raised at the moment of the push and cannot be recreated later, so the Enabled toggle here changes nothing about whether it appears.
 <!-- END GENERATED: rules-catalogue -->

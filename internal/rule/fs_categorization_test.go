@@ -58,6 +58,9 @@ func TestIsFilesystemDependent(t *testing.T) {
 		// checked and reaches a not-checkable verdict, which is a ledger row
 		// rather than a violation.
 		RuleMBIDResolves,
+		// Event-driven and API-compatible: raised by the publish path's snapshot
+		// of the artist's fanart (#3200), never by engine evaluation.
+		RuleFanartUnreadable,
 	}
 	for _, id := range apiRules {
 		if IsFilesystemDependent(id) {
@@ -146,6 +149,7 @@ func TestAllDefaultRulesAreCategorized(t *testing.T) {
 		// not-checkable verdict because its album catalogue cannot be read, and
 		// that verdict lives in the ledger rather than as a violation.
 		RuleMBIDResolves:       true,
+		RuleFanartUnreadable:   true,
 		RuleBackdropSequencing: true,
 		RuleBackdropMinCount:   true,
 		RuleNameLanguagePref:   true,

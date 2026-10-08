@@ -260,6 +260,9 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 	// can repeat. Registered only to satisfy the checker/rule parity invariant;
 	// eventDrivenRules keeps it from ever being invoked.
 	e.checkers[RuleMBIDResolves] = func(context.Context, *artist.Artist, RuleConfig) *Violation { return nil }
+	// fanart_unreadable (#3200) is raised by the publish path's fanart snapshot.
+	// Registered only for the checker/rule parity invariant; never invoked.
+	e.checkers[RuleFanartUnreadable] = func(context.Context, *artist.Artist, RuleConfig) *Violation { return nil }
 
 	// Register per-(rule, artist) capability predicates. A rule with no entry
 	// here is always capable and is gated only by Enabled and, for the

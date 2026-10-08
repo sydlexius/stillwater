@@ -1015,6 +1015,8 @@
   "findings.fanart_exists.title": "Fanart missing",
   "findings.fanart_min_res.fix": "Fetch a higher-resolution fanart from a provider.",
   "findings.fanart_min_res.title": "Fanart resolution too low",
+  "findings.fanart_unreadable.fix": "Check the file's permissions or storage; Stillwater leaves it untouched.",
+  "findings.fanart_unreadable.title": "Backdrop file cannot be read",
   "findings.image_duplicate.fix": "Replace one of the duplicate images.",
   "findings.image_duplicate.title": "Duplicate images detected",
   "findings.image_duplicate_exact.fix": "Delete the identical copies, keeping the first slot.",
