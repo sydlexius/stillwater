@@ -7,10 +7,9 @@
 // before scanning. There is no conditional skip: an absent badge means the
 // fixture is wrong, and the test fails.
 //
-// The artist field popover's copy of the badge (.sw-ff-pop-unfixable) only
-// renders inside an opened field popover, so it is not reachable from this
-// fixture; it uses the same --swd-ink-3 token as the findings-list copy, which
-// IS scanned here (the token pairing itself is covered by token-pairings.spec.js).
+// The artist field popover's copy (.sw-ff-pop-unfixable) is covered by the last
+// test group: it renders only inside an opened field popover, for a field-tagged
+// unfixable finding that seedUnfixableFieldFinding builds.
 import { test, expect } from 'playwright/test';
 
 import { disableTransitions } from './helpers/settle.js';
@@ -34,8 +33,17 @@ test.afterEach(async ({ page }) => {
 
 // Each surface: where to go, and the badge locator on it. The text match is the
 // rendered label itself, so a template that drops the badge fails here.
+// The dashboard queue also lists the field-finding artist's name_language_pref
+// card, which background evaluation can resolve again at any moment. So the
+// dashboard test is scoped to the stable artist_id_mismatch card (found by the
+// seeded artist's name) and asserts EXACTLY ONE badge there: the count is
+// deterministic without re-raising or retrying the volatile finding.
 const surfaces = [
-  { name: 'dashboard Action Queue', url: () => '/next/', badge: '#action-queue [data-sw-fix-unavailable]' },
+  {
+    name: 'dashboard Action Queue',
+    url: () => '/next/',
+    badge: '#action-queue [id^="action-card-"]:has(a:text-is("Wholly Different Singer")) [data-sw-fix-unavailable]',
+  },
   { name: 'artist findings list', url: () => `/next/artists/${artistId}`, badge: '.sw-next-finding-unfixable' },
 ];
 
@@ -45,12 +53,14 @@ for (const theme of ['dark', 'light']) {
       await page.goto(s.url());
       await page.waitForLoadState('load');
       await applyTheme(expect, page, theme);
-      const badge = page.locator(s.badge).first(); // the dashboard queue also lists the field-finding artist
-      await expect(badge, `no "Fix unavailable" badge on the ${s.name}; the fixture did not land`).toBeVisible({ timeout: 15_000 });
+      const badge = page.locator(s.badge);
+      await expect(badge, `want exactly one "Fix unavailable" badge on the ${s.name}; the fixture did not land`).toHaveCount(1, { timeout: 15_000 });
       await expect(badge).toBeVisible();
       await expect(badge).toContainText('Fix unavailable');
 
-      const results = await buildAxeBuilder(page).include(s.badge).withRules(['color-contrast']).analyze();
+      // Mark the one counted badge so axe measures exactly it.
+      await badge.evaluate((el) => el.setAttribute('data-sw-under-test', ''));
+      const results = await buildAxeBuilder(page).include('[data-sw-under-test]').withRules(['color-contrast']).analyze();
       // The scan must have actually evaluated the badge (it is in passes when it
       // meets AA); log the measured ratio so a run shows the number, not just green.
       const evaluated = [...results.passes, ...results.violations].find(r => r.id === 'color-contrast');
@@ -60,6 +70,15 @@ for (const theme of ['dark', 'light']) {
         results.violations,
         `${s.name} (${theme}) contrast violations:\n${formatViolations(results.violations)}`,
       ).toHaveLength(0);
+      // The card is translucent glass over a FIXED backdrop image, and an element
+      // screenshot scrolls the badge to wherever is nearest, so the backdrop
+      // behind it (and the sticky header over it) depended on the scroll offset:
+      // 3.83 at one offset, 8.06 mid-viewport (S2-6). Pin the viewport position.
+      await badge.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      const painted = await renderedContrast(page, badge);
+      console.log(`CONTRAST painted ${s.name} ${theme}: ${painted}`);
+      expect(painted, `${s.name} (${theme}) painted contrast`).toBeGreaterThanOrEqual(4.5);
     });
   }
 }
@@ -99,7 +118,8 @@ for (const theme of ['dark', 'light']) {
     await page.waitForLoadState('load');
     await applyTheme(expect, page, theme);
     const badge = page.locator('.sw-ff-pop-unfixable');
-    expect(await badge.count(), 'no field-popover "Fix unavailable" badge; the fixture did not land').toBeGreaterThanOrEqual(1);
+    // Retrying assertion: waits for the badge to render instead of sampling once.
+    await expect(badge, 'no field-popover "Fix unavailable" badge; the fixture did not land').not.toHaveCount(0, { timeout: 15_000 });
     const host = page.locator('span[data-context-menu]').filter({ has: badge }).first();
     await host.locator('.sw-field-chip').click();
     const open = host.locator('.sw-ff-pop-unfixable');

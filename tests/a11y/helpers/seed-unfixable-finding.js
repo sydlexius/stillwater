@@ -58,7 +58,7 @@ export async function seedUnfixableFinding(request) {
     }
     await new Promise(r => setTimeout(r, 500));
   }
-  throw new Error(`seed: no open artist_id_mismatch finding appeared within 60s (last list: ${last}; last run-rules: ${ran})`);
+  throw new Error(`seed: no open artist_id_mismatch finding appeared within 30s (1 rule run attempted; last seen for this artist: ${last || 'nothing'})`);
 }
 
 // seedUnfixableFieldFinding builds the data for the artist FIELD popover's copy

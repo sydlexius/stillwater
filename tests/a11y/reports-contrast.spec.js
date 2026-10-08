@@ -27,8 +27,8 @@ test.afterEach(async ({ page }) => {
 });
 
 const captions = [
-  { name: 'compliance', url: '/reports/compliance', loc: '#compliance-summary p.text-xs', text: /\d+ of \d+ compliant/ },
-  { name: 'health', url: '/reports/health', loc: '.sw-rep-simple-pane p.text-xs', text: /\d+ of \d+ fully compliant/ },
+  { name: 'compliance', min: 2, exact: false, url: '/reports/compliance', loc: '#compliance-summary p.text-xs', text: /\d+ of \d+ compliant/ },
+  { name: 'health', min: 1, exact: true, url: '/reports/health', loc: '.sw-rep-simple-pane p.text-xs', text: /\d+ of \d+ fully compliant/ },
 ];
 
 for (const theme of ['dark', 'light']) {
@@ -37,11 +37,21 @@ for (const theme of ['dark', 'light']) {
       await page.goto(c.url);
       await page.waitForLoadState('load');
       await applyTheme(expect, page, theme);
-      const cap = page.locator(c.loc).filter({ hasText: c.text }).first();
-      await expect(cap, `no "N of M compliant" caption on ${c.url}`).toBeVisible({ timeout: 15_000 });
-      const ratio = await renderedContrast(page, cap);
-      console.log(`CONTRAST caption ${c.name} ${theme}: ${ratio}`);
-      expect(ratio).toBeGreaterThanOrEqual(4.5);
+      const caps = page.locator(c.loc).filter({ hasText: c.text });
+      // /reports/compliance renders the overall card plus one per library; every
+      // one is measured so a class change on any of them fails here.
+      await expect(caps.first(), `no "N of M compliant" caption on ${c.url}`).toBeVisible({ timeout: 15_000 });
+      const n = await caps.count();
+      if (c.exact) expect(n, `caption count on ${c.url}`).toBe(c.min);
+      else expect(n, `caption count on ${c.url}`).toBeGreaterThanOrEqual(c.min);
+      const ratios = [];
+      for (let i = 0; i < n; i++) {
+        ratios.push({ i, text: (await caps.nth(i).innerText()).trim(), ratio: await renderedContrast(page, caps.nth(i)) });
+      }
+      console.log(`CONTRAST caption ${c.name} ${theme}: ${JSON.stringify(ratios)}`);
+      for (const r of ratios) {
+        expect(r.ratio, `caption #${r.i} "${r.text}" on ${c.url} (${theme})`).toBeGreaterThanOrEqual(4.5);
+      }
     });
   }
 
