@@ -58,6 +58,10 @@ func (n artworkNeeds) any() bool {
 // sets a flag for each image type present locally but absent on the mirror.
 // Per-connection errors are logged and skipped; the returned needs struct
 // represents the union across all connections.
+//
+// It is not read-only: the fanart check (fanartDeficit) can read the artist's
+// backdrops and, when it does, tells the rule service whether any could not be
+// read, under a per-artist lock (see snapshotFanartAndReport).
 func (p *Publisher) detectMissingArtwork(
 	ctx context.Context,
 	artistID, dir string,
@@ -171,6 +175,14 @@ func (p *Publisher) accumulateNeeds(
 // holding enough backdrops but a different image in place of a local one is
 // still not detected (see ReconcileArtworkToPlatforms).
 //
+// SIDE EFFECT: when it reaches the snapshot (tier 2 and 3), it reports the
+// result to the rule service, which raises or clears the artist's
+// "unreadable backdrop" finding under a per-artist lock (#3200). It reaches the
+// snapshot only when the platform holds fewer backdrops than there are local
+// files, so an already-fixed file's finding stays open until the next push that
+// reads the set (tier 1 reads nothing, by design: reading every file of every
+// artist on every pass is the cost it avoids).
+//
 // FAIL DIRECTION. A local file the push cannot read (unreadable, or degraded by
 // a snapshot cap) does NOT count toward the deficit (#3200): the push could not
 // carry it, so re-pushing every pass only churns the peer (on Emby each pass
@@ -204,7 +216,7 @@ func (p *Publisher) fanartDeficit(
 	// carry" and "what the reconciler thinks is missing" cannot drift apart.
 	// A nil-data slot is a file the push cannot send (unreadable, or over a
 	// snapshot cap); pushing again could never fill it.
-	snapshot, _, snapErr := p.snapshotFanart(ctx, fanartPaths)
+	snapshot, _, snapErr := p.snapshotFanartAndReport(ctx, artistID, fanartPaths)
 	if snapErr != nil {
 		// A cancel or stalled mount: a push would abort on the same error.
 		p.logger.Warn("artwork reconciler: reading local fanart to check for missing fanart; retrying next pass",

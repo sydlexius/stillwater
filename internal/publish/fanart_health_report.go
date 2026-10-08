@@ -1,0 +1,156 @@
+package publish
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+)
+
+// FanartHealthReporter is told, after each full-set fanart snapshot, whether
+// every local backdrop could be read (#3200). *rule.Service implements it, and
+// the method set matches that type exactly so no adapter is needed; publish must
+// not import rule, so the interface lives here.
+//
+// slots are 0-based local backdrop indexes (the snapshot's own numbering). The
+// reporter owns how they are shown to the operator.
+type FanartHealthReporter interface {
+	RaiseFanartUnreadable(ctx context.Context, artistID string, slots []int, reason string) error
+	ResolveFanartUnreadable(ctx context.Context, artistID string) error
+}
+
+// SetFanartHealthReporter wires the reporter. Call it once at startup, before
+// the publisher is used. A nil reporter is a supported state (the snapshot is
+// simply not reported); the caller that leaves it unwired is expected to say so
+// once at wiring time rather than have every push log about it.
+func (p *Publisher) SetFanartHealthReporter(r FanartHealthReporter) {
+	if p != nil {
+		p.fanartHealth = r
+	}
+}
+
+// maxReportedFanartNames bounds how many file names go into the operator-facing
+// reason before "and N more".
+const maxReportedFanartNames = 10
+
+// fanartReportTimeout bounds the report so a stuck database cannot hold the
+// per-artist lock (and with it the next push for that artist) for long. A var so
+// a test can shorten it. The wait to TAKE the lock is not cancelable; only the
+// report under it is bounded.
+var fanartReportTimeout = 3 * time.Second
+
+// fanartSnapshotTakenHook, when set, runs inside snapshotFanartAndReport right
+// after the snapshot is taken and before it is reported. nil in production; a
+// test parks a pass here to prove the snapshot is taken under the lock.
+var fanartSnapshotTakenHook func(artistID string)
+
+// fanartNameList renders at most maxReportedFanartNames base names (never a
+// path), then "and N more".
+func fanartNameList(names []string) string {
+	if len(names) <= maxReportedFanartNames {
+		return strings.Join(names, ", ")
+	}
+	return fmt.Sprintf("%s and %d more", strings.Join(names[:maxReportedFanartNames], ", "), len(names)-maxReportedFanartNames)
+}
+
+// snapshotFanartAndReport is snapshotFanart for a snapshot of the artist's FULL
+// backdrop set, followed by telling the health reporter what it found. Every
+// caller that snapshots the whole set to push it (or to decide whether to) goes
+// through here, so the reporting logic exists once.
+//
+// A snapshot that ERRORED (cancel, stalled mount) reports nothing, even if it
+// holds partial data: it is not evidence about the files, so it neither raises
+// nor resolves and an open finding stays open. Otherwise any nil-data slot
+// raises with the FULL current list of such slots, and none resolves. An empty
+// path list (the artist has no backdrop left) resolves. The reason names the
+// files by base name: a slot number does not identify a file under the Kodi
+// naming (fanart.jpg, fanart1.jpg) or after a gap. A slot skipped only by the
+// snapshot budget is readable, so it gets its own wording.
+//
+// Resolve runs on every clean pass on purpose: whether a finding is open is
+// persisted state that an in-memory "was open" flag would lose on restart. A
+// finding is only cleared by a pass that gets here: the reconciler reaches the
+// snapshot only when the server holds fewer backdrops than there are files, so
+// it can leave a fixed file's finding open until the next push.
+//
+// THE PER-ARTIST LOCK is what makes snapshot-then-report atomic. The rule
+// service stamps a resolve with the clock at the time of the call, so without
+// it a clean snapshot taken BEFORE a newer failing one, but reported AFTER it
+// (a manual sync overlapping the reconciler), would resolve a finding the newer
+// snapshot had just raised. Held only for the snapshot and the report, never
+// across a peer write. No other lock is taken while holding it (neither
+// snapshotFanart nor the reporter touches lockPhashTarget), and a caller that
+// holds a phash target lock takes this one second, so the order cannot cycle.
+//
+// A reporter failure is logged and never reaches the caller: it must not fail
+// or shorten the sync.
+func (p *Publisher) snapshotFanartAndReport(ctx context.Context, artistID string, fanartPaths []string) ([]fanartSnapshot, []string, error) {
+	if p.fanartHealth == nil {
+		return p.snapshotFanart(ctx, fanartPaths)
+	}
+	mu := p.fanartReportLock(artistID)
+	mu.Lock()
+	defer mu.Unlock()
+
+	snapshot, warnings, err := p.takeFanartSnapshot(ctx, artistID, fanartPaths)
+	if err != nil {
+		return snapshot, warnings, err
+	}
+	var slots []int
+	var unreadable, skipped []string
+	for _, sf := range snapshot {
+		if sf.data != nil {
+			continue
+		}
+		slots = append(slots, sf.index)
+		if sf.skipped {
+			skipped = append(skipped, filepath.Base(sf.path))
+		} else {
+			unreadable = append(unreadable, filepath.Base(sf.path))
+		}
+	}
+	// The snapshot is already complete, so the report must not die with a request
+	// that ends right after it: a lost raise would leave the finding stale until
+	// the next push. WithoutCancel keeps the values, drops the cancellation.
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fanartReportTimeout)
+	defer cancel()
+	if len(slots) > 0 {
+		var reason []string
+		if len(unreadable) > 0 {
+			reason = append(reason, "Unreadable: "+fanartNameList(unreadable)+". Check that each file exists, can be read and is not too large.")
+		}
+		if len(skipped) > 0 {
+			reason = append(reason, "Left out because the backdrop set is over the size or count limit for one push, though the file may be fine: "+fanartNameList(skipped)+".")
+		}
+		if rerr := p.fanartHealth.RaiseFanartUnreadable(rctx, artistID, slots, strings.Join(reason, " ")); rerr != nil {
+			p.logger.Warn("could not record the unreadable fanart finding",
+				slog.String("artist_id", artistID), slog.Any("slots", slots), slog.Any("error", rerr))
+		}
+	} else if rerr := p.fanartHealth.ResolveFanartUnreadable(rctx, artistID); rerr != nil {
+		p.logger.Warn("could not clear the unreadable fanart finding",
+			slog.String("artist_id", artistID), slog.Any("error", rerr))
+	}
+	return snapshot, warnings, nil
+}
+
+// takeFanartSnapshot is snapshotFanart plus the test seam, kept as ONE step so a
+// pass parked in the seam has taken its snapshot and a reordering of the lock
+// around this call is visible to a test.
+func (p *Publisher) takeFanartSnapshot(ctx context.Context, artistID string, fanartPaths []string) ([]fanartSnapshot, []string, error) {
+	snapshot, warnings, err := p.snapshotFanart(ctx, fanartPaths)
+	if fanartSnapshotTakenHook != nil {
+		fanartSnapshotTakenHook(artistID)
+	}
+	return snapshot, warnings, err
+}
+
+// fanartReportLock returns the artist's snapshot-and-report mutex. Entries are
+// one small mutex per artist ever pushed and are never removed, like
+// phashTargetLocks.
+func (p *Publisher) fanartReportLock(artistID string) *sync.Mutex {
+	m, _ := p.fanartReportLocks.LoadOrStore(artistID, &sync.Mutex{})
+	return m.(*sync.Mutex)
+}

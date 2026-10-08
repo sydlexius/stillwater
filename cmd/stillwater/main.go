@@ -1108,6 +1108,15 @@ func (a *Application) wireRuleEngine(ctx context.Context, logger *slog.Logger) e
 		logger,
 	)
 	a.publisher.SetCollisionNotifier(a.collisionNotifier, a.artistService)
+	// #3200: the rule service surfaces a backdrop the push cannot read as an
+	// informational finding. The setter takes the interface, so a signature drift
+	// in rule.Service fails this line at build time. Unwired means the finding is
+	// never raised and the operator only gets log lines, so say so once, loudly.
+	if a.ruleService == nil {
+		logger.Error("unreadable-fanart findings are disabled: no rule service to report to")
+	} else {
+		a.publisher.SetFanartHealthReporter(a.ruleService)
+	}
 	// #2565: extend the same seam to the rule-engine write chokepoint. The
 	// notifier exists only now, so this is a late wire (see imageFixer above).
 	imageFixer.SetCollisionGuard(a.collisionNotifier, a.artistService)
