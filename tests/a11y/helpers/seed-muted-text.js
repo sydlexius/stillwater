@@ -68,6 +68,7 @@ export async function startOnboardingFixture() {
   const server = await startBasePathServer('', { skipBootstrap: true, env: { SW_UX: 'next' } });
   try {
     const health = await fetch(`${server.baseURL}/api/v1/health`);
+    if (!health.ok) throw new Error(`seed-muted-text: GET /api/v1/health -> ${health.status}`);
     const csrfToken = (health.headers.get('set-cookie') || '').match(/csrf_token=([^;]+)/)?.[1] || '';
     if (!csrfToken) throw new Error('seed-muted-text: health response carried no csrf_token cookie');
     server.csrfToken = csrfToken;

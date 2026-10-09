@@ -424,7 +424,10 @@ test('settings: updates.js "Not yet checked" class equals the server-rendered on
 test('settings: library.js "no libraries" class equals the server-rendered one', async ({ browser }) => {
   const server = settingsFx.server;
   const headers = { 'X-CSRF-Token': server.csrfToken, Cookie: `csrf_token=${server.csrfToken}; session=${server.sessionCookie}` };
-  for (const lib of await listLibraries(server)) await fetch(`${server.baseURL}/api/v1/libraries/${lib.id}`, { method: 'DELETE', headers });
+  for (const lib of await listLibraries(server)) {
+    const del = await fetch(`${server.baseURL}/api/v1/libraries/${lib.id}`, { method: 'DELETE', headers });
+    expect(del.ok, `fixture could not delete library ${lib.name}: ${del.status}`).toBe(true);
+  }
   try {
     const m = (await serverHTML(server)).match(/<p id="settings-no-libraries" class="([^"]*)"/);
     expect(m, 'server-rendered #settings-no-libraries not found').toBeTruthy();

@@ -3272,7 +3272,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 274, "<button type=\"button\" class=\"text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300\" onclick=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 274, "<button type=\"button\" class=\"text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white\" onclick=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
