@@ -1,7 +1,11 @@
-# syntax=docker/dockerfile:1
+# Base images come from Amazon's public ECR mirror of the official Docker Hub
+# library (same manifest-list digests), because anonymous Docker Hub pulls are
+# rate limited and flaky in CI (#3487). No `# syntax=` line on purpose: it would
+# pull the dockerfile frontend from Docker Hub, and nothing here needs one
+# beyond what the bundled BuildKit frontend provides.
 
 # Build stage
-FROM golang:1.27.2-alpine@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673 AS builder
+FROM public.ecr.aws/docker/library/golang:1.27.2-alpine@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673 AS builder
 
 RUN apk add --no-cache curl libstdc++ libgcc
 
@@ -59,7 +63,7 @@ RUN tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minif
 # --- END SYNC ---
 
 # Runtime stage
-FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+FROM public.ecr.aws/docker/library/alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 LABEL org.opencontainers.image.source="https://github.com/sydlexius/stillwater" \
       org.opencontainers.image.description="Artist metadata and image manager for Emby, Jellyfin, and Kodi" \
