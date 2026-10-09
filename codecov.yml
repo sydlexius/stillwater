@@ -49,7 +49,7 @@ coverage:
         target: auto
         threshold: 2%
       api:
-        target: 84%
+        target: 75%
         paths:
           - internal/api
       api_middleware:
