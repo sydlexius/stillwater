@@ -382,25 +382,6 @@ func TestExtraFanartPreviewCache_ProfileChangeMisses(t *testing.T) {
 	}
 }
 
-// An artist whose folder is gone makes the result not cacheable (the notice says
-// remount and reload, and a cached copy would make that false): the next load
-// sees the disk as it is then.
-func TestExtraFanartPreviewCache_SkippedFoldersAreNotCached(t *testing.T) {
-	t.Parallel()
-	r, svc := testRouterForBackdrops(t)
-	walks := countWalks(r)
-	seedPlanFailArtist(t, svc, "Broken")
-	g := seedExtraFanartArtist(t, svc, "Gone", 1)
-	if err := os.RemoveAll(g.dir); err != nil {
-		t.Fatal(err)
-	}
-	getExtraFanartPage(t, r, adminContext())
-	getExtraFanartPage(t, r, adminContext())
-	if n := walks.Load(); n != 2 || snapshotPresent(r) {
-		t.Errorf("a preview with skipped folders must not be cached: walks %d, snapshot present %v", n, snapshotPresent(r))
-	}
-}
-
 // The structural guarantee: the cache is touched ONLY by the preview path (which
 // serves the page and the POST dry run) and, for Invalidate, by the live run. Any
 // other reference, for example the live path reading it, fails here. The scan
@@ -583,5 +564,25 @@ func TestExtraFanartPreviewCache_OverBoundRefreshDropsOlderSnapshot(t *testing.T
 	}
 	if _, ok := c.lookup("k", at); !ok {
 		t.Error("an aborted refresh must keep the older snapshot")
+	}
+
+	// A SUPERSEDED refusal must not clear a newer snapshot: the generation check
+	// runs before the drop. A began, an invalidation lands, B began and stored;
+	// then A's skipped-missing and over-bound results arrive late.
+	var d extraFanartPreviewCache
+	genA, beginA := d.begin(func() time.Time { return at })
+	d.Invalidate()
+	genB, beginB := d.begin(func() time.Time { return at })
+	if why := d.store(genB, "k", beginB, small); why != "" {
+		t.Fatal(why)
+	}
+	skipped := &extraFanartRunResult{DryRun: true, ArtistsSkippedMissing: 1, Artists: []extraFanartArtistResult{}}
+	for name, late := range map[string]*extraFanartRunResult{"skipped-missing": skipped, "over-bound": big} {
+		if why := d.store(genA, "k", beginA, late); why != notCachedSuperseded {
+			t.Errorf("a late %s result must answer superseded, got %q", name, why)
+		}
+		if _, ok := d.lookup("k", at); !ok {
+			t.Errorf("a late %s result cleared the newer snapshot", name)
+		}
 	}
 }

@@ -8,6 +8,8 @@
 //
 // The page IS cache-backed: a load may serve a preview up to ten minutes old, so
 // a spec that seeds files must refresh the preview (a POST dry run) after seeding.
+// The plan seed below is exempt: its fixture has a removed artist folder, and a
+// preview with a skipped folder is never cached, so the page always re-reads for it.
 //
 // CLEANUP IS PART OF THE FIXTURE. Every spec shares one server and runs in
 // alphabetical order, so artists, a library row and files left behind here would
