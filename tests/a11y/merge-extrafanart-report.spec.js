@@ -126,9 +126,9 @@ for (const theme of ['dark', 'light']) test(`dry run and real merge both report 
   await expect(status).toContainText(await note.innerText());
   await expect(status).toContainText(`${EXPECTED_IMAGES}`);
   expect(await note.evaluate((el) => !!el.closest('[role="status"], [role="alert"], [aria-live]')), 'the note must not also be a live region').toBe(false);
-  // The dialog title is an <h3> under the page <h1> (heading-order): pre-existing
-  // and unrelated to this change, so it is excluded; everything else is scanned.
-  const done = await buildAxeBuilder(page).include('#merge-modal').exclude('#merge-modal-title').analyze();
+  // The whole dialog is scanned, title included: it is an <h2> under the page <h1>
+  // (#2570 fixed the heading-order skip this used to exclude).
+  const done = await buildAxeBuilder(page).include('#merge-modal').analyze();
   expect(done.violations, formatViolations(done.violations)).toEqual([]);
 
   // Nothing was lost: every pre-merge file's bytes are still on disk, except

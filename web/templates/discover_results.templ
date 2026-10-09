@@ -42,7 +42,7 @@ templ DiscoverResults(connID string, libs []DiscoveredLib, isOOBE bool) {
 					<label class="flex items-center gap-2 text-sm">
 						if lib.Imported {
 							<input type="checkbox" disabled checked class="rounded border-gray-300 dark:border-gray-600"/>
-							<span class="text-gray-400 dark:text-gray-500">{ lib.Name } { t(ctx, "discover.already_imported") }</span>
+							<span class="text-gray-600 dark:text-gray-400">{ lib.Name } { t(ctx, "discover.already_imported") }</span>
 						} else {
 							<input
 								type="checkbox"

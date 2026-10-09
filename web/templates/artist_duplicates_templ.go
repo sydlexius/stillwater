@@ -546,7 +546,7 @@ func ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) tem
 						return templ_7745c5c3_Err
 					}
 					if m.PlatformOnly {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "    <span class=\"italic text-gray-400 dark:text-gray-500\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "    <span class=\"italic text-gray-600 dark:text-gray-400\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -650,7 +650,7 @@ func ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) tem
 							return templ_7745c5c3_Err
 						}
 					} else {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "<span class=\"italic text-gray-400 dark:text-gray-500\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "<span class=\"italic text-gray-600 dark:text-gray-400\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -1129,7 +1129,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 						return templ_7745c5c3_Err
 					}
 				} else {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "<span class=\"italic text-gray-400 dark:text-gray-500\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "<span class=\"italic text-gray-600 dark:text-gray-400\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -1188,7 +1188,7 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 						return templ_7745c5c3_Err
 					}
 				} else {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "<span class=\"text-gray-400 dark:text-gray-500\">&mdash;</span>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "<span class=\"text-gray-600 dark:text-gray-400\">&mdash;</span>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -1295,6 +1295,10 @@ func ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) templ.Co
 // rebuilds the survivor radio list each time the modal opens.
 //
 // Hidden by default; #merge-modal toggles the "hidden" class.
+//
+// Heading levels (#2570): the page's <h1> is the only heading above the open
+// dialog, so the dialog title is an <h2> and its sections <h3>. An <h3> title
+// under the <h1> skipped a level, which axe reports as heading-order.
 func ArtistMergeModal() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -1323,33 +1327,33 @@ func ArtistMergeModal() templ.Component {
 		var templ_7745c5c3_Var72 string
 		templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.ResolveAttributeValue(mergeI18nJSON(ctx))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 473, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 477, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var72)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, "\"></div><div id=\"merge-modal\" class=\"fixed inset-0 z-50 hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"merge-modal-title\"><div class=\"fixed inset-0 bg-black/50 transition-opacity\" id=\"merge-backdrop\"></div><div class=\"fixed inset-0 flex items-center justify-center p-4\"><div class=\"sw-merge-card relative w-full max-w-2xl max-h-[85vh] bg-white dark:bg-gray-800 shadow-xl flex flex-col\"><div class=\"flex items-center justify-between px-6 py-4 border-b border-[var(--sw-glass-border)]\"><h3 id=\"merge-modal-title\" class=\"text-lg font-semibold text-[color:var(--sw-content-text)]\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, "\"></div><div id=\"merge-modal\" class=\"fixed inset-0 z-50 hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"merge-modal-title\"><div class=\"fixed inset-0 bg-black/50 transition-opacity\" id=\"merge-backdrop\"></div><div class=\"fixed inset-0 flex items-center justify-center p-4\"><div class=\"sw-merge-card relative w-full max-w-2xl max-h-[85vh] bg-white dark:bg-gray-800 shadow-xl flex flex-col\"><div class=\"flex items-center justify-between px-6 py-4 border-b border-[var(--sw-glass-border)]\"><h2 id=\"merge-modal-title\" class=\"text-lg font-semibold text-[color:var(--sw-content-text)]\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var73 string
 		templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 486, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 490, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "</h3><button type=\"button\" class=\"p-1 rounded-md text-[color:var(--sw-content-text-secondary)] hover:text-[color:var(--sw-content-text)] transition-colors\" data-merge-close aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "</h2><button type=\"button\" class=\"p-1 rounded-md text-[color:var(--sw-content-text-secondary)] hover:text-[color:var(--sw-content-text)] transition-colors\" data-merge-close aria-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var74 string
 		templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.ResolveAttributeValue(t(ctx, "common.close"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 496, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 500, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var74)
 		if templ_7745c5c3_Err != nil {
@@ -1362,33 +1366,33 @@ func ArtistMergeModal() templ.Component {
 		var templ_7745c5c3_Var75 string
 		templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.description"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 505, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 509, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "</p><div id=\"merge-status\" role=\"status\" class=\"sr-only\"></div><div id=\"merge-disamb-warning\" hidden class=\"rounded-md border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-900/20 px-4 py-3\" role=\"alert\"><h4 class=\"text-sm font-medium text-amber-800 dark:text-amber-200\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "</p><div id=\"merge-status\" role=\"status\" class=\"sr-only\"></div><div id=\"merge-disamb-warning\" hidden class=\"rounded-md border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-900/20 px-4 py-3\" role=\"alert\"><h3 class=\"text-sm font-medium text-amber-800 dark:text-amber-200\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var76 string
 		templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.disamb_warning_heading"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 523, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 527, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "</h4><p class=\"mt-1 text-xs text-amber-700 dark:text-amber-300\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "</h3><p class=\"mt-1 text-xs text-amber-700 dark:text-amber-300\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var77 string
 		templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.disamb_warning_body"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 526, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 530, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var77))
 		if templ_7745c5c3_Err != nil {
@@ -1401,7 +1405,7 @@ func ArtistMergeModal() templ.Component {
 		var templ_7745c5c3_Var78 string
 		templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.disamb_override_label"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 536, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 540, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 		if templ_7745c5c3_Err != nil {
@@ -1414,46 +1418,46 @@ func ArtistMergeModal() templ.Component {
 		var templ_7745c5c3_Var79 string
 		templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.survivor_legend"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 542, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 546, Col: 64}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var79))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "</legend><div id=\"merge-survivor-options\" class=\"space-y-2\"></div></fieldset><div class=\"border-t border-[var(--sw-glass-border)] pt-4\"><h4 id=\"merge-preview-heading\" class=\"text-sm font-medium text-gray-700 dark:text-gray-300 mb-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "</legend><div id=\"merge-survivor-options\" class=\"space-y-2\"></div></fieldset><div class=\"border-t border-[var(--sw-glass-border)] pt-4\"><h3 id=\"merge-preview-heading\" class=\"text-sm font-medium text-gray-700 dark:text-gray-300 mb-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var80 string
 		templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.preview_heading"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 548, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 552, Col: 64}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "</h4><div id=\"merge-preview-body\" class=\"text-sm text-gray-600 dark:text-gray-400\"><p class=\"italic\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "</h3><div id=\"merge-preview-body\" class=\"text-sm text-gray-600 dark:text-gray-400\"><p class=\"italic\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var81 string
 		templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.preview_loading"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 551, Col: 82}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 555, Col: 82}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "</p></div></div></div><div class=\"flex justify-end gap-2 border-t border-[var(--sw-glass-border)] px-6 py-3\"><button type=\"button\" class=\"rounded-md px-3 py-2 text-sm font-medium text-[color:var(--sw-content-text-secondary)] hover:text-[color:var(--sw-content-text)] hover:bg-black/5 dark:hover:bg-white/5 transition-colors\" id=\"merge-modal-cancel\" data-merge-close>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "</p></div></div></div><div class=\"flex justify-end gap-2 border-t border-[var(--sw-glass-border)] px-6 py-3\"><button type=\"button\" class=\"rounded-md px-3 py-2 text-sm font-medium text-[color:var(--sw-content-text-secondary-sm)] hover:text-[color:var(--sw-content-text)] hover:bg-black/5 dark:hover:bg-white/5 transition-colors\" id=\"merge-modal-cancel\" data-merge-close>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var82 string
 		templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.cancel"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 564, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 568, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
 		if templ_7745c5c3_Err != nil {
@@ -1466,7 +1470,7 @@ func ArtistMergeModal() templ.Component {
 		var templ_7745c5c3_Var83 string
 		templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "artist_duplicates.merge_modal.confirm_button"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 572, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_duplicates.templ`, Line: 576, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
 		if templ_7745c5c3_Err != nil {
