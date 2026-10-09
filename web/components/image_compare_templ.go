@@ -31,7 +31,7 @@ func ImageCompare(artistID string) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"grid grid-cols-1 md:grid-cols-2 gap-4\"><div id=\"compare-left\" class=\"border border-gray-200 dark:border-gray-700 rounded-lg p-3 min-h-[200px]\"><p class=\"text-xs text-gray-400 dark:text-gray-500 text-center py-8\">Click an image from the search results to compare</p></div><div id=\"compare-right\" class=\"border border-gray-200 dark:border-gray-700 rounded-lg p-3 min-h-[200px]\"><p class=\"text-xs text-gray-400 dark:text-gray-500 text-center py-8\">Click another image to compare side-by-side</p></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"grid grid-cols-1 md:grid-cols-2 gap-4\"><div id=\"compare-left\" class=\"border border-gray-200 dark:border-gray-700 rounded-lg p-3 min-h-[200px]\"><p class=\"text-xs text-gray-600 dark:text-gray-400 text-center py-8\">Click an image from the search results to compare</p></div><div id=\"compare-right\" class=\"border border-gray-200 dark:border-gray-700 rounded-lg p-3 min-h-[200px]\"><p class=\"text-xs text-gray-600 dark:text-gray-400 text-center py-8\">Click another image to compare side-by-side</p></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

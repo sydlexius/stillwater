@@ -759,6 +759,16 @@ jobs:
       - name: prefs-coverage diff handling self-test
         run: bash scripts/test-prefs-coverage.sh
 
+      # The failing muted-text class pair (#3474) paints under 4.5:1 on glass
+      # cards and axe reports it as "incomplete", so only a source check holds
+      # it out (every .templ and hand-written web/static/js file). Self-test
+      # first so a matcher that passes everything cannot go green.
+      - name: Muted-text pair guard self-test
+        run: bash scripts/check-muted-text-pair.sh --self-test
+
+      - name: Check no template or script uses the failing muted-text pair
+        run: bash scripts/check-muted-text-pair.sh
+
       - name: Gate timing and single-execution self-test
         run: bash scripts/test-gate-timing.sh
 

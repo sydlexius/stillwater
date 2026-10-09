@@ -231,9 +231,15 @@ test.describe('artwork modal', () => {
   // menu, the HTMX request and swap, the results panel -- is the live page. The
   // fragment carries a skipped and an errored provider, so the status banner
   // above the cards is on the page too.
-  async function loadResultCards(page, k) {
+  //
+  // broken=true points every card at an image URL that does not exist, so each
+  // card swaps in its "Image unavailable" placeholder (image_card.templ:90): the
+  // one card state the normal run, which needs decodable images, never shows.
+  async function loadResultCards(page, k, { broken = false } = {}) {
     const { server, artistId } = fx;
-    const fragment = renderImageResults(artistId, `${server.baseURL}/api/v1/artists/${artistId}/images/thumb/file`, k.fragment);
+    // The artist has a thumb but no logo, so its logo file answers 404.
+    const imageURL = `${server.baseURL}/api/v1/artists/${artistId}/images/${broken ? 'logo' : 'thumb'}/file`;
+    const fragment = renderImageResults(artistId, imageURL, k.fragment);
     await page.route('**/images/search**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: fragment }));
     await page.locator('#artwork-modal-body [data-context-menu] [aria-haspopup]').first().click();
     await page.getByRole('menuitem', { name: /search|fetch/i }).first().click();
@@ -241,11 +247,33 @@ test.describe('artwork modal', () => {
     await expect(page.locator(k.cards), `${k.kind} provider result cards must render`).toHaveCount(k.count, { timeout: 10_000 });
     await expect(page.locator('#artwork-modal [data-sw-providers-skipped]'), 'provider status banner (skipped) must render').toHaveCount(1);
     await expect(page.locator('#artwork-modal [data-sw-provider-errored]'), 'provider status banner (errored) must render').toHaveCount(1);
+    if (broken) return;
     await expect(page.locator(k.imgs).first(), 'card images must load').toBeVisible();
     await expect.poll(
       () => page.locator(k.imgs).evaluateAll((imgs) => imgs.every((i) => i.complete && i.naturalWidth > 0)),
       { message: 'card images must decode (a failed one swaps in a different placeholder)' },
     ).toBe(true);
+  }
+
+  // image_card.templ:90 (#3474): the placeholder a result card shows when its
+  // image fails to load. Primary shares the card component with Logo and Banner,
+  // so one kind is enough. 5.0 like the sweep below (Linux Firefox paints small
+  // text lower than macOS).
+  for (const theme of ['dark', 'light']) {
+    test(`artwork modal unavailable-image placeholder paints at AA (${theme})`, async ({ page }) => {
+      await openModal(page, theme, 'primary');
+      await loadResultCards(page, KINDS[0], { broken: true });
+      // Fixture property: all five cards failed to load and show the placeholder.
+      const notes = page.locator('#image-results [data-img-url] span:text-is("Image unavailable")');
+      await expect(notes, 'fixture: every card must show the Image unavailable placeholder').toHaveCount(5, { timeout: 10_000 });
+      for (let i = 0; i < 5; i++) {
+        await expect(notes.nth(i), `placeholder ${i} must be visible`).toBeVisible();
+        await notes.nth(i).evaluate((e) => e.scrollIntoView({ block: 'center' }));
+        const ratio = await renderedContrast(page, notes.nth(i));
+        console.log(`CONTRAST ${theme} image_card.templ:90 placeholder[${i}] rest: ${ratio.toFixed(2)}`);
+        expect(ratio, `placeholder ${i} painted at ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(5.0);
+      }
+    });
   }
 
   for (const k of KINDS) {

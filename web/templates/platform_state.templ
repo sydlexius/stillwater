@@ -243,8 +243,8 @@ templ platformImageBadge(label string, present bool) {
 	<span
 		class={
 			"inline-flex items-center rounded px-1.5 py-0.5 text-xs mr-1",
-			templ.KV("bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", present),
-			templ.KV("bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500", !present),
+			templ.KV("bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400", present),
+			templ.KV("bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300", !present),
 		}
 	>{ label }</span>
 }

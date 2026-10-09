@@ -80,6 +80,29 @@
 //          library imported, then the discover list opened on /settings)
 //   error_pages.templ
 //     9   404 icon (SVG, not text) .......... REACHED  (an unknown path)
+//   SLICE 3c (components; the artwork-modal card is in contrast.spec.js)
+//   image_upload.templ
+//     63  "JPEG, PNG, or WebP" hint .......... REACHED  (/artists/<id>/images, generic layout)
+//   image_compare.templ
+//     8,13 compare placeholders ............. DORMANT UI, NOT A USER JOURNEY: they sit
+//          in #compare-panel, which is `hidden` and which no script ever un-hides (the
+//          interactive compare is #compare-section, a different element; grep shows
+//          the only reference to #compare-panel is its own markup in
+//          image_search.templ). The test un-hides it so the new colors are still
+//          proven; no user reaches this surface today.
+//   path_picker.templ  (the whole modal is DORMANT UI: nothing in web/ calls
+//          window.openPathPicker outside its own definition, so no user journey
+//          reaches ANY row below; the test drives it through that global)
+//     51  "Loading..." (server markup) ...... DRIVEN BY THE TEST: the modal is
+//          un-hidden before it opens, because opening it replaces this element at once
+//     224 "No subdirectories" ............... DRIVEN BY THE TEST via window.openPathPicker
+//          (picker opened on an empty library dir); no user journey
+//     290 "Loading..." (JS copy) ............ DRIVEN BY THE TEST via window.openPathPicker
+//          (browse request held open); no user journey
+//   platform_state.templ
+//     246 present image badge ............... REACHED  (loopback Emby reports a primary
+//          and a logo image: 2 present badges beside 6 absent ones on one page)
+//     247 absent image badge ................ REACHED  (the same page, 6 absent badges)
 import { test, expect } from 'playwright/test';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -703,6 +726,95 @@ for (const theme of ['dark', 'light']) {
       expectAA(theme, failures);
     } finally {
       await context.close();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// SLICE 3c: components (#3474). Small text, so the 5.0 floor the artwork-modal
+// sweep uses (Linux Firefox paints thin text 0.2 to 1.0 lower than macOS) rather
+// than the 4.5 minimum.
+// ---------------------------------------------------------------------------
+const SMALL = 5.0;
+
+for (const theme of ['dark', 'light']) {
+  // image_upload.templ:63 on the generic image page, plus the dormant compare
+  // placeholders (image_compare.templ:8,13), un-hidden by the test: see the header.
+  test(`components: image upload hint and compare placeholders meet AA (${theme})`, async ({ browser }) => {
+    const { context, page } = await open(browser, pagesFx, `/artists/${pagesFx.soloId}/images`, theme);
+    try {
+      // Fixture precondition: the GENERIC layout rendered (no ?type), which is the
+      // only layout that carries the upload drop zone and the compare panel.
+      await expect(page.locator('#drop-zone'), 'fixture: the generic image page must render the drop zone').toHaveCount(1);
+      const failures = await measure(page, theme, 'image_upload.templ:63 format hint', page.locator('#drop-zone p', { hasText: /JPEG, PNG, or WebP/ }), { min: 1, ratio: SMALL });
+      await expect(page.locator('#compare-panel'), 'fixture: the compare panel is hidden for users').toBeHidden();
+      await page.evaluate(() => document.getElementById('compare-panel').classList.remove('hidden'));
+      failures.push(...await measure(page, theme, 'image_compare.templ:8,13 placeholders (dormant panel un-hidden)', page.locator('#compare-left p, #compare-right p'), { min: 2, ratio: SMALL }));
+      expectAA(theme, failures);
+    } finally {
+      await context.close();
+    }
+  });
+
+  // path_picker.templ:51, 290 and 224. The modal has no UI opener, so it is driven
+  // through window.openPathPicker; the browse request is held so the JS "Loading..."
+  // state is on screen long enough to measure, then released to show the empty list.
+  test(`components: path picker states meet AA (${theme})`, async ({ browser }) => {
+    await ensureOneLibrary(settingsFx);
+    const [library] = await listLibraries(settingsFx.server);
+    expect(fs.readdirSync(library.path), 'fixture: the library directory must be empty').toEqual([]);
+    let release;
+    const held = new Promise((r) => { release = r; });
+    const { context, page } = await open(browser, settingsFx, '/settings', theme, true, async (pg) => {
+      await pg.route('**/api/v1/filesystem/browse**', async (route) => { await held; await route.continue(); });
+    });
+    try {
+      const failures = [];
+      const modal = page.locator('#path-picker-modal');
+      await expect(modal, 'fixture: the picker modal is rendered hidden').toBeHidden();
+      // 51: the server-rendered placeholder, visible only before the first open.
+      await page.evaluate(() => document.getElementById('path-picker-modal').classList.remove('hidden'));
+      failures.push(...await measure(page, theme, 'path_picker.templ:51 Loading (server markup, modal un-hidden)', page.locator('#path-picker-listing p'), { min: 1, ratio: SMALL }));
+      await page.evaluate(([id, dir]) => window.openPathPicker(id, dir), ['path-picker-fixture', library.path]);
+      // 290: the JS copy, shown while the (held) browse request is in flight.
+      failures.push(...await measure(page, theme, 'path_picker.templ:290 Loading (JS copy)', page.locator('#path-picker-listing p'), { min: 1, ratio: SMALL }));
+      release();
+      // 224: the empty directory.
+      await expect(page.locator('#path-picker-listing p'), 'fixture: an empty directory lists no subdirectories').toHaveText('No subdirectories');
+      failures.push(...await measure(page, theme, 'path_picker.templ:224 No subdirectories', page.locator('#path-picker-listing p'), { min: 1, ratio: SMALL }));
+      expectAA(theme, failures);
+    } finally {
+      release();
+      await context.close();
+    }
+  });
+
+  // platform_state.templ:246-247: the badge for an image the platform HAS (green)
+  // and the badge for one it does not (gray). The loopback Emby reports a primary
+  // and a logo image, so both states render on the same page and are measured
+  // separately; the fixture check below proves both counts are non-zero first.
+  test(`components: platform-state image badges meet AA (${theme})`, async ({ browser }) => {
+    test.setTimeout(150_000);
+    const platform = await addPlatformArtist(pagesFx.server);
+    try {
+      const { context, page } = await open(browser, pagesFx, `/artists/${platform.artistId}`, theme);
+      try {
+        // The card loads lazily when it scrolls into view.
+        await page.locator('#next-providers-body').scrollIntoViewIfNeeded();
+        const badges = page.locator('#next-providers-body span.rounded.text-xs.mr-1');
+        await expect(badges, 'fixture: 4 image badges per column, 2 columns').toHaveCount(8, { timeout: 20_000 });
+        const absent = page.locator('#next-providers-body span.rounded.text-xs.mr-1.bg-gray-100');
+        const present = page.locator('#next-providers-body span.rounded.text-xs.mr-1.bg-green-100');
+        await expect(present, 'fixture: the platform reports 2 images, so 2 PRESENT badges').toHaveCount(2);
+        await expect(absent, 'fixture: the other 6 badges are ABSENT (no local folder, 2 missing kinds)').toHaveCount(6);
+        const failures = await measure(page, theme, 'platform_state.templ:246 present badge', present, { min: 2, ratio: SMALL });
+        failures.push(...await measure(page, theme, 'platform_state.templ:247 absent badge', absent, { min: 6, ratio: SMALL }));
+        expectAA(theme, failures);
+      } finally {
+        await context.close();
+      }
+    } finally {
+      await removePlatformArtist(pagesFx.server, platform);
     }
   });
 }
