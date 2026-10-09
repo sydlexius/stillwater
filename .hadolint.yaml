@@ -4,3 +4,4 @@ ignored:
 trustedRegistries:
   - docker.io
   - ghcr.io
+  - public.ecr.aws
