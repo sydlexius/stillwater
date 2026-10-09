@@ -113,9 +113,10 @@ async function call(server, method, urlPath, body) {
 
 /**
  * seedArtworkModal boots a throwaway server whose library holds one artist with
- * a thumb and three fanart on disk, scans it, and returns { server, artistId }.
- * Throws (after stopping the server) if the fixture's defining property does not
- * hold: the artist must exist and the API must report both images.
+ * one thumb and three backdrops (fanart) on disk, scans it, and returns
+ * { server, artistId }. Throws (after stopping the server) if the fixture's
+ * defining property does not hold: the artist must exist and the API must
+ * report the thumb and exactly three backdrops (fanart_count === 3).
  */
 export async function seedArtworkModal() {
   const server = await startBasePathServer('', {
@@ -166,6 +167,10 @@ export async function seedArtworkModal() {
   }
 }
 
+// Memo for renderImageResults, keyed on every input it takes. Module-level, so it
+// lives for one Playwright worker process and never outlives a run.
+const renderCache = new Map();
+
 /**
  * renderImageResults returns the real server-rendered provider-search fragment
  * (fixtures/render-image-results) with every card pointing at imageURL.
@@ -175,11 +180,21 @@ export async function seedArtworkModal() {
  * rather than hand-copied.
  */
 export function renderImageResults(artistId, imageURL, fragment = 'images') {
+  // The program's output is a pure function of exactly these three arguments, and
+  // within one run they do not change between tests (one seeded artist, one
+  // server URL, two fragment kinds), so the 16 per-test calls collapse to two
+  // `go run` spawns. Only a success is cached: a failure throws before the set
+  // below, so the next call retries exactly as it did without the cache.
+  const key = JSON.stringify([artistId, imageURL, fragment]);
+  if (renderCache.has(key)) return renderCache.get(key);
+  let out;
   try {
-    return execFileSync('go', ['run', './tests/a11y/fixtures/render-image-results', artistId, imageURL, fragment], {
+    out = execFileSync('go', ['run', './tests/a11y/fixtures/render-image-results', artistId, imageURL, fragment], {
       cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
     });
   } catch (err) {
     throw new Error(`seed-artwork-modal: rendering the ${fragment} fragment failed: ${err.stderr || err.message}`);
   }
+  renderCache.set(key, out);
+  return out;
 }

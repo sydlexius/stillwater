@@ -114,8 +114,8 @@ test('bulk-action bar passes a11y scan', async ({ page }) => {
 //
 // FIXTURE (#3475): `make test-a11y` boots an empty database and an empty
 // library, so there is no artist to open the modal on. helpers/seed-artwork-
-// modal.js boots a throwaway server holding one artist with a thumb and a
-// fanart; nothing it creates is visible to any other spec. This test used to
+// modal.js boots a throwaway server holding one artist with one thumb and
+// three backdrops; nothing it creates is visible to any other spec. This test used to
 // look for `a[href^="/next/artists/"]` (the harness renders `/artists/<id>`),
 // found nothing, and took a conditional skip, so the scan never ran. Every
 // precondition below is a hard assertion: an absent surface fails the test.
@@ -195,12 +195,12 @@ test.describe('artwork modal', () => {
       await expect(current, 'modal must show the seeded artist thumb').toBeVisible({ timeout: 15_000 });
       await expect.poll(() => decoded(current), { message: 'seeded thumb must decode (naturalWidth > 0)' }).toBe(true);
     } else if (kind === 'backdrops') {
-      // The seeded fanart. This is what makes the fanart.png seed load-bearing:
-      // with no fanart the slot list is empty, there is no slot image and no
+      // The seeded backdrops. This is what makes the fanart*.png seeds load-bearing:
+      // with no backdrops the slot list is empty, there is no slot image and no
       // Crop / Fetch buttons, and this fails instead of scanning an empty tab.
       const slotImg = page.locator('#artwork-modal-body img[src*="/images/fanart/0/file"]').first();
-      await expect(slotImg, 'fixture: seeded fanart must render as backdrop slot 0').toBeVisible({ timeout: 15_000 });
-      await expect.poll(() => decoded(slotImg), { message: 'seeded fanart must decode (naturalWidth > 0)' }).toBe(true);
+      await expect(slotImg, 'fixture: seeded backdrop must render as backdrop slot 0').toBeVisible({ timeout: 15_000 });
+      await expect.poll(() => decoded(slotImg), { message: 'seeded backdrop must decode (naturalWidth > 0)' }).toBe(true);
       // Three seeded backdrops: Crop + Fetch on each slot = 6 buttons.
       await expect(
         page.locator('#artwork-modal-body .fanart-slot-action-btn'),

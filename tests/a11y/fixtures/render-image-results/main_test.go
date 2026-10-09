@@ -47,7 +47,7 @@ func TestRunRendersFragments(t *testing.T) {
 		cards   int
 	}{
 		{"images default", []string{"artist-1", url}, []string{"42 likes", "data-sw-providers-skipped", "data-sw-provider-errored"}, 5},
-		{"images explicit", []string{"artist-1", url, "images"}, []string{"data-sw-providers-skipped"}, 5},
+		{"images explicit", []string{"artist-1", url, "images"}, []string{"42 likes", "data-sw-providers-skipped", "data-sw-provider-errored"}, 5},
 		{"fanart", []string{"artist-1", url, "fanart"}, []string{"fanart-search-results", "data-sw-providers-skipped", "data-sw-provider-errored"}, 2},
 	}
 	for _, tc := range cases {
@@ -57,16 +57,25 @@ func TestRunRendersFragments(t *testing.T) {
 				t.Fatalf("exit code = %d, stderr %q", code, errOut.String())
 			}
 			html := out.String()
-			// The banner lines must carry the AA-safe amber (amber-700 paints under
-			// the 5.0 floor in the light theme).
-			for _, line := range []string{"data-sw-providers-skipped", "data-sw-provider-errored"} {
-				i := strings.Index(html, line)
+			// Every case renders the provider-status banner (the program always
+			// passes one skipped and one errored provider), so BOTH marker lines
+			// must be present and carry the AA-safe amber (amber-700 paints under
+			// the 5.0 floor in the light theme). A missing marker or opening tag
+			// FAILS: skipping the class check would let the banner regress to a
+			// failing color while this test stayed green.
+			for _, marker := range []string{"data-sw-providers-skipped", "data-sw-provider-errored"} {
+				i := strings.Index(html, marker)
 				if i < 0 {
+					t.Errorf("banner marker %q missing from the fragment", marker)
 					continue
 				}
-				tag := html[strings.LastIndex(html[:i], "<p"):i]
-				if !strings.Contains(tag, "text-amber-800") {
-					t.Errorf("banner %s lacks text-amber-800: %q", line, tag)
+				start := strings.LastIndex(html[:i], "<p")
+				if start < 0 {
+					t.Errorf("banner marker %q has no opening <p tag before it", marker)
+					continue
+				}
+				if tag := html[start:i]; !strings.Contains(tag, "text-amber-800") {
+					t.Errorf("banner %s lacks text-amber-800: %q", marker, tag)
 				}
 			}
 			for _, want := range tc.wantAll {
