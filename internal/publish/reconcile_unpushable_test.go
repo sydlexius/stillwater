@@ -9,6 +9,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/connection"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/publish/publishtest"
 )
 
 // #3200: a local fanart file the push cannot read (unreadable, or degraded by a
@@ -39,12 +40,12 @@ func TestReconcile_UnpushableLocalFileIsNotARepeatDeficit(t *testing.T) {
 	A, B, C, D := bandJPEG(t, 51), bandJPEG(t, 52), bandJPEG(t, 53), bandJPEG(t, 54)
 	for _, typ := range []string{connection.TypeEmby, connection.TypeJellyfin} {
 		t.Run(typ, func(t *testing.T) {
-			peer := &statefulBackdropPeer{appendAll: typ == connection.TypeJellyfin, data: [][]byte{A, C, D}}
+			peer := publishtest.NewPeer(typ, [][]byte{A, C, D})
 			p, a := durabilityHarness(t, typ, peer, [][]byte{A, B, C, D})
 			unreadableFanart(t, filepath.Join(a.Path, "fanart2.jpg"))
 			for pass := 1; pass <= 3; pass++ {
 				p.ReconcileArtworkToPlatforms(context.Background())
-				got, writes := peer.state()
+				got, writes := peer.State()
 				if writes != 0 {
 					t.Fatalf("pass %d issued %d platform writes, want 0: an unreadable local file must not re-push", pass, writes)
 				}
@@ -59,19 +60,19 @@ func TestReconcile_UnpushableLocalFileIsNotARepeatDeficit(t *testing.T) {
 // must push it and pass 2 must then be quiet.
 func TestReconcile_UnpushableFileDoesNotMaskARealDeficit(t *testing.T) {
 	A, B, C, D := bandJPEG(t, 51), bandJPEG(t, 52), bandJPEG(t, 53), bandJPEG(t, 54)
-	peer := &statefulBackdropPeer{data: [][]byte{A, C}}
+	peer := publishtest.NewPeer(connection.TypeEmby, [][]byte{A, C})
 	p, a := durabilityHarness(t, connection.TypeEmby, peer, [][]byte{A, B, C, D})
 	unreadableFanart(t, filepath.Join(a.Path, "fanart2.jpg"))
 
 	p.ReconcileArtworkToPlatforms(context.Background())
-	got, writes1 := peer.state()
+	got, writes1 := peer.State()
 	if writes1 == 0 {
 		t.Fatal("pass 1 issued no writes, want the readable missing image pushed")
 	}
 	assertPeerHolds(t, "pass 1", got, [][]byte{A, C, D})
 
 	p.ReconcileArtworkToPlatforms(context.Background())
-	got, writes2 := peer.state()
+	got, writes2 := peer.State()
 	if writes2 != writes1 {
 		t.Errorf("pass 2 issued %d writes, want 0", writes2-writes1)
 	}
@@ -83,14 +84,14 @@ func TestReconcile_UnpushableFileDoesNotMaskARealDeficit(t *testing.T) {
 // slot, so the peer must come through byte-identical with no deletes.
 func TestReconcile_JellyfinMissingImageWithUnpushableSlotRefusesWithoutDeleting(t *testing.T) {
 	A, B, C, D := bandJPEG(t, 51), bandJPEG(t, 52), bandJPEG(t, 53), bandJPEG(t, 54)
-	peer := &statefulBackdropPeer{appendAll: true, data: [][]byte{A, C}}
+	peer := publishtest.NewPeer(connection.TypeJellyfin, [][]byte{A, C})
 	p, a := durabilityHarness(t, connection.TypeJellyfin, peer, [][]byte{A, B, C, D})
 	unreadableFanart(t, filepath.Join(a.Path, "fanart2.jpg"))
 
 	p.ReconcileArtworkToPlatforms(context.Background())
-	got, writes := peer.state()
-	if writes != 0 || peer.deleteCount() != 0 {
-		t.Errorf("refused resync touched the peer: %d writes, %d deletes, want 0 and 0", writes, peer.deleteCount())
+	got, writes := peer.State()
+	if writes != 0 || peer.DeleteCount() != 0 {
+		t.Errorf("refused resync touched the peer: %d writes, %d deletes, want 0 and 0", writes, peer.DeleteCount())
 	}
 	assertPeerHolds(t, "after refused resync", got, [][]byte{A, C})
 }

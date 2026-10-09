@@ -28,6 +28,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/publish/publishtest"
 )
 
 // #3138 S0: the live before/after measurement of the PERCEPTUAL platform prune.
@@ -620,7 +621,7 @@ func s0GuardedPeer(connType, itemID, apiKey string, inner http.Handler) http.Han
 }
 
 // TestPerceptualPruneMeasurement_HarnessSelfCheck runs the SAME measurement
-// bodies against statefulBackdropPeer, the in-process model of a peer. It is
+// bodies against publishtest.Peer, the in-process model of a peer. It is
 // NOT the #3138 measurement and proves nothing about a real server: it exists
 // so the harness (fixture similarities, expected plan, expected survivors) is
 // known to agree with the production code before it is pointed at one, and so
@@ -628,7 +629,7 @@ func s0GuardedPeer(connType, itemID, apiKey string, inner http.Handler) http.Han
 func TestPerceptualPruneMeasurement_HarnessSelfCheck(t *testing.T) {
 	for _, connType := range []string{connection.TypeEmby, connection.TypeJellyfin} {
 		modelled := func(t *testing.T) s0Target {
-			peer := &statefulBackdropPeer{appendAll: connType == connection.TypeJellyfin}
+			peer := publishtest.NewPeer(connType, nil)
 			srv := httptest.NewServer(s0GuardedPeer(connType, "p1", "k", peer))
 			t.Cleanup(srv.Close)
 			var c interface {
@@ -658,7 +659,7 @@ func TestPerceptualPruneMeasurement_HarnessSelfCheck(t *testing.T) {
 func TestPerceptualPruneMeasurement_RefusesNonEmptyItem(t *testing.T) {
 	for _, connType := range []string{connection.TypeEmby, connection.TypeJellyfin} {
 		t.Run(connType, func(t *testing.T) {
-			target := func(peer *statefulBackdropPeer) s0Target {
+			target := func(peer *publishtest.Peer) s0Target {
 				srv := httptest.NewServer(s0GuardedPeer(connType, "p1", "k", peer))
 				t.Cleanup(srv.Close)
 				var c s0Peer
@@ -672,7 +673,7 @@ func TestPerceptualPruneMeasurement_RefusesNonEmptyItem(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			occupied := &statefulBackdropPeer{data: [][]byte{[]byte("someone's real artwork")}}
+			occupied := publishtest.NewPeer(connection.TypeEmby, [][]byte{[]byte("someone's real artwork")})
 			err := s0RefuseNonEmpty(ctx, target(occupied))
 			if err == nil {
 				t.Fatal("s0RefuseNonEmpty accepted an item that already holds a backdrop")
@@ -680,13 +681,13 @@ func TestPerceptualPruneMeasurement_RefusesNonEmptyItem(t *testing.T) {
 			if !strings.Contains(err.Error(), "disposable scratch item") {
 				t.Errorf("refusal does not tell the operator what to do: %v", err)
 			}
-			if n := occupied.deleteCount(); n != 0 {
+			if n := occupied.DeleteCount(); n != 0 {
 				t.Errorf("deleteCount = %d, want 0: the refusal must come before any delete", n)
 			}
-			if data, _ := occupied.state(); len(data) != 1 {
+			if data, _ := occupied.State(); len(data) != 1 {
 				t.Errorf("occupied item holds %d backdrops after the refusal, want 1", len(data))
 			}
-			if err := s0RefuseNonEmpty(ctx, target(&statefulBackdropPeer{})); err != nil {
+			if err := s0RefuseNonEmpty(ctx, target(publishtest.NewPeer(connection.TypeEmby, nil))); err != nil {
 				t.Errorf("an empty item was refused: %v", err)
 			}
 		})
@@ -698,7 +699,7 @@ func TestPerceptualPruneMeasurement_RefusesNonEmptyItem(t *testing.T) {
 func TestPerceptualPruneMeasurement_GuardedPeerRejectsMisaddressedClients(t *testing.T) {
 	for _, connType := range []string{connection.TypeEmby, connection.TypeJellyfin} {
 		t.Run(connType, func(t *testing.T) {
-			srv := httptest.NewServer(s0GuardedPeer(connType, "p1", "k", &statefulBackdropPeer{}))
+			srv := httptest.NewServer(s0GuardedPeer(connType, "p1", "k", publishtest.NewPeer(connection.TypeEmby, nil)))
 			t.Cleanup(srv.Close)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()

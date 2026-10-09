@@ -16,6 +16,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/publish/publishtest"
 )
 
 // #3200: after a full-set fanart snapshot the publisher tells a health reporter
@@ -192,7 +193,7 @@ func TestFanartHealth_AbortedSnapshotNeitherRaisesNorResolves(t *testing.T) {
 // unreadableMiddleHarness is an Emby Publisher on real SQLite with one artist whose
 // backdrop B (fanart2.jpg, slot 1) is unreadable, and a peer that models its
 // backdrop list. It SKIPS where chmod does not bite (root).
-func unreadableMiddleHarness(t *testing.T, peer *statefulBackdropPeer, rep FanartHealthReporter) (*Publisher, *artist.Artist, string) {
+func unreadableMiddleHarness(t *testing.T, peer *publishtest.Peer, rep FanartHealthReporter) (*Publisher, *artist.Artist, string) {
 	t.Helper()
 	A, B, C, D := bandJPEG(t, 51), bandJPEG(t, 52), bandJPEG(t, 53), bandJPEG(t, 54)
 	p, a := durabilityHarness(t, connection.TypeEmby, peer, [][]byte{A, B, C, D})
@@ -204,7 +205,7 @@ func unreadableMiddleHarness(t *testing.T, peer *statefulBackdropPeer, rep Fanar
 
 func TestFanartHealth_ManualSyncRaisesThenResolves(t *testing.T) {
 	rep := newFakeFanartHealth()
-	peer := &statefulBackdropPeer{}
+	peer := publishtest.NewPeer(connection.TypeEmby, nil)
 	p, a, bad := unreadableMiddleHarness(t, peer, rep)
 
 	p.SyncAllFanartToPlatforms(context.Background(), a)
@@ -228,11 +229,11 @@ func TestFanartHealth_BackgroundReconcilerRaises(t *testing.T) {
 	// reconciler's own full-set read.
 	A, C, D := bandJPEG(t, 51), bandJPEG(t, 53), bandJPEG(t, 54)
 	rep := newFakeFanartHealth()
-	peer := &statefulBackdropPeer{data: [][]byte{A, C, D}}
+	peer := publishtest.NewPeer(connection.TypeEmby, [][]byte{A, C, D})
 	p, a, _ := unreadableMiddleHarness(t, peer, rep)
 
 	p.ReconcileArtworkToPlatforms(context.Background())
-	if _, writes := peer.state(); writes != 0 {
+	if _, writes := peer.State(); writes != 0 {
 		t.Fatalf("precondition: the reconciler pushed (%d writes), so a raise could come from the push path", writes)
 	}
 	open, slots, _, _ := rep.state(a.ID)
@@ -246,11 +247,11 @@ func TestFanartHealth_ReconcilerPushPathRaises(t *testing.T) {
 	// syncAllFanartToPlatforms(respectWriteGate=true).
 	A, C := bandJPEG(t, 51), bandJPEG(t, 53)
 	rep := newFakeFanartHealth()
-	peer := &statefulBackdropPeer{data: [][]byte{A, C}}
+	peer := publishtest.NewPeer(connection.TypeEmby, [][]byte{A, C})
 	p, a, _ := unreadableMiddleHarness(t, peer, rep)
 
 	p.ReconcileArtworkToPlatforms(context.Background())
-	if _, writes := peer.state(); writes == 0 {
+	if _, writes := peer.State(); writes == 0 {
 		t.Fatal("precondition: the reconciler did not push")
 	}
 	if open, slots, _, _ := rep.state(a.ID); !open || !reflect.DeepEqual(slots, []int{1}) {
@@ -284,14 +285,14 @@ func TestFanartHealth_JellyfinRefusedResyncRaises(t *testing.T) {
 func TestFanartHealth_ReporterErrorDoesNotFailOrShortenTheSync(t *testing.T) {
 	rep := newFakeFanartHealth()
 	rep.err = errors.New("database is locked")
-	peer := &statefulBackdropPeer{}
+	peer := publishtest.NewPeer(connection.TypeEmby, nil)
 	p, a, _ := unreadableMiddleHarness(t, peer, rep)
 
 	p.SyncAllFanartToPlatforms(context.Background(), a)
 	if _, _, raises, _ := rep.state(a.ID); raises == 0 {
 		t.Fatal("precondition: the reporter was never called")
 	}
-	got, writes := peer.state()
+	got, writes := peer.State()
 	if writes == 0 {
 		t.Fatal("the push did not happen after the reporter failed")
 	}
@@ -494,7 +495,7 @@ func TestFanartHealth_MessageShapes(t *testing.T) {
 func TestFanartHealth_NoBackdropsLeftResolvesAStaleFinding(t *testing.T) {
 	t.Run("manual sync", func(t *testing.T) {
 		rep := newFakeFanartHealth()
-		p, a := durabilityHarness(t, connection.TypeEmby, &statefulBackdropPeer{}, nil)
+		p, a := durabilityHarness(t, connection.TypeEmby, publishtest.NewPeer(connection.TypeEmby, nil), nil)
 		p.SetFanartHealthReporter(rep)
 		_ = rep.RaiseFanartUnreadable(context.Background(), a.ID, []int{1}, "x")
 		p.SyncAllFanartToPlatforms(context.Background(), a)
