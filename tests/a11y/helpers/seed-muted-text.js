@@ -212,9 +212,15 @@ function startLoopbackEmby() {
   });
 }
 
-// addPlatformArtist connects the loopback Emby, imports its library and populates
-// it, then PROVES the defining property before returning: the platform artist
-// exists and has no folder. Returns what removePlatformArtist needs.
+// addPlatformArtist connects the loopback Emby and imports its library, then
+// PROVES the defining property before returning: the platform artist exists and
+// has no folder. Returns what removePlatformArtist needs.
+//
+// There is deliberately NO explicit populate call. The import handler already
+// starts a populate in the background for every library it creates, and the
+// populate endpoint answers 409 while an operation is running for that library,
+// so a second call races the automatic one (it only ever passed when the
+// automatic populate had already finished). The poll below waits for the result.
 export async function addPlatformArtist(server) {
   const fake = await startLoopbackEmby();
   const created = { fake, connectionId: '', libraryId: '', artistId: '' };
@@ -226,7 +232,6 @@ export async function addPlatformArtist(server) {
     const lib = (Array.isArray(libs) ? libs : libs.libraries || []).find((l) => l.external_id === 'muted-lib-1');
     if (!lib) throw new Error('seed-muted-text: the platform library was not imported');
     created.libraryId = lib.id;
-    await call(server, 'POST', `/api/v1/connections/${conn.id}/libraries/${lib.id}/populate`);
     const platformName = `The ${PAGES.dupName}`;
     const deadline = Date.now() + 30_000;
     for (;;) {
@@ -250,9 +255,26 @@ export async function addPlatformArtist(server) {
 // its artists drops the folder-less row, then the connection and the listener go.
 export async function removePlatformArtist(server, created) {
   try {
+    // The import's own populate may still be running (the poll above can time out
+    // or the property check can throw while it is in flight). Let it finish first
+    // so it does not write artists into a library that is being deleted.
+    if (created.libraryId) await waitForLibraryIdle(server, created.libraryId);
     if (created.libraryId) await call(server, 'DELETE', `/api/v1/libraries/${created.libraryId}?deleteArtists=true`);
     if (created.connectionId) await call(server, 'DELETE', `/api/v1/connections/${created.connectionId}`);
   } finally {
     created.fake.server.close();
+  }
+}
+
+// waitForLibraryIdle polls the library operation status until no operation is
+// running. The endpoint answers {status:"idle"} when none is tracked and the
+// operation's own status ("running", "completed", "failed") otherwise.
+async function waitForLibraryIdle(server, libraryId) {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    const op = await (await call(server, 'GET', `/api/v1/libraries/${libraryId}/operation/status`)).json();
+    if (op.status !== 'running') return;
+    if (Date.now() > deadline) throw new Error('seed-muted-text: the library operation was still running after 30s');
+    await new Promise((r) => setTimeout(r, 250));
   }
 }
