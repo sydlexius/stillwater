@@ -206,11 +206,11 @@ func TestListPHashRepairRuns_TieBreakAndZeroTimestamp(t *testing.T) {
 	p, db := newPHashRepairPipeline(t)
 	dir := t.TempDir()
 	seedRepairArtist(t, db, "art-a", "Artist A", dir)
-	same := `{"created_at":"2026-10-01T12:00:00Z","entries":[]}`
+	same := `{"created_at":"2026-10-01T12:00:00Z","entries":[{"file_name":"f.jpg","stored_name":"001-f.jpg"}]}`
 	writeManifestForTest(t, dir, "bbb-tie", same)
 	writeManifestForTest(t, dir, "aaa-tie", same)
-	writeManifestForTest(t, dir, "ccc-newest", `{"created_at":"2026-10-02T12:00:00Z","entries":[]}`)
-	writeManifestForTest(t, dir, "000-nodate", `{"entries":[]}`)
+	writeManifestForTest(t, dir, "ccc-newest", `{"created_at":"2026-10-02T12:00:00Z","entries":[{"file_name":"f.jpg","stored_name":"001-f.jpg"}]}`)
+	writeManifestForTest(t, dir, "000-nodate", `{"entries":[{"file_name":"f.jpg","stored_name":"001-f.jpg"}]}`)
 
 	runs, err := p.ListPHashRepairRuns(context.Background(), "art-a")
 	if err != nil {
@@ -246,8 +246,8 @@ func TestListPHashRepairRuns_EmptyPathReadsNothingRelative(t *testing.T) {
 }
 
 // TestListPHashRepairRuns_Projection: the id is the DIRECTORY name even when
-// the manifest says otherwise, phash and quarantined_at are carried, and a run
-// with no entries is "entries":[] on the wire (not null).
+// the manifest says otherwise, phash and quarantined_at are carried, entries is
+// an array on the wire, and a leftover manifest with no entries is not listed.
 func TestListPHashRepairRuns_Projection(t *testing.T) {
 	p, db := newPHashRepairPipeline(t)
 	dir := t.TempDir()
@@ -260,18 +260,21 @@ func TestListPHashRepairRuns_Projection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(runs) != 2 || runs[0].OpID != "dir-name" {
-		t.Fatalf("want [dir-name empty-run] with the directory name as id, got %+v", runs)
+	if len(runs) != 1 || runs[0].OpID != "dir-name" {
+		t.Fatalf("want only [dir-name] (directory name as id, empty-run not listed), got %+v", runs)
 	}
 	e := runs[0].Entries[0]
 	if e.PHash != "abc123" || !e.QuarantinedAt.Equal(time.Date(2026, 10, 2, 12, 0, 1, 0, time.UTC)) {
 		t.Errorf("phash/quarantined_at not carried: %+v", e)
 	}
-	raw, err := json.Marshal(runs[1])
+	raw, err := json.Marshal(runs[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), `"entries":[]`) {
-		t.Errorf("an entry-less run must encode entries as [], got %s", raw)
+	if !strings.Contains(string(raw), `"entries":[{`) {
+		t.Errorf("entries must encode as an array, got %s", raw)
 	}
 }
+
+// removeForTest deletes a file so a test can replace it with a FIFO.
+func removeForTest(path string) error { return os.Remove(path) }

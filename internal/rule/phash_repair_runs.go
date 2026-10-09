@@ -92,14 +92,15 @@ func (p *Pipeline) ListPHashRepairRuns(ctx context.Context, artistID string) ([]
 
 	runs := make([]PHashRepairRun, 0, len(opIDs))
 	for _, opID := range opIDs {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		m, err := img.ReadRepairManifest(ctx, a.Path, opID)
 		if err != nil {
-			// A canceled context is not a "bad manifest": surface it.
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return nil, ctxErr
+			// A canceled context or a stalled library mount (the process-wide
+			// abandoned-read cap) is a fact about the whole mount, not about
+			// this one manifest. Skipping would list fewer back-outs and
+			// report them as absent, so abort with the cause (#2933). Only a
+			// genuinely bad manifest falls through to warn-and-skip.
+			if abort := img.ReadFailureDistrustsLoop(ctx, err); abort != nil {
+				return nil, fmt.Errorf("listing back-outs for %s: %w", artistID, abort)
 			}
 			p.logger.Warn("skipping unreadable back-out manifest",
 				slog.String("artist_id", artistID),
@@ -110,6 +111,15 @@ func (p *Pipeline) ListPHashRepairRuns(ctx context.Context, artistID string) ([]
 		if m == nil {
 			// Directory exists but holds no manifest (e.g. a crashed first write).
 			p.logger.Warn("skipping back-out directory with no manifest",
+				slog.String("artist_id", artistID),
+				slog.String("op_id", opID))
+			continue
+		}
+		if len(m.Entries) == 0 {
+			// Nothing left to restore (an interrupted run left the manifest
+			// behind after its entries were consumed). The list shows only
+			// back-outs that still hold quarantined backdrops.
+			p.logger.Warn("skipping back-out with no quarantined entries",
 				slog.String("artist_id", artistID),
 				slog.String("op_id", opID))
 			continue
