@@ -2092,7 +2092,7 @@ func pathMappingRow(host string, platform string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 157, "\" class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500\"> <span class=\"text-xs text-gray-400 dark:text-gray-500\" aria-hidden=\"true\">&rarr;</span> <input name=\"platform_prefix\" type=\"text\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 157, "\" class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500\"> <span class=\"text-xs text-gray-600 dark:text-gray-300\" aria-hidden=\"true\">&rarr;</span> <input name=\"platform_prefix\" type=\"text\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

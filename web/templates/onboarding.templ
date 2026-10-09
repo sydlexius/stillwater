@@ -206,7 +206,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								@onboardingLibraryRow(lib)
 							}
 							if len(data.Libraries) == 0 {
-								<p id="ob-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">{ t(ctx, "onboarding.no_libraries") }</p>
+								<p id="ob-no-libraries" class="text-sm text-gray-600 dark:text-gray-400 italic">{ t(ctx, "onboarding.no_libraries") }</p>
 							}
 						</div>
 						<div id="ob-library-form-wrapper">
@@ -280,7 +280,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								>
 									{ t(ctx, "onboarding.language_skip_button") }
 								</button>
-								<p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{ t(ctx, "onboarding.language_skip_consequence") }</p>
+								<p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">{ t(ctx, "onboarding.language_skip_consequence") }</p>
 							</div>
 							<button
 								type="button"
@@ -1056,7 +1056,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					}).then(function(libs) {
 						var list = document.getElementById('ob-library-list');
 						if (!libs || libs.length === 0) {
-							list.innerHTML = '<p id="ob-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">No libraries configured yet.</p>';
+							list.innerHTML = '<p id="ob-no-libraries" class="text-sm text-gray-600 dark:text-gray-400 italic">No libraries configured yet.</p>';
 							// Library count contributes to step-6 gating;
 							// refresh the cached visibility flag whenever the
 							// list mutates. Returned so the chain is awaitable.
@@ -1719,7 +1719,7 @@ templ onboardingProfileCard(p platform.Profile) {
 				if p.NFOEnabled {
 					<span class="text-green-600 dark:text-green-400">{ t(ctx, "common.enabled") }</span>
 				} else {
-					<span class="text-gray-400 dark:text-gray-500">{ t(ctx, "common.disabled") }</span>
+					<span class="text-gray-600 dark:text-gray-400">{ t(ctx, "common.disabled") }</span>
 				}
 			</div>
 		</div>
@@ -1947,7 +1947,7 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 						<span class="font-medium text-sm text-gray-900 dark:text-gray-100">{ displayName }</span>
 						<button
 							type="button"
-							class="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
+							class="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
 							onclick={ toggleObConnectionInfo(connType) }
 							aria-label={ tf(ctx, "onboarding.more_info_about", displayName) }
 						>

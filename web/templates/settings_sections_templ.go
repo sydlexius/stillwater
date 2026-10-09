@@ -1645,7 +1645,7 @@ func SectionLibraries(data SettingsData) templ.Component {
 			}
 		}
 		if len(data.Libraries) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "<p id=\"settings-no-libraries\" class=\"text-sm text-gray-400 dark:text-gray-500 italic\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "<p id=\"settings-no-libraries\" class=\"text-sm text-gray-600 dark:text-gray-400 italic\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2849,7 +2849,7 @@ func SectionRules(data SettingsData) templ.Component {
 					for _, pfx := range imageSubtypePrefixes {
 						sub := rulesForImageSubtype(catRules, pfx)
 						if len(sub) > 0 {
-							templ_7745c5c3_Err = components.SettingSubHeading("px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500", imageSubtypeLabel(ctx, sub[0].ID)).Render(ctx, templ_7745c5c3_Buffer)
+							templ_7745c5c3_Err = components.SettingSubHeading("px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400", imageSubtypeLabel(ctx, sub[0].ID)).Render(ctx, templ_7745c5c3_Buffer)
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
@@ -2884,7 +2884,7 @@ func SectionRules(data SettingsData) templ.Component {
 					}
 					generalRules := rulesForImageSubtypeFallback(catRules)
 					if len(generalRules) > 0 {
-						templ_7745c5c3_Err = components.SettingSubHeading("px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500", imageSubtypeLabel(ctx, generalRules[0].ID)).Render(ctx, templ_7745c5c3_Buffer)
+						templ_7745c5c3_Err = components.SettingSubHeading("px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400", imageSubtypeLabel(ctx, generalRules[0].ID)).Render(ctx, templ_7745c5c3_Buffer)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}

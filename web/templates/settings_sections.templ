@@ -433,7 +433,7 @@ templ SectionLibraries(data SettingsData) {
 					@settingsLibraryRow(lib)
 				}
 				if len(data.Libraries) == 0 {
-					<p id="settings-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">{ t(ctx, "settings.libraries.empty") }</p>
+					<p id="settings-no-libraries" class="text-sm text-gray-600 dark:text-gray-400 italic">{ t(ctx, "settings.libraries.empty") }</p>
 				}
 			</div>
 			<div id="settings-library-form-wrapper">
@@ -903,7 +903,7 @@ templ SectionRules(data SettingsData) {
 						for _, pfx := range imageSubtypePrefixes {
 							{{ sub := rulesForImageSubtype(catRules, pfx) }}
 							if len(sub) > 0 {
-								@components.SettingSubHeading("px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500", imageSubtypeLabel(ctx, sub[0].ID))
+								@components.SettingSubHeading("px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400", imageSubtypeLabel(ctx, sub[0].ID))
 								for _, rl := range sub {
 									{{ isFsUnavail := rl.FilesystemDependent && !data.HasLocalLibrary }}
 									{{ showFsHelp := isFsUnavail && !fsHelpShown }}
@@ -920,7 +920,7 @@ templ SectionRules(data SettingsData) {
 						}
 						{{ generalRules := rulesForImageSubtypeFallback(catRules) }}
 						if len(generalRules) > 0 {
-							@components.SettingSubHeading("px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500", imageSubtypeLabel(ctx, generalRules[0].ID))
+							@components.SettingSubHeading("px-0 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400", imageSubtypeLabel(ctx, generalRules[0].ID))
 							for _, rl := range generalRules {
 								{{ isFsUnavail := rl.FilesystemDependent && !data.HasLocalLibrary }}
 								{{ showFsHelp := isFsUnavail && !fsHelpShown }}
