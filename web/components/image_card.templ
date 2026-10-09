@@ -103,7 +103,7 @@ templ ImageCard(artistID string, img provider.ImageResult, fanartExists bool) {
 					{ imageCardTypeLabel(string(img.Type)) }
 				</span>
 			</div>
-			<div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+			<div class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
 				if img.Width > 0 && img.Height > 0 {
 					<span class="font-mono">{ strconv.Itoa(img.Width) }x{ strconv.Itoa(img.Height) }</span>
 				} else {
@@ -114,10 +114,10 @@ templ ImageCard(artistID string, img provider.ImageResult, fanartExists bool) {
 				}
 			</div>
 			if isLowResolution(img.Width, img.Height, normalizeCardImageType(string(img.Type))) {
-				<div class="text-xs text-amber-700 dark:text-amber-400">Low resolution</div>
+				<div class="text-xs text-amber-800 dark:text-amber-400">Low resolution</div>
 			}
 			if (string(img.Type) == "logo" || string(img.Type) == "hdlogo") && img.Source == "duckduckgo" {
-				<div class="text-xs text-amber-700 dark:text-amber-400">Check transparency before saving</div>
+				<div class="text-xs text-amber-800 dark:text-amber-400">Check transparency before saving</div>
 			}
 			// #2415: /images/fetch answers an aspect-ratio mismatch with a 200
 			// that saved NOTHING (body: needs_crop). With hx-swap="none" and no
