@@ -1,6 +1,7 @@
 // muted-text-contrast.spec.js - the muted secondary-text color must meet WCAG AA
 // (4.5:1) as PAINTED, in both themes, on the settings, onboarding and register
-// surfaces (#3474, slice 3a).
+// surfaces (#3474, slice 3a) and on the duplicates, artist-detail and error page
+// templates (slice 3b-1).
 //
 // WHY PAINTED, NOT axe: the old muted pair (gray-400 light / gray-500 dark)
 // sits on translucent glass cards over an image. axe reports text over a
@@ -20,8 +21,8 @@
 // still carries both text-gray-400 and dark:text-gray-500.
 //
 // SITES MEASURED (file : what) and SITES THAT CANNOT BE REACHED under the
-// harness. Every muted-text site in the five templates is listed; the only
-// unmeasured one is settings.templ:2921 (below).
+// harness. Every muted-text site in the templates is listed; the unmeasured ones
+// are settings.templ:2921, artist_images_tab.templ:279 and dashboard.templ:339.
 //   settings.templ
 //     1108 provider rate-limit label ........ REACHED  (provider cards)
 //     1304,1318 MusicBrainz server hints .... REACHED  (config panel opened)
@@ -55,31 +56,60 @@
 //     1950 connection info button (+ hover) . REACHED
 //   register.templ
 //     323 "(optional)" ...................... REACHED  (valid invite code)
+//   SLICE 3b-1 (pagesFx: a library with a conflicting duplicate pair and a lone artist)
+//   artist_duplicates.templ
+//     184 "No folder (platform only)" ....... REACHED  (a loopback fake Emby, imported
+//          and populated: the folder-less artist joins the duplicate group)
+//     209 MBID "None" placeholder ........... REACHED  (one pair member has no MBID)
+//     430 ignored group "Unknown group" ..... REACHED  (an ignore with no group key)
+//     439 ignored reason dash ............... REACHED  (an ignore with no reason)
+//   artist_field.templ
+//     93  fetch-from-providers icon ......... REACHED  (artist-detail test, edit cluster)
+//     113 identify-by-name icon ............. REACHED  (artist-detail test, edit cluster)
+//     231 field-history clock icon .......... REACHED  (artist-detail test; the fixture's
+//          one manual edit creates the history entry)
+//     726 field lock toggle (unlocked) ...... REACHED  (+ hover, EVERY instance)
+//   artist_images_tab.templ
+//     279 empty-image placeholder ........... UNREACHABLE: ArtistImagesTab has no caller
+//          (dead template), so no route renders it
+//   dashboard.templ
+//     339 "stats unavailable" value ......... UNREACHABLE: rendered only when the health
+//          stats query FAILS (a database error); no fixture can make it fail
+//   discover_results.templ
+//     45  "(already imported)" library ...... REACHED  (the same loopback fake Emby, its
+//          library imported, then the discover list opened on /settings)
+//   error_pages.templ
+//     9   404 icon (SVG, not text) .......... REACHED  (an unknown path)
 import { test, expect } from 'playwright/test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 import { disableTransitions } from './helpers/settle.js';
-import { applyTheme, renderedContrast } from './helpers/axe.js';
-import { startSettingsFixture, startOnboardingFixture, addConnection, removeConnection } from './helpers/seed-muted-text.js';
+import { applyTheme, renderedContrast, buildAxeBuilder, formatViolations } from './helpers/axe.js';
+import {
+  startSettingsFixture, startOnboardingFixture, startPagesFixture, addPlatformArtist, removePlatformArtist, addConnection, removeConnection, addIgnoredGroup, removeIgnoredGroup,
+} from './helpers/seed-muted-text.js';
 
 const AA = 4.5;
 const rAF2 = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
 let settingsFx;
 let onboardingFx;
+let pagesFx;
 const libraryDirs = [];
 
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   settingsFx = await startSettingsFixture();
   onboardingFx = await startOnboardingFixture();
+  pagesFx = await startPagesFixture();
 });
 
 test.afterAll(() => {
   settingsFx?.server.stop();
   onboardingFx?.server.stop();
+  pagesFx?.server.stop();
   for (const dir of libraryDirs) fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -120,11 +150,18 @@ async function open(browser, fx, urlPath, theme, useAppTheme = true, beforeGoto 
 //              color (4.32 in dark vs about 5.9 solid-fill) under the minimum-
 //              glyph-pixel method; the settings catalogue link's light hover is a
 //              solid fill at about 4.07 to 4.12 (the existing hover:text-blue-600).
+//   decorative an aria-hidden SVG with no text (the 404 illustration). Same graphical
+//              3:1 floor, but it carries no aria-label because it conveys nothing.
+//   glyph      a lone thin typographic stroke (the em dash). Its painted minimum-pixel
+//              value is an antialiasing artifact (a 1px stroke never reaches its own
+//              color: 4.18 dark and 3.55 light measured for a color worth 7+), so the
+//              contract is the resolved color, the same check `inactive` uses. The
+//              painted value is still logged.
 //   inactive   a label inside a deliberately disabled block (opacity-50, a
 //              disabled input, a "Coming soon" badge). WCAG 1.4.3 exempts
 //              inactive components, so the painted ratio is not the contract;
 //              the contract is that the label resolves to the AA pair's color.
-async function measure(page, theme, label, loc, { min, hover = false, ratio: threshold = AA, inactive = false }) {
+async function measure(page, theme, label, loc, { min, hover = false, ratio: threshold = AA, inactive = false, decorative = false, glyph = false }) {
   await expect.poll(() => loc.count(), { message: `${label}: want at least ${min} element(s)`, timeout: 15_000 })
     .toBeGreaterThanOrEqual(min);
   const n = await loc.count();
@@ -141,10 +178,16 @@ async function measure(page, theme, label, loc, { min, hover = false, ratio: thr
     if (cls.includes('text-gray-400') && cls.includes('dark:text-gray-500')) {
       failures.push(`${name} still carries the old pair text-gray-400 dark:text-gray-500`);
     }
-    if (threshold < AA && (fullText !== '' || ariaLabel === '')) {
+    if (decorative) {
+      // A purely decorative glyph (aria-hidden, no text) is held to the graphical
+      // 3:1 floor, not the text one; enforced so it cannot be used to relax a label.
+      if (threshold >= AA || fullText !== '' || (await el.getAttribute('aria-hidden')) !== 'true') {
+        failures.push(`${name} is declared decorative but is not an aria-hidden, text-free element held to under ${AA}:1`);
+      }
+    } else if (threshold < AA && (fullText !== '' || ariaLabel === '')) {
       failures.push(`${name} is held to ${threshold}:1 but is not icon-only (needs empty text and a non-empty aria-label)`);
     }
-    if (inactive) {
+    if (inactive || glyph) {
       // Tailwind 4 reports colors as oklch(), so resolve to sRGB through a canvas.
       const want = theme === 'dark' ? '156,163,175' : '75,85,99';
       const got = await el.evaluate((e) => ({
@@ -157,11 +200,11 @@ async function measure(page, theme, label, loc, { min, hover = false, ratio: thr
         faded: !!e.closest('.opacity-50'),
         disabledInput: !!e.parentElement.querySelector('input[disabled]'),
       }));
-      expect(got.faded && got.disabledInput, `${name}: expected a deliberately inactive control (opacity-50 block with a disabled input)`).toBe(true);
-      console.log(`CONTRAST ${theme} ${name} inactive color: ${got.color}`);
+      if (inactive) expect(got.faded && got.disabledInput, `${name}: expected a deliberately inactive control (opacity-50 block with a disabled input)`).toBe(true);
+      console.log(`CONTRAST ${theme} ${name} ${inactive ? 'inactive' : 'glyph'} color: ${got.color}`);
       // oklch -> sRGB rounding drifts a few units, so compare with a tolerance.
       const off = got.color.split(',').map((v, k) => Math.abs(Number(v) - Number(want.split(',')[k])));
-      if (off.some((d) => d > 4)) failures.push(`${name} inactive label color rgb(${got.color}), want rgb(${want})`);
+      if (off.some((d) => d > 4)) failures.push(`${name} ${inactive ? 'inactive label' : 'glyph'} color rgb(${got.color}), want rgb(${want})`);
       continue;
     }
     // The card is translucent glass over a FIXED backdrop: pin the viewport
@@ -505,6 +548,159 @@ for (const theme of ['dark', 'light']) {
     const { context, page } = await openWizard(browser, theme, 5);
     try {
       expectAA(theme, await measure(page, theme, 'onboarding.templ:1950 info button', page.locator('#wizard-step-5 button[aria-label][onclick*="toggleObConnectionInfo"]'), { min: 3, hover: true, ratio: 3 }));
+    } finally {
+      await context.close();
+    }
+  });
+}
+
+// Slice 3b-1: the page templates. All run on pagesFx (see helpers/seed-muted-text.js).
+
+// openMergeModal opens the merge dialog for the fixture's one group and waits for
+// the conflict gate (the fixture's group carries conflicting disambiguations).
+async function openMergeModal(page) {
+  await page.locator('[data-merge-open]').click();
+  await expect(page.locator('#merge-modal')).toBeVisible();
+  await expect(page.locator('#merge-disamb-warning'), 'the fixture group must trip the disambiguation gate').toBeVisible();
+  await expect(page.locator('#merge-survivor-options input[type="radio"]')).toHaveCount(2);
+}
+
+for (const theme of ['dark', 'light']) {
+  test(`pages: duplicates MBID placeholder meets AA (${theme})`, async ({ browser }) => {
+    const { context, page } = await open(browser, pagesFx, '/reports/duplicates', theme);
+    try {
+      await expect(page.locator('[data-duplicate-group]'), 'fixture: one duplicate group').toHaveCount(1);
+      expectAA(theme, await measure(page, theme, 'artist_duplicates.templ:209 MBID None', page.locator('[data-duplicate-group] td span.italic:text-is("None")'), { min: 1 }));
+    } finally {
+      await context.close();
+    }
+  });
+
+  // #2570: the whole page, closed and with the merge dialog open (heading order
+  // and the Cancel button's hover background), has no axe violation. The Cancel
+  // button is measured from pixels at rest AND on hover: axe reports its resting
+  // text over the translucent dialog as "incomplete" and never evaluates :hover.
+  test(`pages: duplicates page is axe-clean with the merge dialog open (${theme})`, async ({ browser }) => {
+    const { context, page } = await open(browser, pagesFx, '/reports/duplicates', theme);
+    try {
+      await expect(page.locator('[data-duplicate-group]')).toHaveCount(1);
+      const closed = await buildAxeBuilder(page).analyze();
+      expect(closed.violations, formatViolations(closed.violations)).toEqual([]);
+      await openMergeModal(page);
+      const heading = await page.locator('#merge-modal-title').evaluate((e) => e.tagName);
+      expect(heading, 'the dialog title sits directly under the page h1').toBe('H2');
+      const opened = await buildAxeBuilder(page).analyze();
+      expect(opened.violations, formatViolations(opened.violations)).toEqual([]);
+      expectAA(theme, await measure(page, theme, 'artist_duplicates.templ:564 Cancel (small secondary token, hover:bg-black/5)', page.locator('#merge-modal-cancel'), { min: 1, hover: true }));
+    } finally {
+      await context.close();
+    }
+  });
+
+  test(`pages: ignored-groups placeholders meet AA (${theme})`, async ({ browser }) => {
+    const id = await addIgnoredGroup(pagesFx.server);
+    try {
+      const { context, page } = await open(browser, pagesFx, '/reports/duplicates/ignored', theme);
+      try {
+        const failures = [
+          ...await measure(page, theme, 'artist_duplicates.templ:430 Unknown group', page.locator(`#ignored-row-${id} td span.italic`), { min: 1 }),
+          ...await measure(page, theme, 'artist_duplicates.templ:439 reason dash', page.locator(`#ignored-row-${id} td span:text-is("\u2014")`), { min: 1, glyph: true }),
+        ];
+        expectAA(theme, failures);
+      } finally {
+        await context.close();
+      }
+    } finally {
+      await removeIgnoredGroup(pagesFx.server, id);
+    }
+  });
+
+  // The two platform-only surfaces. The fake Emby's folder-less artist joins the
+  // fixture's duplicate group as a third member, which breaks openMergeModal's
+  // two-radio expectation, so it exists only inside this test.
+  test(`pages: platform-import surfaces meet AA (${theme})`, async ({ browser }) => {
+    test.setTimeout(150_000);
+    const platform = await addPlatformArtist(pagesFx.server);
+    try {
+      const failures = [];
+      {
+        const { context, page } = await open(browser, pagesFx, '/reports/duplicates', theme);
+        try {
+          const group = page.locator('[data-duplicate-group]');
+          await expect(group, 'fixture: the platform artist joins the one duplicate group').toHaveCount(1);
+          await expect(group.locator('tbody tr'), 'fixture: the group now has the pair plus the platform artist').toHaveCount(3);
+          failures.push(...await measure(page, theme, 'artist_duplicates.templ:184 platform only', group.locator('td span.italic', { hasText: /platform only/i }), { min: 1 }));
+        } finally {
+          await context.close();
+        }
+      }
+      {
+        const { context, page } = await open(browser, pagesFx, '/settings', theme);
+        try {
+          await page.locator(`[hx-get$="/api/v1/connections/${platform.connectionId}/libraries"]`).click();
+          const note = page.locator(`#discover-${platform.connectionId} label span`, { hasText: /already imported/i });
+          await expect(note.first(), 'fixture: the discover list shows the imported library').toBeVisible({ timeout: 15_000 });
+          await expect(note.first().locator('xpath=preceding-sibling::input[@type="checkbox"]'), 'fixture: the imported library is a checked, disabled row').toBeDisabled();
+          failures.push(...await measure(page, theme, 'discover_results.templ:45 already imported', note, { min: 1 }));
+        } finally {
+          await context.close();
+        }
+      }
+      expectAA(theme, failures);
+    } finally {
+      await removePlatformArtist(pagesFx.server, platform);
+    }
+  });
+
+  test(`pages: 404 illustration meets the graphical floor (${theme})`, async ({ browser }) => {
+    // The custom 404 page is NOT reachable by a browser GET: "GET /" matches every
+    // path, so an unknown URL renders the dashboard (200). handle404 only answers
+    // other methods. So fetch the real page with a POST and serve that HTML at a
+    // GET URL; the page, its stylesheet and scripts are the server's own.
+    const { server } = pagesFx;
+    const missing = await fetch(`${server.baseURL}/muted-text-no-such-page`, {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': server.csrfToken, Cookie: `csrf_token=${server.csrfToken}; session=${server.sessionCookie}` },
+    });
+    const html = await missing.text();
+    expect(missing.status, 'fixture: the unmatched POST must be the 404 page').toBe(404);
+    expect(html, 'fixture: the response must be the custom 404 page').toContain('id="report-404-btn"');
+    const { context, page } = await open(browser, pagesFx, '/muted-text-no-such-page', theme, true, async (pg) => {
+      await pg.route((u) => u.pathname === '/muted-text-no-such-page', (route) => route.fulfill({ status: 404, contentType: 'text/html; charset=utf-8', body: html }));
+    });
+    try {
+      expectAA(theme, await measure(page, theme, 'error_pages.templ:9 404 icon', page.locator('svg.w-20.h-20[aria-hidden="true"]'), { min: 1, ratio: 3, decorative: true }));
+    } finally {
+      await context.close();
+    }
+  });
+}
+
+// Artist detail (artist_field.templ). Icon-only controls, so the graphical 3:1
+// floor with hover (see `ratio: 3` above). The read view shows the lock toggle;
+// the fetch / identify / history icons live in the per-field edit cluster, which
+// only exists after Edit is switched on.
+for (const theme of ['dark', 'light']) {
+  test(`pages: artist-detail field icons meet the icon floor (${theme})`, async ({ browser }) => {
+    // EVERY lock toggle is scored (the weakest instances are not the first ones: the
+    // read view has 15 and the edit cluster 20), and each icon is measured at rest and
+    // on hover: two screenshots per state.
+    test.setTimeout(420_000);
+    const { context, page } = await open(browser, pagesFx, `/artists/${pagesFx.soloId}`, theme);
+    try {
+      const failures = await measure(page, theme, 'artist_field.templ:726 lock toggle (read view)',
+        page.locator('.sw-next-artist-detail .field-lock-toggle[data-locked="0"]:visible'), { min: 3, hover: true, ratio: 3 });
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.locator('[data-sw-edit-all]:not([tabindex="-1"])').click({ timeout: 10_000 });
+      await expect(page.locator('.sw-edit-actions').first()).toBeVisible();
+      const cluster = '.sw-next-artist-detail .sw-edit-actions';
+      failures.push(
+        ...await measure(page, theme, 'artist_field.templ:726 lock toggle (edit cluster)', page.locator(`${cluster} > .field-lock-toggle[data-locked="0"]`), { min: 3, hover: true, ratio: 3 }),
+        ...await measure(page, theme, 'artist_field.templ:93 fetch from providers', page.locator(`${cluster} > button[hx-get$="/providers"]`), { min: 1, hover: true, ratio: 3 }),
+        ...await measure(page, theme, 'artist_field.templ:113 identify by name', page.locator(`${cluster} > button[hx-get$="/identify"]`), { min: 1, hover: true, ratio: 3 }),
+        ...await measure(page, theme, 'artist_field.templ:231 field history', page.locator(`${cluster} [data-context-menu^="fh-"] > button`), { min: 1, hover: true, ratio: 3 }),
+      );
+      expectAA(theme, failures);
     } finally {
       await context.close();
     }

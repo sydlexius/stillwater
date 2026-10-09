@@ -90,7 +90,7 @@ templ fieldEditActions(a *artist.Artist, field string, providers []string, canCl
 			// .sw-field-actions; the edit-mode twin lives under .sw-edit-actions.
 			<button
 				type="button"
-				class="inline-flex items-center justify-center rounded p-0.5 text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+				class="inline-flex items-center justify-center rounded p-0.5 text-gray-600 dark:text-gray-400 hover:text-blue-700 dark:hover:text-blue-400 transition-colors"
 				title={ t(ctx, "artist.fetch_from_providers") }
 				aria-label={ t(ctx, "artist.fetch_from_providers") }
 				hx-get={ "/api/v1/artists/" + a.ID + "/fields/" + field + "/providers" }
@@ -110,7 +110,7 @@ templ fieldEditActions(a *artist.Artist, field string, providers []string, canCl
 		if segment, display, ok := identifyProvider(field); ok {
 			<button
 				type="button"
-				class="inline-flex items-center justify-center rounded p-0.5 text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+				class="inline-flex items-center justify-center rounded p-0.5 text-gray-600 dark:text-gray-400 hover:text-blue-700 dark:hover:text-blue-400 transition-colors"
 				title={ tf(ctx, "artist.identify_by_name", display) }
 				aria-label={ tf(ctx, "artist.identify_by_name", display) }
 				hx-get={ "/api/v1/artists/" + a.ID + "/" + segment + "/identify" }
@@ -228,7 +228,7 @@ templ fieldHistoryMenu(a *artist.Artist, field string, history []artist.Metadata
 	<div class="relative inline-flex" data-context-menu={ menuID }>
 		<button
 			type="button"
-			class="inline-flex items-center justify-center rounded p-0.5 text-gray-400 dark:text-gray-500 hover:text-amber-500 dark:hover:text-amber-400 transition-colors"
+			class="inline-flex items-center justify-center rounded p-0.5 text-gray-600 dark:text-gray-400 hover:text-amber-800 dark:hover:text-amber-400 transition-colors"
 			title={ tf(ctx, "artist.field_history", fieldLabel(ctx, field)) }
 			aria-label={ tf(ctx, "artist.field_history", fieldLabel(ctx, field)) }
 			aria-haspopup="true"
@@ -723,7 +723,7 @@ templ FieldLockToggle(a *artist.Artist, field string) {
 	} else {
 		<button
 			type="button"
-			class="field-lock-toggle inline-flex items-center justify-center rounded p-0.5 text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+			class="field-lock-toggle inline-flex items-center justify-center rounded p-0.5 text-gray-600 dark:text-gray-400 hover:text-blue-700 dark:hover:text-blue-400 transition-colors"
 			title={ t(ctx, "artist.fieldlock.lock") }
 			aria-label={ t(ctx, "artist.fieldlock.lock") }
 			data-field={ field }

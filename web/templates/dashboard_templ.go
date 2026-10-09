@@ -842,7 +842,7 @@ func DashboardEmptyState(score float64, healthStatsError bool) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if healthStatsError {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<p class=\"mt-2 text-3xl font-bold text-gray-400 dark:text-gray-500\" title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<p class=\"mt-2 text-3xl font-bold text-gray-600 dark:text-gray-400\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

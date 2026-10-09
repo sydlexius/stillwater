@@ -181,7 +181,7 @@ templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 											// connected platform (#2730). Same italic muted
 											// placeholder shape the MBID and disambiguation
 											// cells below use for their absent case.
-											<span class="italic text-gray-400 dark:text-gray-500">{ t(ctx, "artist_duplicates.platform_only") }</span>
+											<span class="italic text-gray-600 dark:text-gray-400">{ t(ctx, "artist_duplicates.platform_only") }</span>
 										} else {
 											{ m.Path }
 										}
@@ -206,7 +206,7 @@ templ ArtistDuplicatesTable(assets AssetPaths, view ArtistDuplicatesPageView) {
 										if m.MBID != "" {
 											{ m.MBID }
 										} else {
-											<span class="italic text-gray-400 dark:text-gray-500">{ t(ctx, "artist_duplicates.no_mbid") }</span>
+											<span class="italic text-gray-600 dark:text-gray-400">{ t(ctx, "artist_duplicates.no_mbid") }</span>
 										}
 									</td>
 								</tr>
@@ -427,7 +427,7 @@ templ ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) {
 								if r.GroupKey != "" {
 									{ r.GroupKey }
 								} else {
-									<span class="italic text-gray-400 dark:text-gray-500">{ t(ctx, "artist_duplicates.ignored_group_unknown") }</span>
+									<span class="italic text-gray-600 dark:text-gray-400">{ t(ctx, "artist_duplicates.ignored_group_unknown") }</span>
 								}
 							</td>
 							<td class="px-4 py-2">
@@ -436,7 +436,7 @@ templ ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) {
 								} else if r.Reason == "name_key" {
 									<span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">{ t(ctx, "artist_duplicates.reason_name_key") }</span>
 								} else {
-									<span class="text-gray-400 dark:text-gray-500">&mdash;</span>
+									<span class="text-gray-600 dark:text-gray-400">&mdash;</span>
 								}
 							</td>
 							<td class="px-4 py-2 text-right text-gray-600 dark:text-gray-400">{ itoa(r.MemberCount) }</td>
@@ -469,6 +469,10 @@ templ ArtistDuplicatesIgnoredTable(view ArtistDuplicatesIgnoredPageView) {
 // rebuilds the survivor radio list each time the modal opens.
 //
 // Hidden by default; #merge-modal toggles the "hidden" class.
+//
+// Heading levels (#2570): the page's <h1> is the only heading above the open
+// dialog, so the dialog title is an <h2> and its sections <h3>. An <h3> title
+// under the <h1> skipped a level, which axe reports as heading-order.
 templ ArtistMergeModal() {
 	<div id="merge-i18n" hidden data-i18n={ mergeI18nJSON(ctx) }></div>
 	<div
@@ -482,9 +486,9 @@ templ ArtistMergeModal() {
 		<div class="fixed inset-0 flex items-center justify-center p-4">
 			<div class="sw-merge-card relative w-full max-w-2xl max-h-[85vh] bg-white dark:bg-gray-800 shadow-xl flex flex-col">
 				<div class="flex items-center justify-between px-6 py-4 border-b border-[var(--sw-glass-border)]">
-					<h3 id="merge-modal-title" class="text-lg font-semibold text-[color:var(--sw-content-text)]">
+					<h2 id="merge-modal-title" class="text-lg font-semibold text-[color:var(--sw-content-text)]">
 						{ t(ctx, "artist_duplicates.merge_modal.title") }
-					</h3>
+					</h2>
 					// #1894 F2: subtle on-motif icon-close -- muted secondary ink, quiet
 					// hover to primary ink, no hover-bg/bevel; it reads as chrome, not a
 					// button. Initial focus is moved off it (see the open handler) so it
@@ -519,9 +523,9 @@ templ ArtistMergeModal() {
 						class="rounded-md border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-900/20 px-4 py-3"
 						role="alert"
 					>
-						<h4 class="text-sm font-medium text-amber-800 dark:text-amber-200">
+						<h3 class="text-sm font-medium text-amber-800 dark:text-amber-200">
 							{ t(ctx, "artist_duplicates.merge_modal.disamb_warning_heading") }
-						</h4>
+						</h3>
 						<p class="mt-1 text-xs text-amber-700 dark:text-amber-300">
 							{ t(ctx, "artist_duplicates.merge_modal.disamb_warning_body") }
 						</p>
@@ -544,9 +548,9 @@ templ ArtistMergeModal() {
 						<div id="merge-survivor-options" class="space-y-2"></div>
 					</fieldset>
 					<div class="border-t border-[var(--sw-glass-border)] pt-4">
-						<h4 id="merge-preview-heading" class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+						<h3 id="merge-preview-heading" class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 							{ t(ctx, "artist_duplicates.merge_modal.preview_heading") }
-						</h4>
+						</h3>
 						<div id="merge-preview-body" class="text-sm text-gray-600 dark:text-gray-400">
 							<p class="italic">{ t(ctx, "artist_duplicates.merge_modal.preview_loading") }</p>
 						</div>
@@ -557,7 +561,7 @@ templ ArtistMergeModal() {
 					// subtle both-theme hover), no raw Tailwind gray.
 					<button
 						type="button"
-						class="rounded-md px-3 py-2 text-sm font-medium text-[color:var(--sw-content-text-secondary)] hover:text-[color:var(--sw-content-text)] hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+						class="rounded-md px-3 py-2 text-sm font-medium text-[color:var(--sw-content-text-secondary-sm)] hover:text-[color:var(--sw-content-text)] hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
 						id="merge-modal-cancel"
 						data-merge-close
 					>
