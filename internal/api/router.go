@@ -1169,6 +1169,9 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// via requireForeignAdmin. Both are singletons sharing r.backdropRepairRunning.
 	mux.HandleFunc("POST "+bp+"/api/v1/reports/phash-mismatch/remediate", wrapAuth(r.handlePHashMismatchRemediate, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/reports/phash-mismatch/restore", wrapAuth(r.handlePHashMismatchRestore, authMw))
+	// Read-only list of an artist's quarantined back-outs (#2882): finds the
+	// op_id the restore above needs. Admin-gated in-handler; no singleton.
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/backdrop-repairs", wrapAuth(r.handlePHashRepairRuns, authMw))
 	// Image registry repair (#2669): rebuild missing artist_images rows from
 	// the files on disk, then restore exists_flag for rows whose file is
 	// confirmed present. Registered as a plain /api/v1 POST alongside the

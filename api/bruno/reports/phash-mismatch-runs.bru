@@ -1,0 +1,33 @@
+meta {
+  name: Artist Backdrop Repairs
+  type: http
+  seq: 24
+}
+
+get {
+  url: {{apiBase}}/artists/no-such-artist/backdrop-repairs
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+docs {
+  Lists an artist's quarantined cross-artist backdrop back-outs (#2882), newest
+  first, so the op_id for /reports/phash-mismatch/restore can be found after the
+  remediate response is gone. GET /api/v1/artists/{id}/backdrop-repairs.
+
+  Admin-gated in-handler (requireForeignAdmin): 401 unauthenticated, 403 for a
+  non-admin. The CI session is the bootstrap admin, so the gate passes.
+
+  Empty-CI-DB expectation asserted here: no artist exists, so the handler
+  returns a deterministic 404 without needing a seeded quarantine.
+}
+
+tests {
+  test("returns 404 for an unknown artist", function() {
+    expect(res.status).to.equal(404);
+  });
+}
