@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/publish/publishtest"
 )
 
 // errSimulatedCrash stands in for the process dying inside a resync (#3147).
@@ -78,7 +79,7 @@ func TestResyncCrash_ReconcilerConvergesJellyfin(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			peer := &statefulBackdropPeer{appendAll: true, data: append([][]byte(nil), tc.seed...)}
+			peer := publishtest.NewPeer(connection.TypeJellyfin, tc.seed)
 			p, a := durabilityHarness(t, connection.TypeJellyfin, peer, tc.local)
 
 			var warnings []string
@@ -86,21 +87,21 @@ func TestResyncCrash_ReconcilerConvergesJellyfin(t *testing.T) {
 			// PRECONDITION: the crash really landed between the loops. Every
 			// old backdrop was deleted, exactly `landed` uploads arrived, and
 			// the push reported the failure rather than success.
-			got, _ := peer.state()
+			got, _ := peer.State()
 			assertPeerHolds(t, "after the interrupted push", got, tc.crashed)
-			if peer.deleteCount() != len(tc.seed) {
-				t.Fatalf("precondition: %d deletes issued, want %d (the whole old set)", peer.deleteCount(), len(tc.seed))
+			if peer.DeleteCount() != len(tc.seed) {
+				t.Fatalf("precondition: %d deletes issued, want %d (the whole old set)", peer.DeleteCount(), len(tc.seed))
 			}
 			if len(warnings) == 0 {
 				t.Fatalf("precondition: the interrupted push reported no warning")
 			}
 
 			p.ReconcileArtworkToPlatforms(ctx)
-			got, writes1 := peer.state()
+			got, writes1 := peer.State()
 			assertPeerHolds(t, "after reconciler pass 1", got, tc.local)
 
 			p.ReconcileArtworkToPlatforms(ctx)
-			got, writes2 := peer.state()
+			got, writes2 := peer.State()
 			assertPeerHolds(t, "after reconciler pass 2", got, tc.local)
 			if writes2 != writes1 {
 				t.Errorf("reconciler pass 2 issued %d platform writes, want 0", writes2-writes1)
@@ -116,10 +117,10 @@ func TestResyncCrash_ReconcilerConvergesJellyfin(t *testing.T) {
 func TestResyncCrash_PrunedDuplicateStaysPruned(t *testing.T) {
 	A, B := bandJPEG(t, 54), bandJPEG(t, 55)
 	ctx := context.Background()
-	peer := &statefulBackdropPeer{appendAll: true, data: [][]byte{A, B}}
+	peer := publishtest.NewPeer(connection.TypeJellyfin, [][]byte{A, B})
 	p, _ := durabilityHarness(t, connection.TypeJellyfin, peer, [][]byte{A, B, A})
 	p.ReconcileArtworkToPlatforms(ctx)
-	got, writes := peer.state()
+	got, writes := peer.State()
 	assertPeerHolds(t, "after reconciler pass", got, [][]byte{A, B})
 	if writes != 0 {
 		t.Errorf("reconciler issued %d writes against a pruned platform, want 0", writes)
@@ -133,7 +134,7 @@ func TestResyncCrash_PrunedDuplicateStaysPruned(t *testing.T) {
 func TestResyncCrash_EmbyNeverResyncs(t *testing.T) {
 	A, B, C := bandJPEG(t, 56), bandJPEG(t, 57), bandJPEG(t, 58)
 	ctx := context.Background()
-	peer := &statefulBackdropPeer{data: [][]byte{A}}
+	peer := publishtest.NewPeer(connection.TypeEmby, [][]byte{A})
 	p, _ := durabilityHarness(t, connection.TypeEmby, peer, [][]byte{A, B, C})
 
 	built := 0
@@ -146,13 +147,13 @@ func TestResyncCrash_EmbyNeverResyncs(t *testing.T) {
 
 	for pass := 1; pass <= 2; pass++ {
 		p.ReconcileArtworkToPlatforms(ctx)
-		got, _ := peer.state()
+		got, _ := peer.State()
 		assertPeerHolds(t, "after reconciler pass", got, [][]byte{A, B, C})
 	}
 	if built != 0 {
 		t.Errorf("an Emby reconcile built %d resync clients, want 0", built)
 	}
-	if d := peer.deleteCount(); d != 0 {
+	if d := peer.DeleteCount(); d != 0 {
 		t.Errorf("an Emby reconcile deleted %d backdrops, want 0", d)
 	}
 }
@@ -246,15 +247,15 @@ func TestFanartDeficit_IdentityTierMembership(t *testing.T) {
 func TestResyncCrash_DistinctCompletePrefixIsTreatedAsPrune(t *testing.T) {
 	A, B := bandJPEG(t, 63), bandJPEG(t, 64)
 	ctx := context.Background()
-	peer := &statefulBackdropPeer{appendAll: true, data: [][]byte{B, A, A}}
+	peer := publishtest.NewPeer(connection.TypeJellyfin, [][]byte{B, A, A})
 	p, a := durabilityHarness(t, connection.TypeJellyfin, peer, [][]byte{A, B, A})
 
 	crashResyncAfter(t, 2, func() { _ = p.SyncAllFanartToPlatforms(ctx, a) })
-	got, writes0 := peer.state()
+	got, writes0 := peer.State()
 	assertPeerHolds(t, "after the interrupted push (precondition)", got, [][]byte{A, B})
 
 	p.ReconcileArtworkToPlatforms(ctx)
-	got, writes1 := peer.state()
+	got, writes1 := peer.State()
 	assertPeerHolds(t, "after reconciler pass", got, [][]byte{A, B})
 	if writes1 != writes0 {
 		t.Errorf("reconciler issued %d writes, want 0: this state is indistinguishable from a prune", writes1-writes0)

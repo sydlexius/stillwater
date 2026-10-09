@@ -3,121 +3,22 @@ package publish
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
-	"io"
-	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
-	"sync"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
+	"github.com/sydlexius/stillwater/internal/publish/publishtest"
 )
-
-// statefulBackdropPeer is an httptest Emby/Jellyfin that models ONE item's
-// backdrop LIST, not just the calls it receives (#3144). The real
-// emby/jellyfin clients talk to it over HTTP, so the prune, the reconciler's
-// state read, and both full-set push shapes run their production code.
-//
-// Write semantics are the measured ones:
-//   - Emby (appendAll=false): POST to index i < len REPLACES slot i; any other
-//     index appends (#3125, #3145 measurements on 4.9.5.0).
-//   - Jellyfin (appendAll=true): every POST appends, whatever the index (#3135).
-//   - Both: DELETE at i removes slot i and renumbers the rest down.
-type statefulBackdropPeer struct {
-	mu        sync.Mutex
-	appendAll bool
-	data      [][]byte
-	writes    int // every POST and DELETE, so a pass that touches nothing is provable
-	deletes   int // delete requests alone, so a path that must never delete is provable (#3147)
-}
-
-func (s *statefulBackdropPeer) deleteCount() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.deletes
-}
-
-var (
-	peerDetailPath   = regexp.MustCompile(`^/Users/[^/]+/Items/[^/]+$`)
-	peerBackdropPath = regexp.MustCompile(`^/Items/[^/]+/Images/Backdrop/(\d+)$`)
-)
-
-func (s *statefulBackdropPeer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if r.Method == http.MethodGet && peerDetailPath.MatchString(r.URL.Path) {
-		tags := make([]string, len(s.data))
-		for i := range tags {
-			tags[i] = "t" + strconv.Itoa(i)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"Name": "peer item", "BackdropImageTags": tags})
-		return
-	}
-	m := peerBackdropPath.FindStringSubmatch(r.URL.Path)
-	if m == nil {
-		http.NotFound(w, r)
-		return
-	}
-	idx, _ := strconv.Atoi(m[1])
-	switch r.Method {
-	case http.MethodGet:
-		if idx >= len(s.data) {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "image/jpeg")
-		_, _ = w.Write(s.data[idx])
-	case http.MethodPost:
-		raw, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "reading upload body: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		b, err := base64.StdEncoding.DecodeString(string(raw))
-		if err != nil {
-			http.Error(w, "bad body", http.StatusBadRequest)
-			return
-		}
-		s.writes++
-		if !s.appendAll && idx < len(s.data) {
-			s.data[idx] = b
-		} else {
-			s.data = append(s.data, b)
-		}
-		w.WriteHeader(http.StatusNoContent)
-	case http.MethodDelete:
-		if idx >= len(s.data) {
-			http.NotFound(w, r)
-			return
-		}
-		s.writes++
-		s.deletes++
-		s.data = append(s.data[:idx], s.data[idx+1:]...)
-		w.WriteHeader(http.StatusNoContent)
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *statefulBackdropPeer) state() (data [][]byte, writes int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([][]byte(nil), s.data...), s.writes
-}
 
 // durabilityHarness wires a Publisher onto REAL SQLite-backed artist and
 // connection services, one artist whose image directory holds local, mapped
 // to one connection of connType served by peer.
-func durabilityHarness(t *testing.T, connType string, peer *statefulBackdropPeer, local [][]byte) (*Publisher, *artist.Artist) {
+func durabilityHarness(t *testing.T, connType string, peer *publishtest.Peer, local [][]byte) (*Publisher, *artist.Artist) {
 	t.Helper()
 	srv := httptest.NewServer(peer)
 	t.Cleanup(srv.Close)
@@ -156,7 +57,7 @@ func durabilityPublisher(t *testing.T, connType, url, apiKey, userID, platformAr
 	}
 
 	dir := t.TempDir()
-	names := []string{"fanart.jpg", "fanart2.jpg", "fanart3.jpg", "fanart4.jpg"}
+	names := []string{"fanart.jpg", "fanart2.jpg", "fanart3.jpg", "fanart4.jpg", "fanart5.jpg"}
 	for i, b := range local {
 		if err := os.WriteFile(filepath.Join(dir, names[i]), b, 0o600); err != nil {
 			t.Fatalf("writing local fanart: %v", err)
@@ -229,7 +130,7 @@ func TestPruneThenReconcile_DriveTheRealLoop(t *testing.T) {
 		for _, tc := range cases {
 			t.Run(typ+"/"+tc.name, func(t *testing.T) {
 				ctx := context.Background()
-				peer := &statefulBackdropPeer{appendAll: typ == connection.TypeJellyfin, data: append([][]byte(nil), tc.seed...)}
+				peer := publishtest.NewPeer(typ, tc.seed)
 				p, a := durabilityHarness(t, typ, peer, tc.local)
 
 				res, err := p.PrunePlatformBackdropDuplicates(ctx, PlatformBackdropPruneScope{ArtistID: a.ID})
@@ -241,15 +142,15 @@ func TestPruneThenReconcile_DriveTheRealLoop(t *testing.T) {
 				if res.BackdropsRemoved != tc.wantRemoved || len(res.Failures) != 0 {
 					t.Fatalf("precondition: prune removed %d (failures %v), want %d", res.BackdropsRemoved, res.Failures, tc.wantRemoved)
 				}
-				got, _ := peer.state()
+				got, _ := peer.State()
 				assertPeerHolds(t, "after prune", got, tc.afterPrune)
 
 				p.ReconcileArtworkToPlatforms(ctx)
-				got, writes1 := peer.state()
+				got, writes1 := peer.State()
 				assertPeerHolds(t, "after reconciler pass 1", got, tc.afterPass1)
 
 				p.ReconcileArtworkToPlatforms(ctx)
-				got, writes2 := peer.state()
+				got, writes2 := peer.State()
 				assertPeerHolds(t, "after reconciler pass 2", got, tc.afterPass1)
 				if writes2 != writes1 {
 					t.Errorf("reconciler pass 2 issued %d platform writes, want 0: a converged platform must not be re-pushed", writes2-writes1)
