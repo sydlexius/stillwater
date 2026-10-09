@@ -14,8 +14,14 @@
 // redirects and /register is a 404). Nothing here touches the shared server, so
 // nothing this spec seeds is visible to, or outlives, any other spec.
 //
+// OLD-PAIR GUARD: the .sw-next-settings overrides in input.css recolor the OLD
+// pair on settings pages, so painted contrast alone cannot tell old from new
+// there. measure() therefore also fails any matched element whose class list
+// still carries both text-gray-400 and dark:text-gray-500.
+//
 // SITES MEASURED (file : what) and SITES THAT CANNOT BE REACHED under the
-// harness. Every muted-text site in the five templates is listed.
+// harness. Every muted-text site in the five templates is listed; the only
+// unmeasured one is settings.templ:2921 (below).
 //   settings.templ
 //     1108 provider rate-limit label ........ REACHED  (provider cards)
 //     1304,1318 MusicBrainz server hints .... REACHED  (config panel opened)
@@ -23,19 +29,21 @@
 //     1390,1395,1400,1410 OAuth block ....... REACHED  (config panel opened)
 //     1445 verbosity description ............ REACHED  (Wikipedia panel opened)
 //     1735 priority-row instructions ........ REACHED
-//     1798 "no providers" for a field ....... UNREACHABLE: needs a priority field
-//          with zero available providers; keyless providers (MusicBrainz,
-//          Wikipedia, ...) are always available, so no field is ever empty.
+//     1798 "no providers" for a field ....... REACHED  (an HX-Request PUT of an empty
+//          provider list returns the row fragment, rendered into the page)
 //     2386 NFO "Disabled" (platform card) ... REACHED
 //     2415 rule catalogue link (+ hover) .... REACHED
-//     2921 "up to date" .................... UNREACHABLE: needs a completed update
-//          check, which asks GitHub for the latest release; the harness is offline
-//          by design and the updater has no fixture seam.
-//     2924 "Not yet checked" ................ REACHED
-//     2932 "Last checked" row ............... UNREACHABLE: same update check; the
-//          row is hidden until a check has completed.
+//     2921 "up to date", server-rendered span UNREACHABLE: it renders only after a
+//          real update check (GitHub, offline in the harness). Its user-visible
+//          twin, built by updates.js, IS measured (status mocked via page.route)
+//          and its class is asserted equal to the template's.
+//     2924 "Not yet checked" ................ REACHED  (updates.js rewrites it on
+//          every load, so the live element is the JS copy; class asserted equal
+//          to the server-rendered one)
+//     2932 "Last checked" row ............... REACHED  (status mocked via page.route)
 //   settings_sections.templ
-//     436 "no libraries" .................... REACHED  (fixture deletes its libraries)
+//     436 "no libraries" .................... REACHED  (fixture deletes its libraries;
+//          the library.js copy is asserted equal to the server one)
 //     906,923 rule sub-headings ............. REACHED
 //   settings_sections_next.templ
 //     486 path-mapping arrow glyph .......... REACHED  (fixture platform connection)
@@ -61,6 +69,7 @@ const rAF2 = () => new Promise((r) => requestAnimationFrame(() => requestAnimati
 
 let settingsFx;
 let onboardingFx;
+const libraryDirs = [];
 
 test.beforeAll(async () => {
   test.setTimeout(120_000);
@@ -71,12 +80,13 @@ test.beforeAll(async () => {
 test.afterAll(() => {
   settingsFx?.server.stop();
   onboardingFx?.server.stop();
+  for (const dir of libraryDirs) fs.rmSync(dir, { recursive: true, force: true });
 });
 
 // open returns a fresh authenticated page on the fixture server, in a theme.
 // useAppTheme=false is for pages without preferences.js (register): the theme
 // there is only the `dark` class themeInitScript sets at load, so it is toggled.
-async function open(browser, fx, urlPath, theme, useAppTheme = true) {
+async function open(browser, fx, urlPath, theme, useAppTheme = true, beforeGoto = null) {
   const { server } = fx;
   const context = await browser.newContext({ colorScheme: 'dark', viewport: { width: 1280, height: 900 } });
   await context.addCookies([
@@ -85,6 +95,7 @@ async function open(browser, fx, urlPath, theme, useAppTheme = true) {
   ]);
   const page = await context.newPage();
   await disableTransitions(page);
+  if (beforeGoto) await beforeGoto(page);
   await page.goto(`${server.baseURL}${urlPath}`);
   await page.waitForLoadState('load');
   if (useAppTheme) {
@@ -102,11 +113,13 @@ async function open(browser, fx, urlPath, theme, useAppTheme = true) {
 // every failing site). Never skips: an absent site is a failing count.
 //
 // Two documented variants, both chosen per site:
-//   ratio: 3   icon-only controls (an SVG stroked with currentColor). The text
-//              threshold does not apply to a non-text graphic (WCAG 1.4.11 asks
-//              3:1), and the minimum-glyph-pixel method reads a 1.5px stroke's
-//              antialiased core below its true color (4.32 measured for gray-400
-//              on the dark card, whose solid-fill contrast is about 5.9).
+//   ratio: 3   icon-only controls (an SVG stroked with currentColor), held to
+//              3:1 as graphical objects (WCAG 1.4.11). Enforced: the element must
+//              have no text and a non-empty aria-label. Why a text floor does not
+//              fit: the onboarding info button's thin stroke reads below its true
+//              color (4.32 in dark vs about 5.9 solid-fill) under the minimum-
+//              glyph-pixel method; the settings catalogue link's light hover is a
+//              solid fill at about 4.07 to 4.12 (the existing hover:text-blue-600).
 //   inactive   a label inside a deliberately disabled block (opacity-50, a
 //              disabled input, a "Coming soon" badge). WCAG 1.4.3 exempts
 //              inactive components, so the painted ratio is not the contract;
@@ -118,9 +131,19 @@ async function measure(page, theme, label, loc, { min, hover = false, ratio: thr
   const failures = [];
   for (let i = 0; i < n; i++) {
     const el = loc.nth(i);
-    const text = ((await el.textContent()) || '').trim().slice(0, 40);
-    const name = `${label}[${i}] ${JSON.stringify(text || (await el.getAttribute('aria-label')) || '(icon)')}`;
+    const fullText = ((await el.textContent()) || '').trim();
+    const text = fullText.slice(0, 40);
+    const ariaLabel = (await el.getAttribute('aria-label')) || '';
+    const name = `${label}[${i}] ${JSON.stringify(text || ariaLabel || '(icon)')}`;
     await expect(el, `${name} must be visible to be measured`).toBeVisible();
+    // Old-pair guard (see header): the class itself, on every branch.
+    const cls = ((await el.getAttribute('class')) || '').split(/\s+/);
+    if (cls.includes('text-gray-400') && cls.includes('dark:text-gray-500')) {
+      failures.push(`${name} still carries the old pair text-gray-400 dark:text-gray-500`);
+    }
+    if (threshold < AA && (fullText !== '' || ariaLabel === '')) {
+      failures.push(`${name} is held to ${threshold}:1 but is not icon-only (needs empty text and a non-empty aria-label)`);
+    }
     if (inactive) {
       // Tailwind 4 reports colors as oklch(), so resolve to sRGB through a canvas.
       const want = theme === 'dark' ? '156,163,175' : '75,85,99';
@@ -193,6 +216,7 @@ async function ensureOneLibrary(fx) {
   const headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': server.csrfToken, Cookie: `csrf_token=${server.csrfToken}; session=${server.sessionCookie}` };
   if ((await listLibraries(server)).length === 0) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sw-muted-lib-'));
+    libraryDirs.push(dir);
     const r = await fetch(`${server.baseURL}/api/v1/libraries`, { method: 'POST', headers, body: JSON.stringify({ name: 'Muted text fixture', path: dir, type: 'regular' }) });
     expect(r.ok, `fixture could not create a library: ${r.status}`).toBe(true);
   }
@@ -205,7 +229,7 @@ const settingsGroups = [
       ['settings.templ:1108 rate-limit label', (p) => byText(p, '[id^="provider-card-"]', 'span', /^[0-9.]+ req\/s/), { min: 5 }],
       ['settings.templ:1735 priority instructions', (p) => p.locator('[id^="priority-row-"] span:text-is("Drag to reorder. Click to enable/disable.")'), { min: 10 }],
       ['settings.templ:2386 NFO Disabled', (p) => p.locator('#section-platform span:text-is("Disabled")'), { min: 1 }],
-      ['settings.templ:2924 Not yet checked', (p) => p.locator('#updates-latest-version span:text-is("Not yet checked")'), { min: 1 }],
+      ['updates.js:786 / settings.templ:2924 Not yet checked', (p) => p.locator('#updates-latest-version span:text-is("Not yet checked")'), { min: 1 }],
     ],
   },
   {
@@ -300,6 +324,55 @@ for (const theme of ['dark', 'light']) {
     });
   }
 
+  // Reached offline: a mocked /updates/status un-hides the "Last checked" row
+  // (settings.templ:2932) and makes updates.js build the "up to date" span, the
+  // user-visible twin of settings.templ:2921.
+  test(`settings: updates status copy meets AA (${theme})`, async ({ browser }) => {
+    const { context, page } = await open(browser, settingsFx, '/settings', theme, true, async (pg) => {
+      await pg.route((u) => u.pathname.endsWith('/api/v1/updates/status'), async (route) => {
+        const real = await route.fetch();
+        const body = await real.json().catch(() => ({}));
+        const latest = body.current || 'v1.7.1';
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...body, latest, latest_version: latest, update_available: false, last_checked: '2026-10-08T12:00:00Z' }) });
+      });
+    });
+    try {
+      const failures = [
+        ...await measure(page, theme, 'updates.js:780 up to date (twin of settings.templ:2921)', page.locator('#updates-latest-version span.ml-2'), { min: 1 }),
+        ...await measure(page, theme, 'settings.templ:2932 Last checked row', page.locator('#updates-last-checked-row'), { min: 1 }),
+      ];
+      const want = templateClass(/<span class="([^"]*)">\{ t\(ctx, "settings\.updates\.up_to_date"\)/);
+      expect(await page.locator('#updates-latest-version span.ml-2').getAttribute('class'), 'updates.js up-to-date class must equal the template span').toBe(want);
+      expectAA(theme, failures);
+    } finally {
+      await context.close();
+    }
+  });
+
+  // settings.templ:1798: the row fragment an HX-Request priorities PUT returns
+  // with an empty provider list, rendered into the page.
+  test(`settings: no-providers note meets AA (${theme})`, async ({ browser }) => {
+    const { context, page } = await open(browser, settingsFx, '/settings', theme);
+    try {
+      const put = await page.evaluate(async () => {
+        const bp = (document.querySelector('meta[name="htmx-base-path"]') || { content: '' }).content;
+        const r = await fetch(`${bp}/api/v1/providers/priorities`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.swCsrfToken(), 'HX-Request': 'true' },
+          body: JSON.stringify({ priorities: [{ field: 'biography', providers: [] }] }),
+        });
+        const html = await r.text();
+        const row = document.getElementById('priority-row-biography');
+        if (row && r.ok) row.outerHTML = html;
+        return { ok: r.ok, status: r.status, hadRow: !!row };
+      });
+      expect(put, 'the priorities PUT must succeed and replace an existing row').toMatchObject({ ok: true, hadRow: true });
+      expectAA(theme, await measure(page, theme, 'settings.templ:1798 no providers', page.locator('#priority-row-biography p.italic'), { min: 1 }));
+    } finally {
+      await context.close();
+    }
+  });
+
   test(`register: optional marker meets AA (${theme})`, async ({ browser }) => {
     const { context, page } = await open(browser, settingsFx, `/register?code=${settingsFx.inviteCode}`, theme, false);
     try {
@@ -310,6 +383,65 @@ for (const theme of ['dark', 'light']) {
     }
   });
 }
+
+// The JS twins overwrite swept elements at runtime, so their class must equal
+// the server-rendered one (a twin left on the old pair would be recolored by the
+// input.css overrides and pass every painted check).
+function templateClass(re) {
+  const src = fs.readFileSync(new URL('../../web/templates/settings.templ', import.meta.url), 'utf8');
+  const m = src.match(re);
+  expect(m, `template pattern ${re} not found`).toBeTruthy();
+  return m[1];
+}
+
+async function serverHTML(server) {
+  const resp = await fetch(`${server.baseURL}/settings`, { headers: { Cookie: `session=${server.sessionCookie}` } });
+  expect(resp.ok, `GET /settings: ${resp.status}`).toBe(true);
+  return resp.text();
+}
+
+test('settings: updates.js "Not yet checked" class equals the server-rendered one', async ({ browser }) => {
+  const server = settingsFx.server;
+  const html = await serverHTML(server);
+  const m = html.match(/<span class="([^"]*)">Not yet checked<\/span>/);
+  expect(m, 'server-rendered "Not yet checked" span not found').toBeTruthy();
+  const context = await browser.newContext();
+  await context.addCookies([{ name: 'session', value: server.sessionCookie, url: server.rootURL }]);
+  const page = await context.newPage();
+  try {
+    const status = page.waitForResponse((r) => r.url().endsWith('/api/v1/updates/status'));
+    await page.goto(`${server.baseURL}/settings`);
+    await status;
+    await page.evaluate(rAF2);
+    const live = page.locator('#updates-latest-version span');
+    await expect(live).toHaveCount(1);
+    await expect(live, 'updates.js rewrote the span with a different class than the template').toHaveAttribute('class', m[1]);
+  } finally {
+    await context.close();
+  }
+});
+
+test('settings: library.js "no libraries" class equals the server-rendered one', async ({ browser }) => {
+  const server = settingsFx.server;
+  const headers = { 'X-CSRF-Token': server.csrfToken, Cookie: `csrf_token=${server.csrfToken}; session=${server.sessionCookie}` };
+  for (const lib of await listLibraries(server)) await fetch(`${server.baseURL}/api/v1/libraries/${lib.id}`, { method: 'DELETE', headers });
+  try {
+    const m = (await serverHTML(server)).match(/<p id="settings-no-libraries" class="([^"]*)"/);
+    expect(m, 'server-rendered #settings-no-libraries not found').toBeTruthy();
+    const { context, page } = await open(browser, settingsFx, '/settings', 'dark');
+    try {
+      const refreshed = page.waitForResponse((r) => r.url().endsWith('/api/v1/libraries') && r.request().method() === 'GET');
+      await page.evaluate(() => window.onSettingsLibrarySaved());
+      await refreshed;
+      await page.evaluate(rAF2);
+      await expect(page.locator('#settings-no-libraries')).toHaveAttribute('class', m[1]);
+    } finally {
+      await context.close();
+    }
+  } finally {
+    await ensureOneLibrary(settingsFx);
+  }
+});
 
 // Onboarding. The wizard is driven by its own goToStep(); the step is not a URL.
 async function openWizard(browser, theme, step) {

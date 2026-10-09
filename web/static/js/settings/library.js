@@ -88,7 +88,7 @@
           if (!libs || libs.length === 0) {
             var emptyText = (list && list.dataset.empty) || "No libraries configured.";
             _escDiv.textContent = emptyText;
-            list.innerHTML = '<p id="settings-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">' + _escDiv.innerHTML + '</p>';
+            list.innerHTML = '<p id="settings-no-libraries" class="text-sm text-gray-600 dark:text-gray-400 italic">' + _escDiv.innerHTML + '</p>';
             return;
           }
           var html = "";

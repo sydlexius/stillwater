@@ -777,13 +777,13 @@
 						latestEl.innerHTML = '<span class="text-green-600 dark:text-green-400 font-semibold">' + escHtml(d.latest) + '</span>'
 							+ ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">' + escHtml(lblAvailable) + '</span>';
 					} else {
-						latestEl.innerHTML = escHtml(d.latest) + ' <span class="ml-2 text-gray-400 dark:text-gray-500">' + escHtml(lblUpToDate) + '</span>';
+						latestEl.innerHTML = escHtml(d.latest) + ' <span class="ml-2 text-gray-600 dark:text-gray-400">' + escHtml(lblUpToDate) + '</span>';
 					}
 				} else if (!d.last_checked) {
 					// No check has ever succeeded: keep the server-rendered
 					// "Not checked" placeholder so the first /status hydrate
 					// does not blank it out.
-					latestEl.innerHTML = '<span class="text-gray-400 dark:text-gray-500 italic">' + escHtml(lblNotChecked) + '</span>';
+					latestEl.innerHTML = '<span class="text-gray-600 dark:text-gray-400 italic">' + escHtml(lblNotChecked) + '</span>';
 				} else {
 					// Checked, but the current channel has no matching release
 					// (e.g. after switching to a channel with no builds yet).
