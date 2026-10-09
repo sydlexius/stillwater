@@ -266,6 +266,11 @@ type Router struct {
 	// extraFanartInvalidateTimeout overrides extraFanartInvalidateTimeout in tests;
 	// zero in production.
 	extraFanartInvalidateTimeout time.Duration
+	// extraFanartPreview is the one cached migration preview (#3434). See
+	// extrafanart_preview_cache.go for why a live run may only Invalidate it.
+	extraFanartPreview extraFanartPreviewCache
+	// extraFanartNow is a test seam for the preview's "as of" clock; nil means time.Now.
+	extraFanartNow func() time.Time
 	// platformDupReportMu guards the cached platform backdrop-duplicate report
 	// backing GET /reports/platform-backdrop-duplicates (#3092). The page used
 	// to run ScanPlatformBackdropDuplicates synchronously on every render -- a

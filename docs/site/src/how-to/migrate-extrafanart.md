@@ -14,7 +14,7 @@ An artist whose folder does not exist (for example an unmounted share) is skippe
 
 ## Open the page
 
-An administrator can preview the migration, and run it, in the browser at `/reports/extrafanart-migration` (under your base path, if you set one). Opening the page changes nothing: each time it loads it reads every artist's `extrafanart/` folder and lists what a run would do, so reloading always shows the current state.
+An administrator can preview the migration, and run it, in the browser at `/reports/extrafanart-migration` (under your base path, if you set one). Opening the page changes nothing: it lists what a run would do, based on a read of every artist's `extrafanart/` folder. The page may show a preview up to ten minutes old. Starting the migration always re-reads the library before moving anything, so a run never acts on an old preview.
 
 - A summary shows the status, how many artists have files, how many files would move, and how many identical copies would be left in place.
 - The table lists one row per file with its artist, the file, the name it would get in the artist folder, and its outcome. A row with a problem says why in plain words.
@@ -70,8 +70,8 @@ The HTTP code summarizes the outcome, and the body has the same shape for every 
 | 200 | A preview finished, or a live run moved every file that was due (or had nothing to do). A live `nothing_checked` run also answers 200: check `artists_skipped_missing`. |
 | 207 | A live run finished with a non-clean outcome (`partial` or `failed`): a file did not move, or every file moved but a follow-up step failed (`index_refresh_failed`, `directory_not_removed`). Read the per-artist and per-file outcomes. |
 | 500 | The run stopped early. Files already moved stay moved; run again. |
-| 409 | Another run is already in progress. |
+| 409 | Another run is already in progress, or a preview is still loading (the message says which; for a loading preview, retry shortly). |
 
 `status` stays the authoritative detail: a `failed` run can answer 500 (it stopped early) or 207 (it finished and nothing moved).
 
-A `dry_run` value that is not true or false gets a 400, and a second run while one is in progress gets a 409.
+A `dry_run` value that is not true or false gets a 400, and a second run while one is in progress gets a 409. A preview request made while another preview is still loading also gets a 409, with a message to retry shortly.

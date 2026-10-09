@@ -4622,7 +4622,7 @@ paths:
         "403":
           description: Administrator role required (plain text).
         "409":
-          description: A run is already in progress. dry_run still echoes this request.
+          description: A run is already in progress, or (for a preview) another preview is still loading; the error text says which, and status stays `running` in both cases. Retry shortly. dry_run still echoes this request.
           content:
             application/json:
               schema:
