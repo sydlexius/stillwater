@@ -288,7 +288,7 @@ Remediation is designed to be safe on an ambiguous signal:
 - It copies the picture into a durable quarantine **before** removing the original, so a removed backdrop is always recoverable.
 - The platform-side delete happens only after the local removal has committed; the fuzzy platform match never authorizes a deletion on its own.
 
-The response summarizes how many artists were processed, how many slots were removed, quarantined, or skipped, and any failures, with a per-slot breakdown. On a dry run, slots are reported as "would-remove" and nothing is touched. Each run is tagged with an operation id - keep it if you may want to restore the run later. If you no longer have it, the API can list an artist's back-outs, newest first, with each run's operation id and the backdrops it removed.
+The response summarizes how many artists were processed, how many slots were removed, quarantined, or skipped, and any failures, with a per-slot breakdown. On a dry run, slots are reported as "would-remove" and nothing is touched. Each run is tagged with an operation id - keep it if you may want to restore the run later. If you no longer have it, the API can list an artist's back-outs, newest first, with each run's operation id. The list shows only back-outs that still hold quarantined backdrops, so a back-out you have fully restored no longer appears.
 
 ### Restore a back-out
 

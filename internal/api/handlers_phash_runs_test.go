@@ -131,3 +131,51 @@ func TestPHashRepairRuns_UnimplementedPipelineFailsLoud(t *testing.T) {
 		t.Errorf("status = %d, want 500", w.Code)
 	}
 }
+
+// TestPHashRepairRuns_ThroughTheRealRouter drives the route through the real
+// mux and auth middleware, which the direct-handler tests above bypass: no
+// cookie is 401, a non-admin session is 403, an admin session is 200.
+func TestPHashRepairRuns_ThroughTheRealRouter(t *testing.T) {
+	t.Parallel()
+	r := newPHashRunsRouter(t, func(context.Context, string) ([]rule.PHashRepairRun, error) {
+		return nil, nil
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mux := r.Handler(ctx)
+
+	session := func(name, role string) *http.Cookie {
+		u, err := r.authService.CreateLocalUser(context.Background(), name, "password123", name, role, "")
+		if err != nil {
+			t.Fatalf("CreateLocalUser(%s): %v", role, err)
+		}
+		tok, err := r.authService.CreateSession(context.Background(), u.ID)
+		if err != nil {
+			t.Fatalf("CreateSession: %v", err)
+		}
+		return &http.Cookie{Name: "session", Value: tok}
+	}
+	do := func(c *http.Cookie) int {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/art-a/backdrop-repairs", nil)
+		if c != nil {
+			req.AddCookie(c)
+		}
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	if got := do(nil); got != http.StatusUnauthorized {
+		t.Errorf("no cookie: status = %d, want 401", got)
+	}
+	// The first local user is bootstrapped as admin by some paths; create the
+	// admin first so the operator is unambiguously non-admin.
+	admin := session("adminuser", "administrator")
+	op := session("opuser", "operator")
+	if got := do(op); got != http.StatusForbidden {
+		t.Errorf("operator: status = %d, want 403", got)
+	}
+	if got := do(admin); got != http.StatusOK {
+		t.Errorf("admin: status = %d, want 200", got)
+	}
+}

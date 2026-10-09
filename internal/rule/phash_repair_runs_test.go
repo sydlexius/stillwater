@@ -2,8 +2,10 @@ package rule
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -164,5 +166,112 @@ func TestListPHashRepairRuns_FindsTheRunARealBackOutCreated(t *testing.T) {
 	}
 	if runs[0].Entries[0].MatchedArtistID != "art-b" {
 		t.Errorf("entry must name the colliding artist, got %+v", runs[0].Entries[0])
+	}
+}
+
+// writeManifestForTest writes a hand-built manifest. Used only where the REAL
+// writer cannot produce the needed shape (equal or zero timestamps, an internal
+// op_id that disagrees with its directory, an entry-less manifest).
+func writeManifestForTest(t *testing.T, dir, opDir, body string) {
+	t.Helper()
+	d := filepath.Join(dir, image.RepairDirName, opDir)
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(d, "manifest.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestListPHashRepairRuns_MissingArtistFolderIsAnError: an unmounted library
+// must not be reported as "no back-outs". A present folder with no .sw-repair
+// stays an empty list (see the MissingQuarantineDir test).
+func TestListPHashRepairRuns_MissingArtistFolderIsAnError(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	gone := filepath.Join(t.TempDir(), "unmounted")
+	seedRepairArtist(t, db, "art-a", "Artist A", gone)
+
+	runs, err := p.ListPHashRepairRuns(context.Background(), "art-a")
+	if err == nil {
+		t.Fatalf("a missing artist folder must be an error, got runs=%#v", runs)
+	}
+	if IsArtistNotFound(err) {
+		t.Errorf("must not be mistaken for an unknown artist: %v", err)
+	}
+}
+
+// TestListPHashRepairRuns_TieBreakAndZeroTimestamp pins the exact order: newest
+// first, equal instants by op id ascending, a missing created_at last.
+func TestListPHashRepairRuns_TieBreakAndZeroTimestamp(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	dir := t.TempDir()
+	seedRepairArtist(t, db, "art-a", "Artist A", dir)
+	same := `{"created_at":"2026-10-01T12:00:00Z","entries":[]}`
+	writeManifestForTest(t, dir, "bbb-tie", same)
+	writeManifestForTest(t, dir, "aaa-tie", same)
+	writeManifestForTest(t, dir, "ccc-newest", `{"created_at":"2026-10-02T12:00:00Z","entries":[]}`)
+	writeManifestForTest(t, dir, "000-nodate", `{"entries":[]}`)
+
+	runs, err := p.ListPHashRepairRuns(context.Background(), "art-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, r := range runs {
+		got = append(got, r.OpID)
+	}
+	want := []string{"ccc-newest", "aaa-tie", "bbb-tie", "000-nodate"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("order = %v, want %v", got, want)
+	}
+}
+
+// TestListPHashRepairRuns_EmptyPathReadsNothingRelative: an artist with no path
+// must get an empty list, and must never cause a read relative to the process
+// working directory (where a decoy back-out waits).
+func TestListPHashRepairRuns_EmptyPathReadsNothingRelative(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	seedRepairArtist(t, db, "art-a", "Artist A", "")
+	decoy := t.TempDir()
+	writeManifestForTest(t, decoy, "decoy-op", `{"created_at":"2026-10-01T12:00:00Z","entries":[]}`)
+	t.Chdir(decoy)
+
+	runs, err := p.ListPHashRepairRuns(context.Background(), "art-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runs == nil || len(runs) != 0 {
+		t.Errorf("want empty non-nil list, got %#v", runs)
+	}
+}
+
+// TestListPHashRepairRuns_Projection: the id is the DIRECTORY name even when
+// the manifest says otherwise, phash and quarantined_at are carried, and a run
+// with no entries is "entries":[] on the wire (not null).
+func TestListPHashRepairRuns_Projection(t *testing.T) {
+	p, db := newPHashRepairPipeline(t)
+	dir := t.TempDir()
+	seedRepairArtist(t, db, "art-a", "Artist A", dir)
+	writeManifestForTest(t, dir, "dir-name", `{"op_id":"inner-id","created_at":"2026-10-02T12:00:00Z","entries":[`+
+		`{"image_type":"fanart","slot_index":1,"file_name":"f.jpg","stored_name":"001-f.jpg","phash":"abc123","quarantined_at":"2026-10-02T12:00:01Z"}]}`)
+	writeManifestForTest(t, dir, "empty-run", `{"created_at":"2026-10-01T12:00:00Z","entries":[]}`)
+
+	runs, err := p.ListPHashRepairRuns(context.Background(), "art-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 2 || runs[0].OpID != "dir-name" {
+		t.Fatalf("want [dir-name empty-run] with the directory name as id, got %+v", runs)
+	}
+	e := runs[0].Entries[0]
+	if e.PHash != "abc123" || !e.QuarantinedAt.Equal(time.Date(2026, 10, 2, 12, 0, 1, 0, time.UTC)) {
+		t.Errorf("phash/quarantined_at not carried: %+v", e)
+	}
+	raw, err := json.Marshal(runs[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"entries":[]`) {
+		t.Errorf("an entry-less run must encode entries as [], got %s", raw)
 	}
 }

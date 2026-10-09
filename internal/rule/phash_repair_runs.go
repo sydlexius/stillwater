@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"sort"
 	"time"
 
@@ -76,6 +77,14 @@ func (p *Pipeline) ListPHashRepairRuns(ctx context.Context, artistID string) ([]
 		return []PHashRepairRun{}, nil
 	}
 
+	// If the artist folder itself is gone (a library share that is unmounted),
+	// the back-outs may still exist but cannot be seen. Saying "none" would be
+	// a false answer, so report an error. A present folder with no .sw-repair
+	// is the genuine "never backed out" case and stays an empty list below.
+	if _, err := os.Stat(a.Path); err != nil {
+		return nil, fmt.Errorf("artist folder for %s is not readable: %w", artistID, err)
+	}
+
 	opIDs, err := img.ListRepairOps(a.Path)
 	if err != nil {
 		return nil, err
@@ -100,6 +109,9 @@ func (p *Pipeline) ListPHashRepairRuns(ctx context.Context, artistID string) ([]
 		}
 		if m == nil {
 			// Directory exists but holds no manifest (e.g. a crashed first write).
+			p.logger.Warn("skipping back-out directory with no manifest",
+				slog.String("artist_id", artistID),
+				slog.String("op_id", opID))
 			continue
 		}
 		runs = append(runs, toPHashRepairRun(opID, m))
@@ -107,7 +119,8 @@ func (p *Pipeline) ListPHashRepairRuns(ctx context.Context, artistID string) ([]
 
 	// Newest first by the manifest's own timestamp. ListRepairOps returns ids in
 	// lexical order, which says nothing about age, so it cannot be trusted here.
-	// The op id breaks exact-timestamp ties so the order is deterministic.
+	// The op id breaks exact-timestamp ties so the order is deterministic. A
+	// zero (missing) timestamp is the oldest possible, so it sorts last.
 	sort.SliceStable(runs, func(i, j int) bool {
 		if !runs[i].CreatedAt.Equal(runs[j].CreatedAt) {
 			return runs[i].CreatedAt.After(runs[j].CreatedAt)
