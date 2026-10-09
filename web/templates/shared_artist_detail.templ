@@ -257,7 +257,7 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string, fa
 // ImageInfoBadge renders dimensions and file size as a small text badge.
 // Used as an HTMX partial loaded by the image preview card.
 templ ImageInfoBadge(width, height int, size int64) {
-	<span class="text-xs text-gray-500 dark:text-gray-400">
+	<span class="text-xs text-gray-600 dark:text-gray-400">
 		if width > 0 && height > 0 {
 			{ strconv.Itoa(width) + "x" + strconv.Itoa(height) + " " }
 		}

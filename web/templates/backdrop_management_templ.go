@@ -332,7 +332,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\" class=\"max-w-full max-h-full object-cover\" loading=\"lazy\"></div></button><div class=\"p-1.5 flex items-center justify-between\"><span class=\"text-xs text-gray-500 dark:text-gray-400\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\" class=\"max-w-full max-h-full object-cover\" loading=\"lazy\"></div></button><div class=\"p-1.5 flex items-center justify-between\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -389,7 +389,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<button type=\"button\" class=\"fanart-slot-action-btn text-xs p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200\" title=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<button type=\"button\" class=\"fanart-slot-action-btn text-xs p-1 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white\" title=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -445,7 +445,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<button type=\"button\" class=\"fanart-slot-action-btn text-xs p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200\" title=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<button type=\"button\" class=\"fanart-slot-action-btn text-xs p-1 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white\" title=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -498,7 +498,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 					return templ_7745c5c3_Err
 				}
 				if item.Index > 0 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<button type=\"button\" class=\"fanart-move-btn text-xs p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200\" title=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<button type=\"button\" class=\"fanart-move-btn text-xs p-1 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white\" title=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -556,7 +556,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 					}
 				}
 				if item.Index < len(items)-1 {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<button type=\"button\" class=\"fanart-move-btn text-xs p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200\" title=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<button type=\"button\" class=\"fanart-move-btn text-xs p-1 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white\" title=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -613,7 +613,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "<button type=\"button\" class=\"text-xs p-1 text-red-400 hover:text-red-600\" title=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "<button type=\"button\" class=\"text-xs p-1 text-red-700 dark:text-red-300 hover:text-red-800 dark:hover:text-red-200\" title=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

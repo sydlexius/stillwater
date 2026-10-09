@@ -927,7 +927,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 						/>
 					</button>
 				} else {
-					<div class="text-center text-gray-500 dark:text-gray-400">
+					<div class="text-center text-gray-600 dark:text-gray-400">
 						@components.IconPlusCircle("mx-auto h-12 w-12")
 						<p class="mt-2 text-sm">{ tf(ctx, "image.no_image_yet", img.ImageTermFor(data.SelectedType, data.ProfileName)) }</p>
 					</div>
@@ -936,7 +936,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 					<p class="text-sm font-medium text-blue-500">{ t(ctx, "image.drop_image_here") }</p>
 				</div>
 			</div>
-			<p class="mt-1 text-xs text-gray-500 dark:text-gray-400 text-center">{ t(ctx, "image.drag_drop_hint") }</p>
+			<p class="mt-1 text-xs text-gray-600 dark:text-gray-400 text-center">{ t(ctx, "image.drag_drop_hint") }</p>
 			if fanartIdx < 0 && imageExistsForType(data.Artist, data.SelectedType) {
 				<div
 					class="mt-1 text-center"
@@ -1529,7 +1529,7 @@ templ imageSearchGeneric(data ImageSearchData) {
 // activeSort reflects the server-side sort so the dropdown shows the correct selection.
 templ imageSortBar(activeSort string) {
 	<div class="image-sort-bar flex items-center justify-end gap-2 mb-3">
-		<span class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "image.sort_by") }</span>
+		<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "image.sort_by") }</span>
 		<select
 			aria-label={ t(ctx, "image.sort_by") }
 			class="text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1"
@@ -1547,12 +1547,12 @@ templ imageSortBar(activeSort string) {
 // was queried successfully.
 templ imageProviderStatusBanner(statuses []provider.ProviderImageStatus) {
 	if skippedProviderNames(statuses) != "" {
-		<p class="text-xs text-amber-700 dark:text-amber-400 mb-3" data-sw-providers-skipped>
+		<p class="text-xs text-amber-800 dark:text-amber-400 mb-3" data-sw-providers-skipped>
 			{ tf(ctx, "image.providers_skipped", skippedProviderNames(statuses)) }
 		</p>
 	}
 	for _, st := range erroredProviderStatuses(statuses) {
-		<p class="text-xs text-amber-700 dark:text-amber-400 mb-3" data-sw-provider-errored>
+		<p class="text-xs text-amber-800 dark:text-amber-400 mb-3" data-sw-provider-errored>
 			{ tf(ctx, "image.provider_errored", st.Provider.DisplayName(), st.Reason) }
 		</p>
 	}
@@ -1627,7 +1627,7 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult, active
 									{ provider.ProviderName(img.Source).DisplayName() }
 								</span>
 							</div>
-							<div class="text-xs text-gray-500 dark:text-gray-400">
+							<div class="text-xs text-gray-600 dark:text-gray-400">
 								if img.Width > 0 && img.Height > 0 {
 									<span>{ strconv.Itoa(img.Width) }x{ strconv.Itoa(img.Height) }</span>
 								}
