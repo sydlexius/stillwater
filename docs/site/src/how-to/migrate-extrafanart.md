@@ -70,8 +70,8 @@ The HTTP code summarizes the outcome, and the body has the same shape for every 
 | 200 | A preview finished, or a live run moved every file that was due (or had nothing to do). A live `nothing_checked` run also answers 200: check `artists_skipped_missing`. |
 | 207 | A live run finished with a non-clean outcome (`partial` or `failed`): a file did not move, or every file moved but a follow-up step failed (`index_refresh_failed`, `directory_not_removed`). Read the per-artist and per-file outcomes. |
 | 500 | The run stopped early. Files already moved stay moved; run again. |
-| 409 | Another run is already in progress. |
+| 409 | Another run is already in progress, or a preview is still loading (the message says which; for a loading preview, retry shortly). |
 
 `status` stays the authoritative detail: a `failed` run can answer 500 (it stopped early) or 207 (it finished and nothing moved).
 
-A `dry_run` value that is not true or false gets a 400, and a second run while one is in progress gets a 409.
+A `dry_run` value that is not true or false gets a 400, and a second run while one is in progress gets a 409. A preview request made while another preview is still loading also gets a 409, with a message to retry shortly.

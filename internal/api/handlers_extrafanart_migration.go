@@ -40,6 +40,12 @@ const extraFanartRunTimeout = 10 * time.Minute
 // errExtraFanartRunning means another run holds the singleton slot.
 var errExtraFanartRunning = errors.New("an extrafanart migration is already in progress")
 
+// errExtraFanartPreviewing means another PREVIEW holds the preview guard and no
+// run is in progress. It wraps errExtraFanartRunning so every existing check (409,
+// the page's running notice) still matches; only the POST handler tells them apart
+// to word the message truthfully.
+var errExtraFanartPreviewing = fmt.Errorf("an extrafanart preview is already loading: %w", errExtraFanartRunning)
+
 // Client-visible reason codes. Free text from the engine or the OS can carry
 // absolute paths and internals, so a response only ever carries one of these
 // fixed codes (a UI can map them to text); the full error goes to the
@@ -632,6 +638,8 @@ func (r *Router) handleExtraFanartMigrationRun(w http.ResponseWriter, req *http.
 	}
 	status := extraFanartHTTPStatus(res, err)
 	switch {
+	case errors.Is(err, errExtraFanartPreviewing):
+		res.Error = "an extrafanart preview is already loading; retry shortly"
 	case errors.Is(err, errExtraFanartRunning):
 		res.Error = "an extrafanart migration is already in progress"
 	case err != nil:

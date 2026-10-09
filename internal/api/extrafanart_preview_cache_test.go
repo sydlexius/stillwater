@@ -260,6 +260,30 @@ func TestExtraFanartPreviewCache_DryRunDuringLiveRunReportsRunning(t *testing.T)
 	}
 }
 
+// A POST dry run refused by another PREVIEW (not a run) answers 409 but must not
+// claim a migration is in progress; one refused by a live run still does.
+func TestExtraFanartMigration_DryRunRefusalMessageNamesTheHolder(t *testing.T) {
+	t.Parallel()
+	r, _ := testRouterForBackdrops(t)
+	hold := func(field *bool, v bool) {
+		r.extraFanartMu.Lock()
+		*field = v
+		r.extraFanartMu.Unlock()
+	}
+	hold(&r.extraFanartPreviewing, true)
+	w := postDryRun(r)
+	res := decodeRun(t, w)
+	if w.Code != http.StatusConflict || !strings.Contains(res.Error, "preview is already loading") || strings.Contains(res.Error, "migration is already in progress") {
+		t.Errorf("preview guard held: want 409 with the preview-loading message, got %d %q", w.Code, res.Error)
+	}
+	hold(&r.extraFanartPreviewing, false)
+	hold(&r.extraFanartRunning, true)
+	w = postDryRun(r)
+	if res = decodeRun(t, w); w.Code != http.StatusConflict || !strings.Contains(res.Error, "migration is already in progress") {
+		t.Errorf("live run held: want 409 with the in-progress message, got %d %q", w.Code, res.Error)
+	}
+}
+
 // The "as of" stamp is the time the preview BEGAN, not when it finished, and a
 // cache hit keeps the original stamp.
 func TestExtraFanartPreviewCache_AsOfIsTheBeginTime(t *testing.T) {

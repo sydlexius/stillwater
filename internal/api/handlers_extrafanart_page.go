@@ -126,7 +126,7 @@ func (r *Router) previewExtraFanartMigration(ctx context.Context, useCache bool)
 	if r.extraFanartPreviewing {
 		r.extraFanartMu.Unlock()
 		res.Status = "running"
-		return res, errExtraFanartRunning
+		return res, errExtraFanartPreviewing
 	}
 	r.extraFanartPreviewing = true
 	r.extraFanartMu.Unlock()
