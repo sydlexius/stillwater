@@ -1105,7 +1105,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 						<span class="text-xs text-amber-600 dark:text-amber-400">{ t(ctx, "settings.provider_keys.key_required") }</span>
 					}
 					if rlText != "" {
-						<span class="text-xs text-gray-400 dark:text-gray-500">{ rlText }</span>
+						<span class="text-xs text-gray-600 dark:text-gray-400">{ rlText }</span>
 					}
 				</div>
 			</div>
@@ -1301,7 +1301,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 									onchange={ handleServerSelection(string(pk.Name)) }
 								/>
 								<span>{ t(ctx, "settings.provider_config.official") }</span>
-								<span class="text-xs text-gray-400 dark:text-gray-500">{ tf(ctx, "settings.provider_config.official_hint", "musicbrainz.org") }</span>
+								<span class="text-xs text-gray-600 dark:text-gray-400">{ tf(ctx, "settings.provider_config.official_hint", "musicbrainz.org") }</span>
 							</label>
 							<label class="flex items-center gap-2 text-sm cursor-pointer">
 								<input
@@ -1315,7 +1315,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 									onchange={ handleServerSelection(string(pk.Name)) }
 								/>
 								<span>{ t(ctx, "settings.provider_config.beta") }</span>
-								<span class="text-xs text-gray-400 dark:text-gray-500">{ tf(ctx, "settings.provider_config.beta_hint", "beta.musicbrainz.org") }</span>
+								<span class="text-xs text-gray-600 dark:text-gray-400">{ tf(ctx, "settings.provider_config.beta_hint", "beta.musicbrainz.org") }</span>
 							</label>
 							<label class="flex items-center gap-2 text-sm cursor-pointer">
 								<input
@@ -1381,23 +1381,23 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 								/>
 							</div>
 						</div>
-						<p id={ "custom-help-" + string(pk.Name) } class="text-xs text-gray-400 dark:text-gray-500">
+						<p id={ "custom-help-" + string(pk.Name) } class="text-xs text-gray-600 dark:text-gray-400">
 							{ t(ctx, "settings.provider_config.custom_help") }
 						</p>
 					</div>
 					<div class="border-t border-gray-100 dark:border-gray-700 pt-3">
 						<div class="flex items-center gap-2">
-							<span class="text-xs font-medium text-gray-400 dark:text-gray-500">{ t(ctx, "settings.provider_config.oauth_credentials") }</span>
+							<span class="text-xs font-medium text-gray-600 dark:text-gray-400">{ t(ctx, "settings.provider_config.oauth_credentials") }</span>
 							<span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400">
 								{ t(ctx, "common.coming_soon") }
 							</span>
 						</div>
-						<p class="text-xs text-gray-400 dark:text-gray-500 mt-1 mb-2">
+						<p class="text-xs text-gray-600 dark:text-gray-400 mt-1 mb-2">
 							{ t(ctx, "settings.provider_config.oauth_note") }
 						</p>
 						<div class="flex flex-col gap-1.5 sm:flex-row sm:items-end opacity-50">
 							<div class="flex-1">
-								<label class="block text-xs font-medium text-gray-400 dark:text-gray-500 mb-0.5">{ t(ctx, "settings.provider_config.client_id") }</label>
+								<label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">{ t(ctx, "settings.provider_config.client_id") }</label>
 								<input
 									type="text"
 									disabled
@@ -1407,7 +1407,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 								/>
 							</div>
 							<div class="flex-1">
-								<label class="block text-xs font-medium text-gray-400 dark:text-gray-500 mb-0.5">{ t(ctx, "settings.provider_config.client_secret") }</label>
+								<label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">{ t(ctx, "settings.provider_config.client_secret") }</label>
 								<input
 									type="password"
 									disabled
@@ -1442,7 +1442,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 				}
 				<div class="flex flex-col gap-3">
 					<p class="text-xs font-medium text-gray-600 dark:text-gray-400">{ t(ctx, "settings.provider_config.verbosity_section") }</p>
-					<p class="text-xs text-gray-400 dark:text-gray-500">{ t(ctx, "settings.provider_config.verbosity_section.description") }</p>
+					<p class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "settings.provider_config.verbosity_section.description") }</p>
 					for _, fv := range pk.VerbosityOptions {
 						{{ currentValue := pk.VerbosityValues[fv.Field] }}
 						<div class="flex flex-col gap-1">
@@ -1732,7 +1732,7 @@ templ priorityChipRowInner(pri provider.FieldPriority, available []provider.Prov
 	<div id={ "priority-row-" + pri.Field } class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
 		<div class="flex items-center gap-3 mb-2">
 			<span class="text-sm font-medium w-24 shrink-0">{ t(ctx, "field." + pri.Field) }</span>
-			<span class="text-xs text-gray-400 dark:text-gray-500">{ t(ctx, "settings.priorities.instructions") }</span>
+			<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "settings.priorities.instructions") }</span>
 		</div>
 		<div class="flex flex-wrap gap-2" data-sortable-field={ pri.Field }>
 			for _, prov := range available {
@@ -1795,7 +1795,7 @@ templ priorityChipRowInner(pri provider.FieldPriority, available []provider.Prov
 			}
 		}
 		if len(available) == 0 {
-			<p class="text-xs text-gray-400 dark:text-gray-500 italic mt-1">{ t(ctx, "settings.priorities.no_providers") }</p>
+			<p class="text-xs text-gray-600 dark:text-gray-400 italic mt-1">{ t(ctx, "settings.priorities.no_providers") }</p>
 		}
 	</div>
 }
@@ -2383,7 +2383,7 @@ templ profileCard(p platform.Profile) {
 				if p.NFOEnabled {
 					<span class="text-green-800 dark:text-green-400">{ t(ctx, "common.enabled") }</span>
 				} else {
-					<span class="text-gray-400 dark:text-gray-500">{ t(ctx, "common.disabled") }</span>
+					<span class="text-gray-600 dark:text-gray-400">{ t(ctx, "common.disabled") }</span>
 				}
 			</div>
 			<div>{ img.ImageTermFor("thumb", p.Name) }: { joinNames(p.ImageNaming.Thumb) }</div>
@@ -2412,7 +2412,7 @@ templ ruleRow(rl rule.Rule, providerKeys []provider.ProviderKeyStatus, hasLocalL
 						href={ templ.SafeURL(ruleCatalogueURL(rl.Name)) }
 						target="_blank"
 						rel="noopener"
-						class="text-xs text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors"
+						class="text-xs text-gray-600 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 transition-colors"
 						aria-label={ t(ctx, "settings.rules.catalogue_link_aria") + ": " + rl.Name }
 						title={ t(ctx, "settings.rules.catalogue_link_title") }
 					>
@@ -2918,10 +2918,10 @@ templ SettingsUpdatesTab(data UpdatesTabData, basePath string) {
 								</span>
 							} else {
 								{ data.LatestVersion }
-								<span class="ml-2 text-gray-400 dark:text-gray-500">{ t(ctx, "settings.updates.up_to_date") }</span>
+								<span class="ml-2 text-gray-600 dark:text-gray-400">{ t(ctx, "settings.updates.up_to_date") }</span>
 							}
 						} else {
-							<span class="text-gray-400 dark:text-gray-500 italic">{ t(ctx, "settings.updates.not_checked") }</span>
+							<span class="text-gray-600 dark:text-gray-400 italic">{ t(ctx, "settings.updates.not_checked") }</span>
 						}
 					</div>
 				</div>
@@ -2929,7 +2929,7 @@ templ SettingsUpdatesTab(data UpdatesTabData, basePath string) {
 			<div
 				id="updates-last-checked-row"
 				class={
-					"text-xs text-gray-400 dark:text-gray-500",
+					"text-xs text-gray-600 dark:text-gray-400",
 					templ.KV("hidden", data.LastChecked == ""),
 				}
 			>
