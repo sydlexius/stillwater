@@ -20,10 +20,13 @@ import (
 )
 
 // handleExtraFanartMigrationPage renders the admin preview page. The plan the
-// operator sees comes from a real dry run on every load, so it cannot be a
-// stale snapshot. The dry run takes the page's own preview guard, never the run
-// singleton, so an open preview cannot make a live run answer 409. A second load
-// during a preview, or any load during a run, sees the running notice.
+// operator sees is the cached result of the last finished dry run when there is
+// one (#3434), else a real dry run; a live run drops the cache, and a POST dry run
+// refreshes it. Cached rows can be stale if files changed behind the server, which
+// is why the live run never reads them. The dry run takes the page's own preview
+// guard, never the run singleton, so an open preview cannot make a live run
+// answer 409. A second load during a preview, or any load during a run, sees the
+// running notice.
 func (r *Router) handleExtraFanartMigrationPage(w http.ResponseWriter, req *http.Request) {
 	if !r.requireForeignAdmin(w, req) {
 		return
@@ -36,7 +39,7 @@ func (r *Router) handleExtraFanartMigrationPage(w http.ResponseWriter, req *http
 			slog.String("error", err.Error()))
 	}
 	assets := r.assetsFor(req)
-	res, err := r.previewExtraFanartMigration(req.Context())
+	res, err := r.previewExtraFanartMigration(req.Context(), true)
 	view := extraFanartView(res, assets.BasePath)
 	switch {
 	case errors.Is(err, errExtraFanartRunning):
@@ -75,14 +78,52 @@ func extraFanartView(res *extraFanartRunResult, basePath string) templates.Extra
 	return v
 }
 
-// previewExtraFanartMigration runs the dry run for the page under its own guard.
-// It yields (errExtraFanartRunning, so the page shows the running notice) when a
-// run or another preview is in progress, and it only reads, so a run that starts
+// previewExtraFanartMigration produces the dry-run result for the page and for the
+// POST dry run, under the page's own guard (never the run singleton). It yields
+// (errExtraFanartRunning, so the page shows the running notice) when a run or
+// another preview is in progress, and it only reads, so a run that starts
 // mid-preview can at worst leave a stale row; it cannot be blocked or written to.
-func (r *Router) previewExtraFanartMigration(ctx context.Context) (*extraFanartRunResult, error) {
+//
+// useCache true (the page) serves the cached preview when the convention matches;
+// false (the POST dry run, i.e. Refresh) always reads the disk. Either way a
+// finished clean preview is stored for the next page load. The cache is the only
+// place this function keeps anything: the plans themselves are discarded.
+func (r *Router) previewExtraFanartMigration(ctx context.Context, useCache bool) (*extraFanartRunResult, error) {
 	res := &extraFanartRunResult{DryRun: true, Artists: []extraFanartArtistResult{}}
+	// Stamp the generation and the "as of" time BEFORE the first read of anything
+	// (the profile lookup below is already a read). If a live run invalidates the
+	// cache at any point after this, the generation no longer matches and store()
+	// refuses this result, so rows read before that run's moves can never be
+	// kept. The stamp is the START time: it must not claim to be fresher than the
+	// data, which began to be read now, not when the walk ends.
+	gen, begin := r.extraFanartPreview.begin(r.extraFanartClock)
+	res.asOf = begin
+
+	ctx, cancel := context.WithTimeout(ctx, extraFanartRunTimeout)
+	defer cancel()
+	names, kodi, err := r.extraFanartConvention(ctx)
+	if err != nil {
+		res.aborted = true
+		res.finish()
+		return res, err
+	}
+	key := extraFanartConventionKey(names, kodi)
+
 	r.extraFanartMu.Lock()
-	if r.extraFanartRunning || r.extraFanartPreviewing {
+	if r.extraFanartRunning {
+		r.extraFanartMu.Unlock()
+		res.Status = "running"
+		return res, errExtraFanartRunning
+	}
+	// A hit is served without taking the preview guard: it reads memory only. The
+	// lock order is extraFanartMu then the cache's own lock, never the reverse.
+	if useCache {
+		if hit, ok := r.extraFanartPreview.lookup(key); ok {
+			r.extraFanartMu.Unlock()
+			return hit, nil
+		}
+	}
+	if r.extraFanartPreviewing {
 		r.extraFanartMu.Unlock()
 		res.Status = "running"
 		return res, errExtraFanartRunning
@@ -94,5 +135,13 @@ func (r *Router) previewExtraFanartMigration(ctx context.Context) (*extraFanartR
 		r.extraFanartPreviewing = false
 		r.extraFanartMu.Unlock()
 	}()
-	return r.planExtraFanartMigration(ctx, true, res)
+
+	res, err = r.walkExtraFanartArtists(ctx, names, kodi, true, res)
+	if err == nil {
+		if why := r.extraFanartPreview.store(gen, key, begin, res); why != "" {
+			r.logger.Info("extrafanart migration: preview not cached",
+				slog.String("reason", why), slog.Int("rows", extraFanartRowCount(res)))
+		}
+	}
+	return res, err
 }

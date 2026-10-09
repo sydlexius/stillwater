@@ -138,6 +138,10 @@ type extraFanartRunResult struct {
 	// aborted is set when the run stopped early (a lookup failed or the context
 	// ended) rather than finishing. Not part of the body; it only steers Status.
 	aborted bool
+	// asOf is when a preview BEGAN reading the disk (not when it finished), or for a
+	// cache hit when the cached preview began. Not part of the body; the page shows
+	// it in a later change (#3434).
+	asOf time.Time
 }
 
 // finish derives Status. A preview cannot have changed anything, so it is never
@@ -203,6 +207,21 @@ func (r *Router) runExtraFanartMigration(ctx context.Context, dryRun bool) (*ext
 		r.extraFanartRunning = false
 		r.extraFanartMu.Unlock()
 	}()
+	if !dryRun {
+		// A live run changes the disk, so any cached preview describes files that
+		// are about to move. Invalidate twice, and never READ the cache here (the
+		// run re-plans from disk; see extrafanart_preview_cache.go):
+		//   - now, so a preview already mid-walk (it stamped its generation before
+		//     this bump) is refused when it finishes and cannot resurrect pre-move rows;
+		//   - on the way out, whatever the outcome (success, partial, aborted), as
+		//     defense in depth: no snapshot stamped while the run was moving files
+		//     survives it, and the next page load reads the disk. (The start bump
+		//     already covers every interleaving we know of, because a preview is
+		//     refused while a run holds the slot.) Registered AFTER the slot release
+		//     above, so it runs BEFORE the slot is released (defers run last-in first).
+		r.extraFanartPreview.Invalidate()
+		defer r.extraFanartPreview.Invalidate()
+	}
 	return r.planExtraFanartMigration(ctx, dryRun, res)
 }
 
@@ -223,7 +242,13 @@ func (r *Router) planExtraFanartMigration(ctx context.Context, dryRun bool, res 
 		res.finish()
 		return res, err
 	}
+	return r.walkExtraFanartArtists(ctx, names, kodi, dryRun, res)
+}
 
+// walkExtraFanartArtists plans (and, when dryRun is false, applies) every artist
+// that has a path, against an already-resolved convention. The caller owns the
+// run's deadline.
+func (r *Router) walkExtraFanartArtists(ctx context.Context, names []string, kodi, dryRun bool, res *extraFanartRunResult) (*extraFanartRunResult, error) {
 	const pageSize = 200
 	for page := 1; ; page++ {
 		artists, _, lerr := r.artistService.List(ctx, artist.ListParams{Page: page, PageSize: pageSize})
@@ -595,7 +620,16 @@ func (r *Router) handleExtraFanartMigrationRun(w http.ResponseWriter, req *http.
 		r.logger.Warn("extrafanart migration: could not extend the write deadline; a long run may lose its response",
 			slog.Bool("dry_run", dryRun), slog.String("error", err.Error()))
 	}
-	res, err := r.runExtraFanartMigration(runCtx, dryRun)
+	var res *extraFanartRunResult
+	var err error
+	if dryRun {
+		// A dry run takes the preview guard, NOT the run singleton, so it can never
+		// make a live run answer 409 (#3434). It always reads the disk and refreshes
+		// the cached preview (useCache false): the API stays authoritative.
+		res, err = r.previewExtraFanartMigration(runCtx, false)
+	} else {
+		res, err = r.runExtraFanartMigration(runCtx, false)
+	}
 	status := extraFanartHTTPStatus(res, err)
 	switch {
 	case errors.Is(err, errExtraFanartRunning):
