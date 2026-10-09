@@ -4438,6 +4438,108 @@ paths:
               schema:
                 type: string
 
+  /artists/{id}/backdrop-repairs:
+    get:
+      tags: [Reports]
+      summary: List an artist's quarantined backdrop back-outs
+      description: >-
+        Lists the cross-artist backdrop back-outs (see
+        /reports/phash-mismatch/remediate) that still have a quarantine on disk
+        for one artist, newest first, so the op_id needed by
+        /reports/phash-mismatch/restore can be found after the remediate response
+        is gone. Read-only: it reads the quarantine manifests and changes
+        nothing. A run whose manifest is unreadable is left out of the list
+        rather than failing it. An artist that was never backed out gets an empty
+        list. Admin-only.
+      operationId: listPHashRepairRuns
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The artist whose back-outs to list.
+      responses:
+        "200":
+          description: The artist's back-out runs, newest first (possibly empty).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runs]
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        op_id:
+                          type: string
+                          description: The id to pass to the restore endpoint.
+                        created_at:
+                          type: string
+                          format: date-time
+                        entries:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              image_type:
+                                type: string
+                              file_name:
+                                type: string
+                                description: Original file name of the removed backdrop.
+                              stored_name:
+                                type: string
+                                description: File name of the quarantined copy.
+                              slot_index:
+                                type: integer
+                                description: >-
+                                  Backdrop position at removal time. Provenance
+                                  only; a restore appends and never uses it.
+                              phash:
+                                type: string
+                                description: Perceptual hash (hex); omitted when unknown.
+                              matched_artist_id:
+                                type: string
+                              matched_artist_name:
+                                type: string
+                              similarity:
+                                type: number
+                              quarantined_at:
+                                type: string
+                                format: date-time
+        "401":
+          description: >-
+            Authentication required. Emitted by the auth middleware via
+            http.Error, so the body is plain text.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "403":
+          description: >-
+            Administrator role required. Emitted by the in-handler admin gate
+            via http.Error, so the body is plain text.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "404":
+          description: No artist with that id (plain text via http.Error).
+          content:
+            text/plain:
+              schema:
+                type: string
+        "500":
+          description: >-
+            The pipeline does not implement the listing capability, or the
+            quarantine directory could not be read (plain text via http.Error).
+          content:
+            text/plain:
+              schema:
+                type: string
+
   /reports/extrafanart-migration:
     post:
       tags: [Reports]
