@@ -25,15 +25,23 @@ import (
 // AnyIndex makes an injected fault match every index.
 const AnyIndex = -1
 
+// Index values that are not a backdrop slot.
+const (
+	DetailIndex    = -1 // the item-detail GET (count read)
+	UnmatchedIndex = -2 // a path the fake does not model (see ServeHTTP)
+)
+
 // Request is one entry of the request log: what Stillwater asked the peer
-// to do and what the peer answered. Operator actions (OperatorAdd,
+// to do and what the peer answered. EVERY request is logged, matched or not,
+// so "no request was made" is provable. Operator actions (OperatorAdd,
 // OperatorDelete) are NOT logged here, because they model a person acting in
 // the platform UI, not a request from Stillwater.
 type Request struct {
 	Method  string // GET, POST or DELETE
-	Index   int    // backdrop slot, or -1 for the item-detail GET (count read)
+	Index   int    // backdrop slot, DetailIndex, or UnmatchedIndex
 	Status  int    // HTTP status the peer answered
 	Mutated bool   // true only when the request changed the peer's state
+	Path    string // the URL path as received
 }
 
 // fault makes the next `remaining` matching calls fail with HTTP 500 and
@@ -50,14 +58,18 @@ type fault struct {
 // push shapes run their production code against it.
 //
 // Write semantics are the measured ones:
-//   - Emby: POST to index i < len REPLACES slot i; any other index appends
-//     (#3125, #3145 measurements on 4.9.5.0).
+//   - Emby: POST to index i < len REPLACES slot i; i == len appends with a
+//     clean 204; i > len appends but answers HTTP 500 (#3125, #3126, #3145
+//     measurements on 4.9.5.0).
 //   - Jellyfin: every POST appends, whatever the index (#3135).
 //   - Both: DELETE at i removes slot i and renumbers the rest down.
 //
 // Which of the two a Peer behaves as comes from
 // connection.SupportsIndexedBackdropReplace, the same predicate production
 // uses, so the fake and the publisher cannot disagree about it.
+//
+// The fake ignores the item id, user id and credential in the URL (it models
+// ONE item), and the detail GET that reads the count can never be faulted.
 //
 // All methods are safe for concurrent use.
 type Peer struct {
@@ -113,17 +125,22 @@ func (p *Peer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"Name": "peer item", "BackdropImageTags": tags})
-		p.log = append(p.log, Request{Method: http.MethodGet, Index: -1, Status: http.StatusOK})
+		p.log = append(p.log, Request{Method: http.MethodGet, Index: DetailIndex, Status: http.StatusOK, Path: r.URL.Path})
 		return
 	}
 	m := peerBackdropPath.FindStringSubmatch(r.URL.Path)
 	if m == nil {
+		// Logged but NOT modeled: an unindexed POST/DELETE .../Backdrop (which
+		// production sends, publisher.go ~1339) gets a 404 and changes nothing.
+		// The repo records the real unindexed POST as APPENDING
+		// (publisher.go ~1175-1177); the fake does not model that yet.
 		http.NotFound(w, r)
+		p.log = append(p.log, Request{Method: r.Method, Index: UnmatchedIndex, Status: http.StatusNotFound, Path: r.URL.Path})
 		return
 	}
 	idx, _ := strconv.Atoi(m[1])
 	status, mutated := p.handleBackdrop(w, r, idx)
-	p.log = append(p.log, Request{Method: r.Method, Index: idx, Status: status, Mutated: mutated})
+	p.log = append(p.log, Request{Method: r.Method, Index: idx, Status: status, Mutated: mutated, Path: r.URL.Path})
 }
 
 // handleBackdrop serves one by-index request and returns the status it wrote
@@ -156,10 +173,17 @@ func (p *Peer) handleBackdrop(w http.ResponseWriter, r *http.Request, idx int) (
 			return http.StatusBadRequest, false
 		}
 		p.writes++
+		past := !p.appendAll && idx > len(p.data)
 		if !p.appendAll && idx < len(p.data) {
 			p.data[idx] = b
 		} else {
 			p.data = append(p.data, b)
+		}
+		if past {
+			// Measured Emby quirk (#3126): the image IS appended, yet the
+			// answer is a 500, so an error is not proof the write failed.
+			http.Error(w, "Object reference not set to an instance of an object", http.StatusInternalServerError)
+			return http.StatusInternalServerError, true
 		}
 		w.WriteHeader(http.StatusNoContent)
 		return http.StatusNoContent, true
@@ -208,11 +232,12 @@ func (p *Peer) InjectFault(method string, index, times int) {
 }
 
 // SetStaleCount makes the reported backdrop count trail the real list by lag
-// slots, the way a real peer's tag list briefly does. 0 turns it off.
+// slots, the way a real peer's tag list briefly does. 0 (or a negative lag,
+// clamped to 0) turns it off.
 func (p *Peer) SetStaleCount(lag int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.staleLag = lag
+	p.staleLag = max(lag, 0)
 }
 
 // OperatorAdd appends an image the way an operator uploading in the platform

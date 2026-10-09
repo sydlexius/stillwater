@@ -61,14 +61,21 @@ func TestStaleTail_EmbyLastLocalFileRemoved_PlatformKeepsIt(t *testing.T) {
 		t.Fatalf("precondition: fanart5.jpg still exists (err %v)", err)
 	}
 
+	postsBefore := peer.RequestCount("POST")
 	for i := 0; i < 3; i++ {
 		p.SyncAllFanartToPlatforms(ctx, a)
 	}
 
+	// The syncs really reached the peer: one upload per remaining local file,
+	// per sync. (Without this the pin would pass with zero syncs.)
+	if got, want := peer.RequestCount("POST")-postsBefore, 3*(len(local)-1); got != want {
+		t.Fatalf("precondition: the 3 syncs issued %d uploads, want %d", got, want)
+	}
 	// CURRENT BEHAVIOR (the gap): the removed image is still the last slot,
-	// and nothing issued a DELETE.
+	// and no DELETE was even ATTEMPTED (the log counts failed and unindexed
+	// ones too, unlike DeleteCount).
 	holdsExactly(t, "after three syncs (current gap: the stale tail survives)", peer, local)
-	if n := peer.DeleteCount(); n != 0 {
+	if n := peer.RequestCount("DELETE"); n != 0 {
 		t.Errorf("the Emby full-set push issued %d DELETE requests, want 0 today", n)
 	}
 }
@@ -90,13 +97,31 @@ func TestStaleTail_ZeroLocalFiles_PlatformSetKept(t *testing.T) {
 			}
 			holdsExactly(t, "before the sync", peer, seed)
 
+			syncs := 0
 			for i := 0; i < 3; i++ {
 				p.SyncAllFanartToPlatforms(ctx, a)
+				syncs++
+			}
+			if syncs != 3 {
+				t.Fatalf("precondition: ran %d syncs, want 3", syncs)
 			}
 
 			holdsExactly(t, "after three syncs", peer, seed)
-			if n := peer.RequestCount("DELETE") + peer.RequestCount("POST"); n != 0 {
-				t.Errorf("a zero-local-file sync issued %d writes, want 0", n)
+			// No request of ANY kind reached the peer (the log covers every
+			// request, matched or not).
+			if reqs := peer.Requests(); len(reqs) != 0 {
+				t.Errorf("a zero-local-file sync made %d requests, want 0: %+v", len(reqs), reqs)
+			}
+
+			// POSITIVE CONTROL: with one local file the same harness DOES
+			// reach the peer, so the silence above is the early return and
+			// not a wrongly wired harness.
+			if err := os.WriteFile(filepath.Join(a.Path, "fanart.jpg"), bandJPEG(t, 64), 0o600); err != nil {
+				t.Fatalf("writing the control file: %v", err)
+			}
+			p.SyncAllFanartToPlatforms(ctx, a)
+			if len(peer.Requests()) == 0 {
+				t.Fatal("control: a sync with one local file made no request; the harness is not wired to the peer")
 			}
 		})
 	}

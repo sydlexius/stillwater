@@ -24,17 +24,18 @@ type Handle interface {
 	Upload(index int, data []byte) error
 	Download(index int) ([]byte, error)
 	Delete(index int) error
-	// Len is the peer's reported backdrop count.
+	// Len is the peer's reported backdrop count. A live implementation must
+	// return a SETTLED count: check() reads it right after each write, and a
+	// real Emby's count lags a write briefly (fanart_indexed_upload_verify.go).
 	Len() (int, error)
 }
 
 // backdropClient is the part of the real emby and jellyfin clients the
 // adapter uses; both satisfy it.
 type backdropClient interface {
-	UploadImageAtIndex(ctx context.Context, platformArtistID, imageType string, index int, data []byte, contentType string) error
-	DeleteImageAtIndex(ctx context.Context, platformArtistID, imageType string, index int) error
-	GetArtistBackdrop(ctx context.Context, artistID string, index int) ([]byte, string, error)
-	GetArtistDetail(ctx context.Context, platformArtistID string) (*connection.ArtistPlatformState, error)
+	connection.IndexedImageUploader
+	connection.IndexedImageDeleter
+	connection.BackdropReader
 }
 
 // clientHandle adapts a REAL platform client (pointed at the fake or, later,
@@ -101,6 +102,7 @@ func AssertPeerSemantics(t testing.TB, h Handle, imgs [][]byte) {
 	if len(imgs) < 4 {
 		t.Fatalf("AssertPeerSemantics needs >= 4 distinct images, got %d", len(imgs))
 	}
+	requireDistinct(t, imgs)
 	if n, err := h.Len(); err != nil || n != 0 {
 		t.Fatalf("precondition: peer must start with 0 backdrops, got %d (err %v)", n, err)
 	}
@@ -143,6 +145,10 @@ func AssertPeerSemantics(t testing.TB, h Handle, imgs [][]byte) {
 	// An upload below the length: replace (Emby) or append (Jellyfin).
 	upload("upload below length", 1, imgs[3])
 
+	// Upload at the LAST slot (len-1), the #3175 tail boundary: Emby replaces
+	// it, Jellyfin appends.
+	upload("upload at last slot", len(want)-1, imgs[0])
+
 	// Delete the first slot: every higher slot shifts down by one.
 	if err := h.Delete(0); err != nil {
 		t.Fatalf("delete slot 0: %v", err)
@@ -165,4 +171,16 @@ func AssertPeerSemantics(t testing.TB, h Handle, imgs [][]byte) {
 		want = want[:len(want)-1]
 	}
 	check("emptied")
+}
+
+// requireDistinct fails the test on any byte-identical pair in imgs.
+func requireDistinct(t testing.TB, imgs [][]byte) {
+	t.Helper()
+	for i := range imgs {
+		for j := i + 1; j < len(imgs); j++ {
+			if bytes.Equal(imgs[i], imgs[j]) {
+				t.Fatalf("images %d and %d are byte-identical; the contract needs distinct images", i, j)
+			}
+		}
+	}
 }

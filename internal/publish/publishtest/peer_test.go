@@ -2,8 +2,10 @@ package publishtest
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -146,8 +148,12 @@ func TestPeer_StaleCountLagsRealList(t *testing.T) {
 		t.Fatalf("by-index read of the lagging slot: %v", err)
 	}
 	p.SetStaleCount(5) // lag larger than the list clamps at 0, never negative
-	if n, _ := h.Len(); n != 0 {
-		t.Fatalf("over-large lag reported %d, want 0", n)
+	if n, err := h.Len(); err != nil || n != 0 {
+		t.Fatalf("over-large lag reported %d (err %v), want 0", n, err)
+	}
+	p.SetStaleCount(-2) // a negative lag must not over-report
+	if n, err := h.Len(); err != nil || n != 3 {
+		t.Fatalf("negative lag reported %d (err %v), want 3", n, err)
 	}
 	p.SetStaleCount(0)
 	if n, _ := h.Len(); n != 3 {
@@ -184,10 +190,10 @@ func TestPeer_RequestLog(t *testing.T) {
 	_, _ = h.Download(7) // missing slot: 404, no mutation
 	_ = h.Delete(0)
 	want := []Request{
-		{http.MethodGet, -1, http.StatusOK, false},
-		{http.MethodPost, 1, http.StatusNoContent, true},
-		{http.MethodGet, 7, http.StatusNotFound, false},
-		{http.MethodDelete, 0, http.StatusNoContent, true},
+		{http.MethodGet, DetailIndex, http.StatusOK, false, "/Users/u1/Items/item1"},
+		{http.MethodPost, 1, http.StatusNoContent, true, "/Items/item1/Images/Backdrop/1"},
+		{http.MethodGet, 7, http.StatusNotFound, false, "/Items/item1/Images/Backdrop/7"},
+		{http.MethodDelete, 0, http.StatusNoContent, true, "/Items/item1/Images/Backdrop/0"},
 	}
 	got := p.Requests()
 	if len(got) != len(want) {
@@ -209,10 +215,142 @@ func TestPeer_ConcurrentUse(t *testing.T) {
 	p := NewPeer(connection.TypeEmby, nil)
 	h := newHandle(t, connection.TypeEmby, p)
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(2)
-		go func() { defer wg.Done(); _ = h.Upload(0, img(1)); _, _ = h.Len() }()
-		go func() { defer wg.Done(); p.OperatorAdd(img(2)); _ = p.Requests() }()
+	// Three kinds of goroutine, so every locked method has a concurrent
+	// counterpart: HTTP writers, direct mutators, and readers.
+	for i := 0; i < 4; i++ {
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 10; j++ {
+				_ = h.Upload(0, img(1))
+				_, _ = h.Len()
+				_ = h.Delete(0)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 400; j++ {
+				p.OperatorAdd(img(2))
+				p.OperatorDelete(0)
+				p.SetStaleCount(j % 2)
+				p.InjectFault(http.MethodGet, AnyIndex, 0)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 400; j++ {
+				_ = p.Requests()
+				_, _ = p.State()
+				_ = p.DeleteCount()
+			}
+		}()
 	}
 	wg.Wait()
+}
+
+// TestPeer_EmbyUploadPastLengthAppendsAnd500s pins the measured Emby 4.9.5.0
+// quirk (#3126): an upload at idx > len appends AND answers 500; idx == len is
+// a clean 204; Jellyfin appends cleanly whatever the index.
+func TestPeer_EmbyUploadPastLengthAppendsAnd500s(t *testing.T) {
+	for _, tc := range []struct {
+		typ string
+		idx int
+		err bool
+	}{
+		{connection.TypeEmby, 1, false},
+		{connection.TypeEmby, 3, true},
+		{connection.TypeJellyfin, 3, false},
+	} {
+		p := NewPeer(tc.typ, [][]byte{img(1)})
+		err := newHandle(t, tc.typ, p).Upload(tc.idx, img(9))
+		if (err != nil) != tc.err {
+			t.Errorf("%s idx %d: err = %v, want error=%v", tc.typ, tc.idx, err, tc.err)
+		}
+		wantState(t, p, img(1), img(9))
+		if r := p.Requests(); len(r) != 1 || !r[0].Mutated {
+			t.Errorf("%s idx %d: log = %+v, want one Mutated request", tc.typ, tc.idx, r)
+		}
+	}
+}
+
+// TestPeer_UnmatchedRequestsAreLogged: a path the fake does not model (the
+// UNINDEXED backdrop POST/DELETE production sends) is logged, answers 404 and
+// changes nothing.
+func TestPeer_UnmatchedRequestsAreLogged(t *testing.T) {
+	p := NewPeer(connection.TypeEmby, [][]byte{img(1)})
+	srv := httptest.NewServer(p)
+	defer srv.Close()
+	for _, m := range []string{http.MethodPost, http.MethodDelete} {
+		req, _ := http.NewRequest(m, srv.URL+"/Items/item1/Images/Backdrop", nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+	}
+	wantState(t, p, img(1))
+	if p.RequestCount(http.MethodPost) != 1 || p.RequestCount(http.MethodDelete) != 1 {
+		t.Fatalf("unindexed requests not logged: %+v", p.Requests())
+	}
+	if r := p.Requests()[0]; r.Index != UnmatchedIndex || r.Status != http.StatusNotFound || r.Mutated {
+		t.Errorf("unmatched entry = %+v", r)
+	}
+}
+
+// TestPeer_EdgeSemantics: operator deletes are not counted as deletes, an
+// out-of-range DELETE is a logged no-op 404, and a fault is scoped to its method.
+func TestPeer_EdgeSemantics(t *testing.T) {
+	p := NewPeer(connection.TypeEmby, [][]byte{img(1), img(2)})
+	h := newHandle(t, connection.TypeEmby, p)
+	p.OperatorDelete(0)
+	if p.DeleteCount() != 0 {
+		t.Errorf("OperatorDelete counted as %d deletes, want 0", p.DeleteCount())
+	}
+	if err := h.Delete(5); err == nil {
+		t.Error("out-of-range DELETE succeeded")
+	}
+	if r := p.Requests(); len(r) != 1 || r[0].Status != http.StatusNotFound || r[0].Mutated {
+		t.Errorf("out-of-range DELETE log = %+v, want one 404, Mutated=false", r)
+	}
+	wantState(t, p, img(2))
+	p.InjectFault(http.MethodPost, 0, 1)
+	if err := h.Delete(0); err != nil {
+		t.Errorf("a POST fault fired on a DELETE at the same index: %v", err)
+	}
+}
+
+// TestAssertPeerSemantics_Guards: the contract refuses a non-empty peer (it
+// protects a live item's artwork) and non-distinct images. A stub TB records
+// Fatalf and aborts the contract with a panic the test recovers.
+func TestAssertPeerSemantics_Guards(t *testing.T) {
+	run := func(h Handle, imgs [][]byte) (msg string) {
+		stub := &fatalStub{}
+		defer func() {
+			if r := recover(); r != nil {
+				msg = stub.msg
+			}
+		}()
+		AssertPeerSemantics(stub, h, imgs)
+		return ""
+	}
+	if m := run(newHandle(t, connection.TypeEmby, NewPeer(connection.TypeEmby, [][]byte{img(1)})), images()); !strings.Contains(m, "must start with 0") {
+		t.Errorf("non-empty peer: got %q, want the precondition refusal", m)
+	}
+	dup := [][]byte{img(1), img(2), img(1), img(4)}
+	if m := run(newHandle(t, connection.TypeEmby, NewPeer(connection.TypeEmby, nil)), dup); !strings.Contains(m, "byte-identical") {
+		t.Errorf("duplicate images: got %q, want the distinctness refusal", m)
+	}
+}
+
+// fatalStub is a testing.TB whose Fatalf records the message and panics, the
+// way a real Fatalf stops the goroutine.
+type fatalStub struct {
+	testing.TB
+	msg string
+}
+
+func (s *fatalStub) Helper() {}
+func (s *fatalStub) Fatalf(f string, a ...any) {
+	s.msg = fmt.Sprintf(f, a...)
+	panic("fatal")
 }
