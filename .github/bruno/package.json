@@ -5,7 +5,7 @@
   "description": "Pinned Bruno CLI for the bruno-ci GitHub Actions workflow. Not consumed by the application; exists so Scorecard PinnedDependencies recognises npm ci + package-lock.json as a pinned npm install.",
   "license": "GPL-3.0",
   "dependencies": {
-    "@usebruno/cli": "4.2.0"
+    "@usebruno/cli": "4.2.1"
   },
   "overrides": {
     "uuid": "^14.0.0",
