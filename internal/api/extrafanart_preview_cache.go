@@ -15,12 +15,14 @@
 //   - the live run never reads the cache. It re-plans from disk on its own. The
 //     only thing it does with the cache is Invalidate it (see
 //     TestExtraFanartPreviewCacheIsOnlyTouchedByThePreviewPath, an AST test that
-//     fails if any other function starts reading it).
+//     fails if any function other than the preview path references the router's
+//     cache field, in this file or elsewhere; it checks references to the field,
+//     not calls made through a separate variable).
 //
 // Files changed on disk behind the server's back (size, mtime, renames) are NOT
 // detected: a cached preview can be stale. The operator's remedy is a refreshing
 // POST dry run, which always reads the disk (and the page will say "as of" in a
-// later change).
+// later change). A snapshot older than extraFanartPreviewMaxAge is not served.
 package api
 
 import (
@@ -28,6 +30,12 @@ import (
 	"sync"
 	"time"
 )
+
+// extraFanartPreviewMaxAge bounds how old a served snapshot may be. The artist
+// set and the artists' paths are in neither the cache key nor any invalidation,
+// so age is the only bound on staleness until a Refresh control exists. Same
+// order as extraFanartRunTimeout.
+const extraFanartPreviewMaxAge = 10 * time.Minute
 
 // extraFanartPreviewMaxRows bounds what is cached. Past this the preview is still
 // shown, just not kept, so a pathological library cannot pin unbounded memory.
@@ -83,12 +91,13 @@ func (c *extraFanartPreviewCache) begin(now func() time.Time) (gen uint64, at ti
 	return c.gen, now()
 }
 
-// lookup returns a private copy of the snapshot when it matches key. A copy, so
-// a reader that edits what it got cannot change what other readers will see.
-func (c *extraFanartPreviewCache) lookup(key string) (*extraFanartRunResult, bool) {
+// lookup returns a private copy of the snapshot when it matches key and is no
+// older than extraFanartPreviewMaxAge at now. A copy, so a reader that edits what
+// it got cannot change what other readers will see.
+func (c *extraFanartPreviewCache) lookup(key string, now time.Time) (*extraFanartRunResult, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.snap == nil || c.snap.key != key {
+	if c.snap == nil || c.snap.key != key || now.Sub(c.snap.asOf) > extraFanartPreviewMaxAge {
 		return nil, false
 	}
 	res := copyExtraFanartResult(&c.snap.res)
@@ -107,19 +116,27 @@ func (c *extraFanartPreviewCache) lookup(key string) (*extraFanartRunResult, boo
 //
 // The snapshot is a deep copy, so the caller's result (which it keeps using and
 // may modify) shares no slice with what other readers will get.
+//
+// A refused CLEAN refresh (skipped folders, over the bound) also DROPS the older
+// snapshot: the fresh read is newer truth, and keeping the old one would show the
+// operator a plan the disk no longer supports. An aborted refresh keeps the old
+// snapshot: a failed read says nothing new.
 func (c *extraFanartPreviewCache) store(gen uint64, key string, asOf time.Time, res *extraFanartRunResult) string {
-	switch {
-	case res.aborted:
+	if res.aborted {
 		return notCachedAborted
-	case res.ArtistsSkippedMissing > 0:
-		return notCachedSkippedMissed
-	case extraFanartRowCount(res) > extraFanartPreviewMaxRows:
-		return notCachedTooLarge
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.gen != gen {
 		return notCachedSuperseded
+	}
+	switch {
+	case res.ArtistsSkippedMissing > 0:
+		c.snap = nil
+		return notCachedSkippedMissed
+	case extraFanartRowCount(res) > extraFanartPreviewMaxRows:
+		c.snap = nil
+		return notCachedTooLarge
 	}
 	snap := &extraFanartPreviewSnapshot{key: key, asOf: asOf, res: *copyExtraFanartResult(res)}
 	c.snap = snap

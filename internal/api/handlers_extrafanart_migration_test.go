@@ -633,7 +633,7 @@ func TestExtraFanartMigration_DryRunWallClock(t *testing.T) {
 		seedExtraFanartArtist(t, svc, fmt.Sprintf("Artist%03d", i), perArtist)
 	}
 	start := time.Now()
-	res, err := r.runExtraFanartMigration(context.Background(), true)
+	res, err := r.previewExtraFanartMigration(context.Background(), false)
 	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatalf("dry run: %v", err)

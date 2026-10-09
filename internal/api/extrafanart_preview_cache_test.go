@@ -2,8 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/rand"
-	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -13,7 +11,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -318,6 +315,9 @@ func TestExtraFanartPreviewCache_StoreDecision(t *testing.T) {
 		{"invalidation at the same instant as begin drops", func(c *extraFanartPreviewCache, _ *extraFanartRunResult) { c.Invalidate() }, notCachedSuperseded},
 		{"aborted run", func(_ *extraFanartPreviewCache, res *extraFanartRunResult) { res.aborted = true }, notCachedAborted},
 		{"skipped missing folders", func(_ *extraFanartPreviewCache, res *extraFanartRunResult) { res.ArtistsSkippedMissing = 1 }, notCachedSkippedMissed},
+		{"exactly at the row bound stores", func(_ *extraFanartPreviewCache, res *extraFanartRunResult) {
+			res.Artists[0].Files = make([]extraFanartFileResult, extraFanartPreviewMaxRows-1) // 1 artist row + the files
+		}, ""},
 		{"over the row bound", func(_ *extraFanartPreviewCache, res *extraFanartRunResult) {
 			res.Artists[0].Files = make([]extraFanartFileResult, extraFanartPreviewMaxRows)
 		}, notCachedTooLarge},
@@ -332,7 +332,7 @@ func TestExtraFanartPreviewCache_StoreDecision(t *testing.T) {
 			if got := c.store(gen, "k", begin, res); got != tc.want {
 				t.Fatalf("store = %q, want %q", got, tc.want)
 			}
-			hit, ok := c.lookup("k")
+			hit, ok := c.lookup("k", at)
 			if ok != (tc.want == "") {
 				t.Fatalf("lookup hit = %v, want %v", ok, tc.want == "")
 			}
@@ -351,13 +351,13 @@ func TestExtraFanartPreviewCache_StoreDecision(t *testing.T) {
 		t.Fatal(why)
 	}
 	res.Artists[0].Files[0].Outcome = "edited-by-producer"
-	first, _ := c.lookup("k")
+	first, _ := c.lookup("k", at)
 	first.Artists[0].Files[0].Outcome = "edited-by-reader"
-	second, _ := c.lookup("k")
+	second, _ := c.lookup("k", at)
 	if got := second.Artists[0].Files[0].Outcome; got != "planned" {
 		t.Errorf("the snapshot shares a slice with a caller: next reader sees %q", got)
 	}
-	if _, ok := c.lookup("other"); ok {
+	if _, ok := c.lookup("other", at); ok {
 		t.Error("a different convention key must miss")
 	}
 }
@@ -450,7 +450,7 @@ func TestExtraFanartPreviewCacheIsOnlyTouchedByThePreviewPath(t *testing.T) {
 				ast.Inspect(decl, func(n ast.Node) bool {
 					switch x := n.(type) {
 					case *ast.SelectorExpr:
-						if x.Sel.Name != "extraFanartPreview" || owners[base] {
+						if x.Sel.Name != "extraFanartPreview" {
 							return true
 						}
 						owner := "<package level>"
@@ -479,57 +479,109 @@ func TestExtraFanartPreviewCacheIsOnlyTouchedByThePreviewPath(t *testing.T) {
 	}
 }
 
-// Timing, as #3434 asks. Skipped unless SW_PREVIEW_TIMING is set, so CI and the gate
-// do not pay for it. Generates real files of realistic size on LOCAL temp storage,
-// then times a cold preview, a warm cache hit and a forced refresh. Local SSD with a
-// warm OS page cache understates a network share: treat the numbers as a floor.
-//
-//	SW_PREVIEW_TIMING=1 [SW_PREVIEW_ARTISTS=120] [SW_PREVIEW_FILES=5] [SW_PREVIEW_KB=1024] \
-//	  go test -count=1 -run PreviewTiming -v ./internal/api/
-func TestExtraFanartPreviewCache_Timing(t *testing.T) {
-	if os.Getenv("SW_PREVIEW_TIMING") == "" {
-		t.Skip("set SW_PREVIEW_TIMING=1 to run the preview timing measurement")
-	}
-	envInt := func(name string, def int) int {
-		if v, err := strconv.Atoi(os.Getenv(name)); err == nil && v > 0 {
-			return v
+// The key must change with the Kodi flag and with ANY candidate name, not only the first.
+func TestExtraFanartConventionKey(t *testing.T) {
+	t.Parallel()
+	base := extraFanartConventionKey([]string{"fanart.jpg", "backdrop.jpg"}, false)
+	for name, other := range map[string]string{
+		"kodi flag":           extraFanartConventionKey([]string{"fanart.jpg", "backdrop.jpg"}, true),
+		"second name differs": extraFanartConventionKey([]string{"fanart.jpg", "art.jpg"}, false),
+		"fewer names":         extraFanartConventionKey([]string{"fanart.jpg"}, false),
+	} {
+		if other == base {
+			t.Errorf("%s must change the key", name)
 		}
-		return def
 	}
-	artists, files, kb := envInt("SW_PREVIEW_ARTISTS", 120), envInt("SW_PREVIEW_FILES", 5), envInt("SW_PREVIEW_KB", 1024)
+}
+
+// A snapshot is served up to the age bound and not past it. Fake clock, no sleep.
+func TestExtraFanartPreviewCache_AgeBound(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	var c extraFanartPreviewCache
+	gen, begin := c.begin(func() time.Time { return at })
+	res := &extraFanartRunResult{DryRun: true, Artists: []extraFanartArtistResult{}}
+	if why := c.store(gen, "k", begin, res); why != "" {
+		t.Fatal(why)
+	}
+	if _, ok := c.lookup("k", at.Add(extraFanartPreviewMaxAge)); !ok {
+		t.Error("a snapshot exactly at the age bound must still be served")
+	}
+	if _, ok := c.lookup("k", at.Add(extraFanartPreviewMaxAge+time.Nanosecond)); ok {
+		t.Error("a snapshot past the age bound must miss")
+	}
+}
+
+// Past the age bound the page re-reads the disk and shows an artist added since.
+func TestExtraFanartPreviewCache_ExpiredSnapshotShowsNewArtist(t *testing.T) {
+	t.Parallel()
 	r, svc := testRouterForBackdrops(t)
-	for i := 0; i < artists; i++ {
-		a := seedExtraFanartArtist(t, svc, fmt.Sprintf("Artist%03d", i), 0)
-		for j := 0; j < files; j++ {
-			f, err := os.Create(filepath.Join(a.dir, "extrafanart", fmt.Sprintf("img%d.jpg", j)))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := io.CopyN(f, rand.Reader, int64(kb)*1024); err != nil { // random: every file distinct
-				t.Fatal(err)
-			}
-			if err := f.Close(); err != nil {
-				t.Fatal(err)
-			}
-		}
+	clk := &fakeClock{t: time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)}
+	r.extraFanartNow = clk.now
+	seedExtraFanartArtist(t, svc, "Alpha", 1)
+	getExtraFanartPage(t, r, adminContext())
+	seedExtraFanartArtist(t, svc, "Zulu", 2)
+	clk.set(clk.now().Add(extraFanartPreviewMaxAge))
+	if strings.Contains(getExtraFanartPage(t, r, adminContext()).Body.String(), "Zulu") {
+		t.Fatal("precondition: inside the bound the page should still serve the older preview")
 	}
-	timed := func(useCache bool) (time.Duration, *extraFanartRunResult) {
-		start := time.Now()
-		res, err := r.previewExtraFanartMigration(context.Background(), useCache)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return time.Since(start), res
+	clk.set(clk.now().Add(time.Second))
+	if !strings.Contains(getExtraFanartPage(t, r, adminContext()).Body.String(), "Zulu") {
+		t.Error("past the age bound the page must re-read the disk and show the added artist")
 	}
-	cold, res := timed(true)
-	if res.Planned != artists*files {
-		t.Fatalf("precondition: want %d planned files, got %d", artists*files, res.Planned)
+}
+
+// A refused refresh (skipped folders) must not leave the older snapshot as the
+// page's answer.
+func TestExtraFanartPreviewCache_SkippedRefreshDropsOlderSnapshot(t *testing.T) {
+	t.Parallel()
+	r, svc := testRouterForBackdrops(t)
+	seedExtraFanartArtist(t, svc, "Alpha", 2)
+	g := seedExtraFanartArtist(t, svc, "Gone", 1)
+	getExtraFanartPage(t, r, adminContext()) // caches the plan with both artists
+	if !snapshotPresent(r) {
+		t.Fatal("precondition: the cache should be warm")
 	}
-	warm, _ := timed(true)
-	refresh, _ := timed(false)
-	t.Logf("%d artists x %d files x %d KB (%.1f MB total): cold %s, warm hit %s, forced refresh %s",
-		artists, files, kb, float64(artists*files*kb)/1024, cold, warm, refresh)
-	if warm >= cold {
-		t.Errorf("a cache hit (%s) should be faster than a cold preview (%s)", warm, cold)
+	if err := os.RemoveAll(g.dir); err != nil {
+		t.Fatal(err)
+	}
+	if res := decodeRun(t, postDryRun(r)); res.ArtistsSkippedMissing != 1 {
+		t.Fatalf("precondition: the refresh should skip one folder, got %+v", res)
+	}
+	if snapshotPresent(r) {
+		t.Error("a refused refresh left the older snapshot in place")
+	}
+	body := getExtraFanartPage(t, r, adminContext()).Body.String()
+	if strings.Contains(body, "Gone") || !strings.Contains(body, `id="extrafanart-migration-skipped"`) {
+		t.Error("the page after a refused refresh must reflect the fresh read (skipped notice, no stale rows)")
+	}
+}
+
+// An over-bound refresh drops the older snapshot; an aborted one keeps it (a
+// failed read says nothing new).
+func TestExtraFanartPreviewCache_OverBoundRefreshDropsOlderSnapshot(t *testing.T) {
+	t.Parallel()
+	var c extraFanartPreviewCache
+	at := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	small := &extraFanartRunResult{DryRun: true, Artists: []extraFanartArtistResult{{Name: "Old"}}}
+	gen, begin := c.begin(func() time.Time { return at })
+	if why := c.store(gen, "k", begin, small); why != "" {
+		t.Fatal(why)
+	}
+	big := &extraFanartRunResult{DryRun: true, Artists: []extraFanartArtistResult{{Files: make([]extraFanartFileResult, extraFanartPreviewMaxRows)}}}
+	if why := c.store(gen, "k", begin, big); why != notCachedTooLarge {
+		t.Fatalf("precondition: want over-bound refusal, got %q", why)
+	}
+	if _, ok := c.lookup("k", at); ok {
+		t.Error("an over-bound refresh left the older snapshot in place")
+	}
+	if why := c.store(gen, "k", begin, small); why != "" {
+		t.Fatal(why)
+	}
+	if why := c.store(gen, "k", begin, &extraFanartRunResult{aborted: true}); why != notCachedAborted {
+		t.Fatal(why)
+	}
+	if _, ok := c.lookup("k", at); !ok {
+		t.Error("an aborted refresh must keep the older snapshot")
 	}
 }

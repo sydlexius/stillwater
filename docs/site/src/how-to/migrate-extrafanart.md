@@ -14,7 +14,7 @@ An artist whose folder does not exist (for example an unmounted share) is skippe
 
 ## Open the page
 
-An administrator can preview the migration, and run it, in the browser at `/reports/extrafanart-migration` (under your base path, if you set one). Opening the page changes nothing: each time it loads it reads every artist's `extrafanart/` folder and lists what a run would do, so reloading always shows the current state.
+An administrator can preview the migration, and run it, in the browser at `/reports/extrafanart-migration` (under your base path, if you set one). Opening the page changes nothing: it lists what a run would do, based on a read of every artist's `extrafanart/` folder. The page may show a preview up to ten minutes old. Starting the migration always re-reads the library before moving anything, so a run never acts on an old preview.
 
 - A summary shows the status, how many artists have files, how many files would move, and how many identical copies would be left in place.
 - The table lists one row per file with its artist, the file, the name it would get in the artist folder, and its outcome. A row with a problem says why in plain words.

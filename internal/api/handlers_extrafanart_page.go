@@ -118,7 +118,7 @@ func (r *Router) previewExtraFanartMigration(ctx context.Context, useCache bool)
 	// A hit is served without taking the preview guard: it reads memory only. The
 	// lock order is extraFanartMu then the cache's own lock, never the reverse.
 	if useCache {
-		if hit, ok := r.extraFanartPreview.lookup(key); ok {
+		if hit, ok := r.extraFanartPreview.lookup(key, r.extraFanartClock()); ok {
 			r.extraFanartMu.Unlock()
 			return hit, nil
 		}
