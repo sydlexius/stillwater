@@ -615,6 +615,16 @@ gate_step "CSS comments"
 bash "$SCRIPT_DIR/check-css-comments.sh"
 
 echo ""
+gate_step "muted-text class pair (#3474)"
+# The failing muted-text color pair (gray-400 light with gray-500 dark) paints
+# under 4.5:1 on glass cards and axe cannot see it, so it is refused at the
+# source in every .templ and hand-written (non-minified) web/static/js file. The
+# self-test runs first so a matcher that quietly passes everything
+# cannot make this step green. Mirrored by CI's "Gate Invariant" job (gate.yml).
+bash "$SCRIPT_DIR/check-muted-text-pair.sh" --self-test
+bash "$SCRIPT_DIR/check-muted-text-pair.sh"
+
+echo ""
 gate_step "goreleaser extra_files mirror (#3034)"
 # Assert every repo-file COPY source in build/docker/Dockerfile.goreleaser is
 # also listed in .goreleaser.yml's extra_files:. goreleaser's dockers_v2

@@ -200,6 +200,14 @@ function startLoopbackEmby() {
     if (u.pathname === '/Library/VirtualFolders') {
       return json([{ Name: 'Muted Platform Music', Locations: [], CollectionType: 'music', ItemId: 'muted-lib-1', LibraryOptions: {} }]);
     }
+    // The artist-detail request behind the platform-state card (slice 3c): an
+    // artist with no tags and TWO images (a primary and a logo), so the platform
+    // column renders two PRESENT image badges (thumb, logo) and two ABSENT ones
+    // (fanart, banner). The local column renders four ABSENT badges because the
+    // platform-only artist has no folder: 2 present + 6 absent in all.
+    if (u.pathname === '/Users/muted-user-id/Items/muted-platform-artist-1') {
+      return json({ Name: `The ${PAGES.dupName}`, SortName: PAGES.dupName, Overview: '', Genres: [], Tags: [], ProviderIds: {}, ImageTags: { Primary: 'muted-primary-tag', Logo: 'muted-logo-tag' }, BackdropImageTags: [], LockData: false, LockedFields: [] });
+    }
     if (u.pathname === '/Artists/AlbumArtists') {
       return json({ Items: [{ Name: `The ${PAGES.dupName}`, Id: 'muted-platform-artist-1' }], TotalRecordCount: 1 });
     }

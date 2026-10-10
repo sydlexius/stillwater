@@ -48,7 +48,7 @@ templ PathPickerModal() {
 				></div>
 				<!-- Directory listing -->
 				<div id="path-picker-listing" class="overflow-y-auto flex-1 px-2 py-2 min-h-0">
-					<p class="px-3 py-6 text-sm text-center text-gray-400 dark:text-gray-500">Loading...</p>
+					<p class="px-3 py-6 text-sm text-center text-gray-600 dark:text-gray-400">Loading...</p>
 				</div>
 				<!-- Error area -->
 				<div id="path-picker-error" class="hidden px-5 py-2 text-sm text-red-600 dark:text-red-400 flex-shrink-0"></div>
@@ -221,7 +221,7 @@ templ PathPickerModal() {
 
 			if (!entries || entries.length === 0) {
 				var empty = document.createElement('p');
-				empty.className = 'px-3 py-6 text-sm text-center text-gray-400 dark:text-gray-500 italic';
+				empty.className = 'px-3 py-6 text-sm text-center text-gray-600 dark:text-gray-400 italic';
 				empty.textContent = 'No subdirectories';
 				container.appendChild(empty);
 				return;
@@ -287,7 +287,7 @@ templ PathPickerModal() {
 			if (!container) return;
 			while (container.firstChild) container.removeChild(container.firstChild);
 			var p = document.createElement('p');
-			p.className = 'px-3 py-6 text-sm text-center text-gray-400 dark:text-gray-500';
+			p.className = 'px-3 py-6 text-sm text-center text-gray-600 dark:text-gray-400';
 			p.textContent = 'Loading...';
 			container.appendChild(p);
 		}

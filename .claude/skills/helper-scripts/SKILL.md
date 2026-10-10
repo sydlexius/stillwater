@@ -184,6 +184,16 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
 - `scripts/check-css-comments.sh` -- fail on a self-terminating CSS comment (a
   `*/` in comment prose closes the comment, so the rest is parsed as CSS; #2525).
   Called by pre-push-gate; mirrored by the `CSS Comments` job in `gate.yml`.
+- `scripts/check-muted-text-pair.sh` -- fail when the known-bad muted-text pair
+  (gray-400 in light with gray-500 in dark) sits on ONE class list in any `.templ`
+  file under `web/` or any hand-written `web/static/js` file (`*.min.js` vendor
+  bundles are skipped). It catches one string, a `templ` class expression, and
+  `classList.add(...)` or `templ.Classes(...)` with the two classes as separate
+  literals (not `toggle`/`replace`, which never apply both); `--self-test` proves the matcher, including its negatives.
+  Why: the pair paints about 2.5 to 3.1:1 on translucent glass cards, and axe
+  reports text over translucency as "incomplete" rather than a violation, so the
+  a11y tier cannot see it (#3474); the only guard is refusing it at the source.
+  Blocking in pre-push-gate; mirrored by the `Gate Invariant` job in `gate.yml`.
 - `scripts/stylelint-diff-gate.sh` -- diff-scoped stylelint ratchet for the
   hand-written CSS layer (`design-tokens.css`, `input.css`, `scalar-theme.css`).
   The design-token migration (#2402) is not complete, so the gate scopes to the
