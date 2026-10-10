@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -60,6 +61,28 @@ type Service struct {
 	// registryScan overrides the registry-repair detector's dry run; nil in
 	// production. Tests install a fake (registry_repair_check.go).
 	registryScan func(ctx context.Context) (RegistryRepairPlan, error)
+
+	// restoreClaim and repairCache are the hooks the scheduled exists_flag pass
+	// needs to RESTORE flags safely (#3456): the claim serializes it against an
+	// operator repair and the detector, and the cache is refreshed after a
+	// restore so the banner stops showing a count that no longer holds. Both are
+	// attached via SetScheduledRestore; while either is nil the scheduled pass
+	// only clears, and says so loudly at startup.
+	restoreClaim RegistryRepairClaim
+	repairCache  *RegistryRepairCache
+
+	// restoreTimeout bounds one scheduled restore pass, which holds the shared
+	// repair claim throughout. Zero means registryRepairCheckTimeout; tests set
+	// it small to exercise the deadline.
+	restoreTimeout time.Duration
+}
+
+// SetScheduledRestore attaches the hooks that let the hourly exists_flag pass
+// restore flags as well as clear them (#3456). claim is the same exclusion the
+// detector and the operator repair share; cache is the banner's detector cache.
+// Call it before StartExistsFlagScanner.
+func (s *Service) SetScheduledRestore(claim RegistryRepairClaim, cache *RegistryRepairCache) {
+	s.restoreClaim, s.repairCache = claim, cache
 }
 
 // NewService creates a maintenance service. imageCacheDir is the directory
@@ -373,9 +396,14 @@ func (s *Service) fanartSlotVerdict(ctx context.Context, c *slotChecker, dir, ar
 	return slotAbsent, nil
 }
 
-// StartExistsFlagScanner runs ScanExistsFlags once at startup (after
-// startupDelay, so DB migrations and other boot-time I/O don't contend with
-// it) and then on a fixed interval until the context is canceled.
+// StartExistsFlagScanner runs the scheduled exists_flag pass once at startup
+// (after startupDelay, so DB migrations and other boot-time I/O don't contend
+// with it) and then on a fixed interval until the context is canceled. One pass
+// is the clearing scan (ScanExistsFlags) followed, when SetScheduledRestore has
+// attached its hooks, by a committed restore of fanart flags (#3456) and a
+// detector refresh when anything was restored. Without those hooks the pass only
+// clears. The caller should wait for this function to return before closing the
+// database, because a pass in flight queries it.
 //
 // The startup scan matters because stale exists_flag=1 rows manifest as
 // broken image icons and backdrop 404s on the very first page load after a
@@ -395,9 +423,10 @@ func (s *Service) StartExistsFlagScanner(ctx context.Context, interval, startupD
 		return
 	case <-time.After(startupDelay):
 	}
-	if err := s.ScanExistsFlags(ctx); err != nil {
-		s.logger.Error("initial exists_flag scan failed", slog.Any("error", err))
+	if s.restoreClaim == nil || s.repairCache == nil {
+		s.logger.Error("exists_flag scanner: scheduled restore disabled, repair claim or banner cache not attached; cleared flags will wait for an operator repair")
 	}
+	s.runScheduledExistsFlagPass(ctx, "initial exists_flag scan failed")
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -408,10 +437,81 @@ func (s *Service) StartExistsFlagScanner(ctx context.Context, interval, startupD
 			s.logger.Info("exists_flag scanner stopped")
 			return
 		case <-ticker.C:
-			if err := s.ScanExistsFlags(ctx); err != nil {
-				s.logger.Error("exists_flag scan failed", slog.Any("error", err))
-			}
+			s.runScheduledExistsFlagPass(ctx, "exists_flag scan failed")
 		}
+	}
+}
+
+// runScheduledExistsFlagPass is one tick of the scanner loop: the clearing
+// scan, then a self-healing restore. It lives in the loop rather than inside
+// ScanExistsFlags so that ScanExistsFlags stays the pure clearing pass its
+// callers and tests rely on; the two halves are independent, and a failure of
+// either never stops the other.
+func (s *Service) runScheduledExistsFlagPass(ctx context.Context, scanFailedMsg string) {
+	if err := s.ScanExistsFlags(ctx); err != nil {
+		s.logger.Error(scanFailedMsg, slog.Any("error", err))
+	}
+	s.restoreExistsFlagsScheduled(ctx)
+}
+
+// restoreExistsFlagsScheduled runs the committed restore pass for the hourly
+// tick, so damage left by an earlier bug heals without an operator pressing
+// repair (#3456). It uses the same rule as the clearing half (slotChecker), so a
+// row cleared this tick is not restored by it: the pair reaches a fixed point.
+//
+// It holds the repair/detector claim for the whole pass, because a commit
+// racing an operator repair would double-write and a detector dry run would
+// read half-written state. A refused claim skips this tick's restore (info, not
+// an error); the next tick retries. When flags were restored the banner cache
+// is refreshed with a MEASURED detector run, never a guessed count.
+func (s *Service) restoreExistsFlagsScheduled(ctx context.Context) {
+	if s.restoreClaim == nil || s.repairCache == nil || ctx.Err() != nil {
+		return
+	}
+	release, ok := s.restoreClaim()
+	if !ok {
+		s.logger.Info("scheduled exists_flag restore skipped: a repair or check is running")
+		return
+	}
+	// The claim is held while the restore runs, so the restore gets a deadline
+	// (like the detector's): a directory read that never returns on a hung mount
+	// must not block the operator repair and the detector forever.
+	timeout := s.restoreTimeout
+	if timeout <= 0 {
+		timeout = registryRepairCheckTimeout
+	}
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	// Only fanart: the serve route probes the ACTIVE profile's names for
+	// thumb/logo/banner while this pass uses the default names, so restoring
+	// those here could fight the route's clears every hour. Naming unification
+	// is a separate issue; the operator repair still restores every type.
+	res, err := s.RestoreExistsFlags(runCtx, ExistsFlagRestoreOpts{Commit: true, ImageTypes: []string{"fanart"}})
+	timedOut := runCtx.Err() != nil && ctx.Err() == nil
+	cancel()
+	// Release BEFORE the cache refresh: checkRegistryRepair takes the same
+	// claim itself, and the claim is not re-entrant.
+	release()
+	if err != nil {
+		switch {
+		case ctx.Err() != nil:
+			// Shutdown mid-pass is a stop, not a fault.
+			s.logger.Info("scheduled exists_flag restore stopped: shutting down", slog.Any("error", err))
+		case timedOut:
+			s.logger.Warn("scheduled exists_flag restore timed out; repair claim released, next tick retries",
+				slog.String("timeout", timeout.String()), slog.Any("error", err))
+		default:
+			s.logger.Error("scheduled exists_flag restore failed", slog.Any("error", err))
+		}
+		return
+	}
+	s.logger.Info("scheduled exists_flag restore complete",
+		slog.Int("checked", res.Checked),
+		slog.Int("restored", res.Restored),
+		slog.Int("skipped", res.Skipped),
+		slog.Int("unresolvable", res.Unresolvable),
+		slog.Int("failed", res.Failed))
+	if res.Restored > 0 {
+		s.checkRegistryRepair(ctx, s.repairCache, s.restoreClaim, registryRepairCheckTimeout)
 	}
 }
 
@@ -554,6 +654,10 @@ type ExistsFlagRestoreOpts struct {
 	Commit bool
 	// ArtistID scopes the pass to one artist; empty means every artist.
 	ArtistID string
+	// ImageTypes limits the pass to these image types, applied in the row
+	// selection itself. Empty means every type, which is what the operator
+	// repair and the detector dry run use.
+	ImageTypes []string
 }
 
 // ExistsFlagRestoreResult reports what a RestoreExistsFlags pass measured.
@@ -629,6 +733,13 @@ func (s *Service) RestoreExistsFlags(ctx context.Context, opts ExistsFlagRestore
 	if opts.ArtistID != "" {
 		query += ` AND ai.artist_id = ?`
 		args = append(args, opts.ArtistID)
+	}
+	if len(opts.ImageTypes) > 0 {
+		//nolint:gosec // G202: only "?" placeholders are concatenated, values are bound as args
+		query += ` AND ai.image_type IN (?` + strings.Repeat(`,?`, len(opts.ImageTypes)-1) + `)`
+		for _, it := range opts.ImageTypes {
+			args = append(args, it)
+		}
 	}
 	// Adjacent rows per artist keep the per-directory listing cache's window short.
 	query += ` ORDER BY ai.artist_id, ai.image_type, ai.slot_index`

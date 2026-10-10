@@ -1886,6 +1886,27 @@ func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
 		http.NotFound(w, req)
 		return
 	}
+	if !found && imageType == "fanart" {
+		// The primary-file probe only knows the active profile's primary name.
+		// A folder holding just a numbered run (backdrop2.jpg..) has no such
+		// file but still holds fanart, and slot 0 is the first one resolved
+		// (#3456). Ask the same question the maintenance passes ask before
+		// declaring the slot empty. An error preserves the flag, like statErr.
+		fbPath, fbFound, fbErr := resolveFirstFanart(req.Context(), dir)
+		if fbErr != nil {
+			// A canceled request is the client leaving, not a fault.
+			if req.Context().Err() == nil {
+				r.logger.Warn("serve image: cannot resolve fanart in artist dir; preserving exists_flag",
+					slog.String("artist_id", a.ID),
+					slog.String("error", fbErr.Error()))
+			}
+			http.NotFound(w, req)
+			return
+		}
+		if fbFound {
+			filePath, found = fbPath, true
+		}
+	}
 	if !found {
 		// If the DB flag says the image exists but the file is genuinely gone
 		// (every probe returned ENOENT), clear the stale flag so subsequent UI
@@ -2072,6 +2093,20 @@ func (r *Router) corroborateImageAbsence(ctx context.Context, artistID, imageTyp
 			slog.String("error", statErr.Error()))
 		return false
 	}
+	if !found && imageType == "fanart" {
+		// Same widened question as the serve handler's first look (#3456): a
+		// numbered-only folder is not an absence, and an unresolvable folder
+		// is not one either.
+		_, fbFound, fbErr := resolveFirstFanart(ctx, dir)
+		if fbErr != nil {
+			if ctx.Err() == nil {
+				log.Warn("not clearing image flag: cannot resolve fanart on the corroborating probe",
+					slog.String("error", fbErr.Error()))
+			}
+			return false
+		}
+		found = fbFound
+	}
 	if found {
 		// This is the #2634 case caught in the act. It is recorded at Info
 		// rather than Debug because it is the evidence that the guard is doing
@@ -2080,6 +2115,31 @@ func (r *Router) corroborateImageAbsence(ctx context.Context, artistID, imageTyp
 		return false
 	}
 	return true
+}
+
+// resolveFirstFanart answers "does this folder hold any fanart, and which file
+// is slot 0" with the SAME rule the maintenance scan and restore passes use
+// (ResolveFanart over the default naming set), so a request path can never
+// clear a flag those passes consider valid (#3456). The primary-file probe the
+// handlers run first only knows the active profile's primary name and misses a
+// folder holding just a numbered run such as backdrop2.jpg..backdrop4.jpg.
+//
+// found=false with a nil error is a positive "looked, no fanart" and is the only
+// outcome that licenses clearing. Any error (unreadable or missing directory,
+// cancellation) means "could not look" and must leave the flag alone.
+func resolveFirstFanart(ctx context.Context, dir string) (path string, found bool, err error) {
+	names, err := img.ResolveFanartNames(nil)
+	if err != nil {
+		return "", false, err
+	}
+	_, paths, err := img.ResolveFanart(ctx, dir, names)
+	if err != nil {
+		return "", false, err
+	}
+	if len(paths) == 0 {
+		return "", false, nil
+	}
+	return paths[0], true, nil
 }
 
 // handleImageInfo returns metadata about a local artist image (dimensions, file size).
@@ -3516,6 +3576,24 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 					slog.String("error", statErr.Error()))
 			}
 			continue
+		}
+		if !found {
+			// The primary probe misses a numbered-only folder (backdrop2.jpg..)
+			// that the maintenance passes count as valid fanart. Resolve it with
+			// their rule and serve slot 0 rather than clearing (#3456). An error
+			// means "could not look": preserve the flag and move on.
+			fbPath, fbFound, fbErr := resolveFirstFanart(req.Context(), dir)
+			if fbErr != nil {
+				if req.Context().Err() == nil {
+					r.logger.Warn("random backdrop: cannot resolve fanart in artist dir; preserving exists_flag",
+						slog.String("artist_id", a.ID),
+						slog.String("error", fbErr.Error()))
+				}
+				continue
+			}
+			if fbFound {
+				filePath, found = fbPath, true
+			}
 		}
 		if !found {
 			// File is genuinely gone despite exists_flag=1; clear the stale flag and keep looking.

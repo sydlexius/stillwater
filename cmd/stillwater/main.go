@@ -236,6 +236,9 @@ type Application struct {
 	// loop (#2678) returns; nil until startRegistryRepairCheck runs. See
 	// drainRegistryRepairCheck.
 	registryRepairCheckDone chan struct{}
+	// existsFlagScannerDone is closed when the exists_flag scanner loop exits;
+	// its pass now writes and runs a detector scan, so shutdown drains it too.
+	existsFlagScannerDone chan struct{}
 
 	// aiBlocklist is the runtime-fetched AI-image blocklist (#2310), built in
 	// wireProviders; aiBlocklistDone closes when its refresh loop exits and
@@ -1444,7 +1447,9 @@ func (a *Application) startListeners() error {
 		if existsFlagHours <= 0 {
 			existsFlagHours = 1
 		}
-		go a.maintenanceService.StartExistsFlagScanner(ctx, time.Duration(existsFlagHours)*time.Hour, 10*time.Second)
+		// The scheduled pass also restores flags (#3456); it shares the repair
+		// claim with the detector and refreshes the banner cache afterwards.
+		a.startExistsFlagScanner(ctx, time.Duration(existsFlagHours)*time.Hour)
 	}
 
 	// Duplicate-image sidebar/report count refresh (#2608 cadence). #3118: this
@@ -1634,8 +1639,8 @@ func (a *Application) startListeners() error {
 	// canceled its ctx, and a pass checks ctx between artists and fetches.
 	waitForSweep(sweepDone, logger)
 
-	// Drain the registry-repair detector (#2678): its dry run reads the DB, so
-	// it must finish (or be abandoned at the bound) before run closes it.
+	// Drain the registry-repair detector (#2678) and the exists_flag scanner
+	// (#3456): both read the DB (the scanner also writes), so they must finish (or be abandoned at the bound) before run closes it.
 	a.drainRegistryRepairCheckOnShutdown()
 
 	// Stop the scanner -- the listener layer has drained, so no new scan
@@ -1749,19 +1754,35 @@ func registryRepairCheckEvery(logger *slog.Logger, raw string) time.Duration {
 	return d
 }
 
-// drainRegistryRepairCheck waits for the detector loop to exit after the
-// shared ctx is canceled, or for ctx to expire. A loop never started has
-// nothing to wait on.
+// startExistsFlagScanner attaches the scheduled-restore hooks (#3456) and
+// launches the scanner loop, recording its done channel for shutdown. The pass
+// restores flags under the claim it shares with the detector and the operator
+// repair, then refreshes the banner cache.
+func (a *Application) startExistsFlagScanner(ctx context.Context, interval time.Duration) {
+	a.maintenanceService.SetScheduledRestore(a.router.TryClaimRegistryRepairCheck, a.registryRepairCache)
+	done := make(chan struct{})
+	a.existsFlagScannerDone = done
+	go func() {
+		defer close(done)
+		a.maintenanceService.StartExistsFlagScanner(ctx, interval, 10*time.Second)
+	}()
+}
+
+// drainRegistryRepairCheck waits for the detector loop and the exists_flag
+// scanner loop to exit after the shared ctx is canceled, or for ctx to expire.
+// A loop never started has nothing to wait on.
 func (a *Application) drainRegistryRepairCheck(ctx context.Context) error {
-	if a.registryRepairCheckDone == nil {
-		return nil
+	for _, done := range []chan struct{}{a.registryRepairCheckDone, a.existsFlagScannerDone} {
+		if done == nil {
+			continue
+		}
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
-	select {
-	case <-a.registryRepairCheckDone:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return nil
 }
 
 // drainRegistryRepairCheckOnShutdown runs drainRegistryRepairCheck with a 30s

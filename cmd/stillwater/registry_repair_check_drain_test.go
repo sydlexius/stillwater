@@ -41,6 +41,32 @@ func TestRegistryRepairCheckDrain_WaitsForLoop(t *testing.T) {
 	}
 }
 
+// The exists_flag scanner runs a committed restore and a detector scan, so
+// shutdown must wait for it exactly like the detector.
+func TestExistsFlagScannerDrain_WaitsForLoop(t *testing.T) {
+	a := &Application{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	a.maintenanceService = maintenance.NewService(nil, "", "", a.logger)
+	a.registryRepairCache = &maintenance.RegistryRepairCache{}
+	a.router = &api.Router{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	a.startExistsFlagScanner(ctx, time.Hour) // 10s startup delay: the loop parks
+	if a.existsFlagScannerDone == nil {
+		t.Fatal("startExistsFlagScanner did not record a done channel")
+	}
+	expired, expire := context.WithCancel(context.Background())
+	expire()
+	if err := a.drainRegistryRepairCheck(expired); err == nil {
+		t.Fatal("drain returned nil while the scanner loop was still running")
+	}
+	cancel()
+	dctx, dcancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer dcancel()
+	if err := a.drainRegistryRepairCheck(dctx); err != nil {
+		t.Fatalf("drain after cancel = %v, want the loop to exit", err)
+	}
+}
+
 // The cadence seam must honor a positive duration and fall back to the
 // production defaults (0) for an unset, malformed, or non-positive value, so a
 // typo can never start back-to-back library scans.

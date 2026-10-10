@@ -131,8 +131,15 @@ succeeded. Re-run the operation; it is safe to repeat.
 
 Stillwater runs a preview in the background every 12 hours (the first one two minutes after startup) and
 remembers whether anything needed repair, and how many rows it would rebuild and how many existence
-flags it would restore. The check never runs on demand, so the answer can be up to 12 hours old. Completing a repair of the whole library updates
-it immediately.
+flags it would restore. The check never runs on demand, so the answer can be up to 12 hours old, except for the updates noted here and below.
+Completing a repair of the whole library updates it immediately.
+
+Separately, Stillwater checks every hour (by default) that the artwork each existence flag points to is
+really on disk. It clears flags whose files are gone and, for backdrops only, sets flags back on when the
+files are there, so backdrop flags left cleared by an earlier problem heal on their own. When that restores
+any flags, it re-runs the preview so the notice reflects the new state, unless a repair or check is running at
+that moment (the next scheduled check then catches up). Missing rows, and flags for other image types such as
+thumbnails, logos and banners, are not healed this way and still need the repair above.
 
 When the last check found rows that may need repair, administrators see a notice at the top of their
 pages with the number of rows and when they were last checked. It does not appear when the registry
