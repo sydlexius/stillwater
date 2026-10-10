@@ -183,7 +183,10 @@ func (s *Service) checkRegistryRepair(ctx context.Context, cache *RegistryRepair
 		scan = s.scanRegistryRepair
 	}
 	plan, err := scan(runCtx)
-	if err != nil {
+	if err != nil && ctx.Err() != nil {
+		// Shutdown mid-scan is a stop, not a fault.
+		s.logger.Info("registry repair check stopped: shutting down")
+	} else if err != nil {
 		s.logger.Error("registry repair check failed", slog.Any("error", err))
 	}
 	cache.finish(gen, plan, err)
