@@ -188,8 +188,8 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
   (gray-400 in light with gray-500 in dark) sits on ONE class list in any `.templ`
   file under `web/` or any hand-written `web/static/js` file (`*.min.js` vendor
   bundles are skipped). It catches one string, a `templ` class expression, and
-  `classList.add/toggle/replace(...)` or `templ.Classes(...)` with the two classes
-  as separate literals; `--self-test` proves the matcher, including its negatives.
+  `classList.add(...)` or `templ.Classes(...)` with the two classes as separate
+  literals (not `toggle`/`replace`, which never apply both); `--self-test` proves the matcher, including its negatives.
   Why: the pair paints about 2.5 to 3.1:1 on translucent glass cards, and axe
   reports text over translucency as "incomplete" rather than a violation, so the
   a11y tier cannot see it (#3474); the only guard is refusing it at the source.

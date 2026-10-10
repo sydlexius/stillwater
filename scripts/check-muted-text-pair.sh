@@ -37,9 +37,10 @@
 #      hidden by a prose apostrophe, so they are unioned;
 #   2. one templ class expression: class={ "a", templ.KV("b", ok), ... }, where
 #      the tokens may sit in different string literals of the same braces;
-#   3. the argument list of ONE call that applies classes: classList.add(...),
-#      classList.toggle(...), classList.replace(...) or templ.Classes(...), where
-#      the two classes are separate string literals, e.g. classList.add('a', 'b').
+#   3. the argument list of ONE call that applies EVERY string argument as a
+#      class: classList.add(...) or templ.Classes(...), where the two classes are
+#      separate string literals, e.g. classList.add('a', 'b'). classList.toggle
+#      and classList.replace are NOT in this group (see below).
 # Either order, and with any other classes between them, is caught. Reported as
 # file:line (the line of the first of the two tokens).
 #
@@ -47,6 +48,11 @@
 #   - the two classes on DIFFERENT elements, even on one line (correct: that is
 #     not the failing pair), or added by DIFFERENT classList/templ.Classes calls
 #     (two calls are not one class list at the point of writing; review by hand);
+#   - the two classes as separate literals of classList.toggle(token, force) (the
+#     second argument is a boolean force flag, never applied as a class) or of
+#     classList.replace(old, new) (old is removed, so the pair never coexists);
+#     classList.remove is never matched. A single literal holding BOTH classes
+#     passed to toggle or replace IS still reported, by the string finders (1);
 #   - variants such as hover: or dark:hover: forms, the Tailwind important
 #     marker (a leading or trailing bang on a class), and opacity forms like
 #     <class>/50 (different tokens, different painted color; review by hand);
@@ -184,12 +190,24 @@ def class_expressions(text):
         firsts = [h.start() for h in (LIGHT_RE.search(body), DARK_RE.search(body)) if h]
         yield m.end() + (min(firsts) if firsts else 0), " ".join(literals)
 
-CALL_RE = re.compile(r"\b(?:classList\.(?:add|toggle|replace)|templ\.Classes)\(")
+# ONLY calls that apply EVERY string argument as a class, so two separate
+# literals really do land on one element together (DOMTokenList spec):
+#   classList.add(a, b, ...)  adds every argument.
+#   templ.Classes(a, b, ...)  merges every string argument into one class list.
+# Deliberately excluded:
+#   classList.toggle(token, force)  takes ONE class; the 2nd argument is a
+#       boolean force flag, never applied as a class.
+#   classList.replace(old, new)     REMOVES old and adds new, so the pair never
+#       coexists after the call.
+#   classList.remove(...)           removes classes; never creates the pair.
+# A pair inside ONE string literal passed to any of these (toggle/replace
+# included) is still reported, by the ordinary string finders in find_pairs.
+CALL_RE = re.compile(r"\b(?:classList\.add|templ\.Classes)\(")
 
 def call_expressions(text):
     """Yield (offset, joined string literals) for each class-applying call.
 
-    Covers classList.add/toggle/replace(...) and templ.Classes(...), where the
+    Covers classList.add(...) and templ.Classes(...), where the
     two classes are separate string literals of ONE argument list. The argument
     list is found by balancing parentheses while skipping over string literals
     (so a paren inside a class string or a ternary does not end it early).
@@ -255,8 +273,20 @@ def self_test():
          "el.classList.add('px-2', '%s', '%s');" % (L, D), 1),
         ("the pair in two different classList.toggle calls on one line",
          'el.classList.toggle("%s", on); el.classList.toggle("x", on, "%s");' % (D, L), 0),
-        ("classList.toggle with the pair as two literals of one call",
-         'el.classList.toggle("%s", "%s");' % (D, L), 1),
+        # toggle(token, force): the second argument is a boolean force flag, so a
+        # second string is never applied as a class. Not a pair on one element.
+        ("classList.toggle with the pair as two literals of one call (2nd arg is a force flag)",
+         'el.classList.toggle("%s", "%s");' % (D, L), 0),
+        # replace(old, new) REMOVES the first token and adds the second, so the
+        # two never coexist on the element after the call.
+        ("classList.replace with the pair as two literals (old is removed)",
+         'el.classList.replace("%s", "%s");' % (L, D), 0),
+        ("classList.toggle with both classes in ONE literal (string finders still report)",
+         'el.classList.toggle("%s %s");' % (L, D), 1),
+        ("className assignment of both classes in one double-quoted string",
+         'el.className = "%s %s";' % (L, D), 1),
+        ("classList.add with both classes in ONE literal (throws at run time, still reported)",
+         'el.classList.add("%s %s");' % (L, D), 1),
         ("templ.Classes with the pair as two literals",
          '<p class={ templ.Classes("%s", "mt-1", "%s") }>x</p>' % (L, D), 1),
         ("the pair split across two DIFFERENT classList calls",
