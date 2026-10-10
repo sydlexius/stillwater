@@ -27,8 +27,14 @@
 # must be whole tokens inside the SAME class list, which is one of:
 #   1. one quoted string: class="a b c" (also across lines), a Go string passed to
 #      templ.KV("...", cond), a JS string such as el.className = '...'. The
-#      string is found by looking left and right of a token for its nearest
-#      matching quote, so a quote elsewhere on the line does not matter;
+#      string is found two ways and EITHER counts: (a) the nearest quote of any
+#      kind left and right of a token (a quote elsewhere on the line does not
+#      matter, and an apostrophe in prose cannot hide a class string on its
+#      line); (b) a left-to-right quote-aware pass in which a different quote
+#      character INSIDE an open double-quoted or backtick string (an apostrophe,
+#      or content-['x'] in a class) neither closes nor opens anything. (a) alone
+#      missed a pair that followed such an inner quote; (b) alone would be
+#      hidden by a prose apostrophe, so they are unioned;
 #   2. one templ class expression: class={ "a", templ.KV("b", ok), ... }, where
 #      the tokens may sit in different string literals of the same braces;
 #   3. the argument list of ONE call that applies classes: classList.add(...),
@@ -44,8 +50,13 @@
 #   - variants such as hover: or dark:hover: forms, the Tailwind important
 #     marker (a leading or trailing bang on a class), and opacity forms like
 #     <class>/50 (different tokens, different painted color; review by hand);
-#   - a string with an escaped quote inside it (the nearest-quote scan stops at
-#     the escaped quote);
+#   - a string with an escaped quote inside it (neither string finder honors a
+#     backslash escape);
+#   - a pair hidden by BOTH finders at once: an unbalanced double quote in prose
+#     (which flips the quote-aware pass for the rest of the file) combined with
+#     a different-kind quote inside the class string before the tokens;
+#   - the two classes in different JS literals joined by + (one class list at run
+#     time, several strings in the source);
 #   - a Tailwind @apply of the two utilities in a stylesheet (CSS is not scanned);
 #   - a class list assembled at run time from separate variables or
 #     concatenated pieces;
@@ -103,13 +114,15 @@ DARK_RE = token_re(DARK)
 def line_of(text, index):
     return text.count("\n", 0, index) + 1
 
-def string_around(text, index):
-    """Return the quoted string that encloses text[index], or None.
+def nearest_quote_string(text, index):
+    """Return the quoted string around text[index] by nearest quote, or None.
 
-    Scans left to the nearest quote character, then right to the next one of the
-    same kind. A double-quoted string may span lines; single quotes and
-    backticks must not cross a newline for the single-quote case, because an
-    apostrophe in prose would otherwise pair with a quote lines away.
+    Scans left to the nearest quote character of ANY kind, then right to the next
+    one of the same kind. Fooled by a different-kind quote inside a double-quoted
+    string (see quote_aware_spans), but immune to an unbalanced quote elsewhere.
+    A single-quoted string must not cross a newline, because an apostrophe in
+    prose would otherwise pair with a quote lines away. Double quotes and
+    backticks may span lines (templ attributes, JS template literals).
     """
     left = max(text.rfind(q, 0, index) for q in QUOTES)
     if left < 0:
@@ -122,6 +135,38 @@ def string_around(text, index):
     if quote == "'" and "\n" in segment:
         return None
     return segment
+
+def quote_aware_spans(text):
+    """Return [(start, end)] of every string's content, found left to right.
+
+    State machine: outside any string, the first quote character opens a string
+    of that kind. Inside a string only its OWN quote character closes it, so an
+    apostrophe or content-['x'] inside a double-quoted class string is ignored.
+    A single-quoted string that reaches a newline is dropped (it was an
+    apostrophe in prose, not a string), and scanning resumes after the newline.
+    """
+    spans = []
+    quote, start = "", 0
+    for i, c in enumerate(text):
+        if quote:
+            if c == quote:
+                spans.append((start, i))
+                quote = ""
+            elif c == "\n" and quote == "'":
+                quote = ""
+        elif c in QUOTES:
+            quote, start = c, i + 1
+    return spans
+
+def string_candidates(text, index, spans):
+    """Yield each string that encloses text[index]: nearest-quote, then quote-aware."""
+    seg = nearest_quote_string(text, index)
+    if seg is not None:
+        yield seg
+    for start, end in spans:
+        if start <= index < end:
+            yield text[start:end]
+            break
 
 def class_expressions(text):
     """Yield (offset, string-literal text) for each class={ ... } expression.
@@ -173,10 +218,11 @@ def call_expressions(text):
 def find_pairs(text):
     """Return the sorted line numbers where both classes share one class list."""
     lines = set()
+    spans = quote_aware_spans(text)
     for m in LIGHT_RE.finditer(text):
-        seg = string_around(text, m.start())
-        if seg is not None and LIGHT_RE.search(seg) and DARK_RE.search(seg):
-            lines.add(line_of(text, m.start()))
+        for seg in string_candidates(text, m.start(), spans):
+            if LIGHT_RE.search(seg) and DARK_RE.search(seg):
+                lines.add(line_of(text, m.start()))
     for offset, joined in class_expressions(text):
         if LIGHT_RE.search(joined) and DARK_RE.search(joined):
             lines.add(line_of(text, offset))
@@ -221,6 +267,22 @@ def self_test():
          "el.classList.add('a(b', '%s', '%s');" % (L, D), 1),
         ("an apostrophe in prose does not pair strings",
          '<p>it\'s</p>\n<p class="%s">a</p>\n<p class="%s">b</p>' % (L, D), 0),
+        ("paired single quotes inside the class string, before the tokens",
+         '<p class="before:content-[\'x\'] %s %s">x</p>' % (L, D), 1),
+        ("a lone apostrophe inside the class string, before the tokens",
+         '<p class="it\'s %s %s">x</p>' % (L, D), 1),
+        ("paired single quotes between the tokens",
+         '<p class="%s [&_a]:after:content-[\'x\'] %s">x</p>' % (L, D), 1),
+        ("an apostrophe in a later attribute",
+         '<p class="%s %s" title="it\'s here">x</p>' % (L, D), 1),
+        ("an apostrophe in an earlier attribute",
+         '<p title="it\'s" class="%s %s">x</p>' % (L, D), 1),
+        ("an apostrophe in prose on the same line as the class string",
+         '<p>it\'s <span class="%s %s">x</p>' % (L, D), 1),
+        ("two attributes with a single-quoted JS fragment between them",
+         '<p class="a %s" data-x=\'y\' class="%s b">x</p>' % (L, D), 0),
+        ("two attributes each holding an apostrophe, on one line",
+         '<p class="it\'s %s" title="it\'s"><i class="%s">x</i></p>' % (L, D), 0),
     ]
     failed = 0
     for name, text, want in cases:
