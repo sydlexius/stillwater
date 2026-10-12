@@ -119,17 +119,21 @@ PUSH_B="refs/heads/feature $B refs/heads/feature $ZERO"
 ran() { [ -e "$GD/gate-ran" ] && echo yes || echo no; }
 pass() { echo "  PASS  $1"; PASSED=$((PASSED + 1)); }
 fail() { echo "  FAIL  $1" >&2; printf '        %s\n' "$OUT" >&2; FAILED=$((FAILED + 1)); }
+# has_in <pattern> <text> -- does the text contain the pattern. A here-string, never
+# `writer | grep -q`: grep -q exits on its first match, and under pipefail a writer
+# still sending (a file-sized input) dies of SIGPIPE and fails the whole pipeline.
+has_in() { grep -q -- "$1" <<<"$2"; }
 
 expect_skip() { # name
-  if [ "$RC" -eq 0 ] && [ "$(ran)" = no ] && printf '%s' "$OUT" | grep -q 'skipping the gate'; then pass "$1"
+  if [ "$RC" -eq 0 ] && [ "$(ran)" = no ] && has_in 'skipping the gate' "$OUT"; then pass "$1"
   else fail "$1 (expected a skip; rc=$RC ran=$(ran))"; fi
 }
 expect_run() { # name reason-substring [rc]
-  if [ "$RC" -eq "${3:-0}" ] && [ "$(ran)" = yes ] && printf '%s' "$OUT" | grep -q -- "$2"; then pass "$1"
+  if [ "$RC" -eq "${3:-0}" ] && [ "$(ran)" = yes ] && has_in "$2" "$OUT"; then pass "$1"
   else fail "$1 (expected the gate to run with rc ${3:-0}, saying '$2'; rc=$RC ran=$(ran))"; fi
 }
 expect_refused() { # name substring: exit 2, gate not run
-  if [ "$RC" -eq 2 ] && [ "$(ran)" = no ] && printf '%s' "$OUT" | grep -q -- "$2"; then pass "$1"
+  if [ "$RC" -eq 2 ] && [ "$(ran)" = no ] && has_in "$2" "$OUT"; then pass "$1"
   else fail "$1 (expected exit 2 without a gate run; rc=$RC ran=$(ran))"; fi
 }
 # expect_stamp <name> <jq filter> <expected> / expect_nostamp <name> <substring>
@@ -138,7 +142,7 @@ expect_stamp() {
   else fail "$1 ($2 is not '$3')"; fi
 }
 expect_nostamp() {
-  if [ ! -e "$GD/pre-push-gate-stamp.json" ] && printf '%s' "$OUT" | grep -q -- "$2"; then pass "$1"
+  if [ ! -e "$GD/pre-push-gate-stamp.json" ] && has_in "$2" "$OUT"; then pass "$1"
   else fail "$1 (stamp present or reason missing)"; fi
 }
 # lib <shell snippet> -- run the REAL gate-stamp.sh functions in the fixture.
@@ -150,7 +154,7 @@ echo "=== gate receipt decision (#3436) ==="
 
 reset; hook "$PUSH_B"
 expect_skip "valid receipt + stamp skips the gate"
-if printf '%s' "$OUT" | grep -q "pushed commit ${B:0:12}.*receipt commit"; then pass "the skip line names the pushed commit and labels the receipt commit"
+if has_in "pushed commit ${B:0:12}.*receipt commit" "$OUT"; then pass "the skip line names the pushed commit and labels the receipt commit"
 else fail "skip line wording"; fi
 
 reset; mkreceipt "$TREE_A" pass gate-receipt/v1; mkstamp "$TREE_A" "$A"; hook "$PUSH_B"
@@ -222,7 +226,7 @@ git -C "$R" tag -a -m annotated tagobj "$B"
 TAGOID=$(git -C "$R" rev-parse refs/tags/tagobj)
 reset; precond "valid receipt and stamp (annotated tag object id)"
 realpush "$TAGOID:refs/heads/objid-annotated"
-if [ "$(ran)" = yes ] && ! printf '%s' "$OUT" | grep -q 'skipping the gate' && printf '%s' "$OUT" | grep -q 'not a commit'; then pass "a real push of an annotated tag object id to refs/heads/* runs the gate"
+if [ "$(ran)" = yes ] && ! has_in 'skipping the gate' "$OUT" && has_in 'not a commit' "$OUT"; then pass "a real push of an annotated tag object id to refs/heads/* runs the gate"
 else fail "annotated tag object id was not refused (ran=$(ran))"; fi
 echo "--- environment, malformed stamp mode, unreadable stdin (round 5)"
 reset; precond "valid receipt and stamp (GOFLAGS set)"
@@ -365,7 +369,7 @@ reset; hook "$PUSH_B" PRE_PUSH_FORCE_GATE=maybe
 expect_refused "a bad PRE_PUSH_FORCE_GATE value is refused" "PRE_PUSH_FORCE_GATE='maybe'"
 reset; hook "$PUSH_B" RUN_A11Y=maybe
 expect_refused "a bad RUN_A11Y value is refused by the validator" "RUN_A11Y='maybe'"
-if printf '%s' "$OUT" | grep -q 'push blocked'; then pass "a refusal prints one line saying the push is blocked"; else fail "no push-blocked line"; fi
+if has_in 'push blocked' "$OUT"; then pass "a refusal prints one line saying the push is blocked"; else fail "no push-blocked line"; fi
 reset; printf 'RESOLVED_RUN_FLAG=""\n' >"$R/scripts/lib/run-flags.sh"; hook "$PUSH_B"
 expect_run "a flag probe failing for any reason but a refusal (function missing) runs the gate" "running scripts"
 reset; : >"$R/scripts/gate-receipt-valid.sh"; hook "$PUSH_B"
@@ -499,7 +503,7 @@ real_arm python "$WORK/arm-python.sh" PATH="$TOOLS"
 expect_nostamp "the real properdocs arm without python3 writes no stamp" "python3 not in PATH"
 real_arm python "$WORK/arm-python.sh"
 if [ -e "$GD/pre-push-gate-stamp.json" ]; then pass "the real properdocs arm with python3 and PyYAML present writes the stamp"
-elif printf '%s' "$OUT" | grep -q 'PyYAML not installed'; then pass "(PyYAML absent on this host: the arm blocked, as required)"
+elif has_in 'PyYAML not installed' "$OUT"; then pass "(PyYAML absent on this host: the arm blocked, as required)"
 else fail "properdocs arm: unexpected result"; fi
 # The real child helper, run as a child of the slice exactly as the gate runs it.
 printf 'bash "$SCRIPT_DIR/check-generated.sh"\n' >"$WORK/arm-generated.sh"
@@ -520,7 +524,7 @@ else fail "helper saw BASE=$(cat "$WORK/helper-base" 2>/dev/null) (want the stam
 ARM_PRE='git branch -q -D main; git update-ref -d refs/remotes/origin/main 2>/dev/null || true; git branch -q -f main_keep HEAD'
 rm -f "$WORK/helper-base"
 real_arm patchcov "$WORK/arm-patchcov.sh" HOME="$WORK/home" COVER_OUT=x
-if [ ! -e "$WORK/helper-base" ] && printf '%s' "$OUT" | grep -q 'no patch-coverage base'; then pass "no resolvable base: the patch-coverage step fails before calling the helper"
+if [ ! -e "$WORK/helper-base" ] && has_in 'no patch-coverage base' "$OUT"; then pass "no resolvable base: the patch-coverage step fails before calling the helper"
 else fail "patch-coverage step without a base: helper ran or no message"; fi
 ARM_PRE=''
 
@@ -558,6 +562,7 @@ else fail "bad-flag gate start: rc=$RC, blocker files left"; fi
 
 echo "--- structure (comments stripped before matching)"
 strip() { grep -vE '^[[:space:]]*#' "$1"; }
+STRIPPED=$(strip "$G")
 n=$(strip "$G" | grep -c '^gate_stamp_begin$' || true)
 if [ "$n" = 1 ]; then pass "gate_stamp_begin appears exactly once"; else fail "gate_stamp_begin appears $n times"; fi
 last=$(strip "$G" | grep -o 'gate_stamp_[a-z]*' | tail -1)
@@ -568,13 +573,25 @@ n=$(strip "$G" | grep -c 'GATE_STAMP_BLOCK_FILE' || true)
 if [ "$n" = 2 ]; then pass "the gate touches the blocker file only in its two cleanup traps"; else fail "GATE_STAMP_BLOCK_FILE appears $n times in the gate"; fi
 w=$(strip "$G" | grep -n '^gate_stamp_write ' | cut -d: -f1)
 after=$(strip "$G" | sed -n "$((w + 1)),\$p" | grep -v '^[[:space:]]*$' | grep -v '^gate_timing_summary || true$' | grep -vc '^echo ""$' || true)
-if [ "$after" = 1 ] && strip "$G" | tail -1 | grep -q 'All hard checks passed'; then pass "nothing but the closing banner follows gate_stamp_write"; else fail "code follows gate_stamp_write ($after lines)"; fi
+if [ "$after" = 1 ] && has_in 'All hard checks passed' "$(tail -1 <<<"$STRIPPED")"; then pass "nothing but the closing banner follows gate_stamp_write"; else fail "code follows gate_stamp_write ($after lines)"; fi
 b=$(strip "$G" | grep -n '^gate_stamp_begin$' | cut -d: -f1)
 f=$(strip "$G" | grep -n '^resolve_run_flag RUN_RACE' | cut -d: -f1)
 if [ -n "$b" ] && [ -n "$f" ] && [ "$b" -lt "$f" ]; then pass "the gate deletes the old stamp before it resolves any flag"; else fail "gate_stamp_begin missing or after flag resolution"; fi
 # shellcheck disable=SC2016  # literal pattern
-if strip "$G" | grep -q '^gate_stamp_write "\$BASE" "\$RACE_MODE" "\$VULN_MODE" "\$PROVIDER_SMOKE_MODE" "\$A11Y_MODE"$'; then pass "the gate writes the stamp with its base and four modes"; else fail "gate_stamp_write call"; fi
-if strip "$G" | grep -q '^bash "\$SCRIPT_DIR/test-gate-receipt-valid.sh"$'; then pass "the gate runs this test as a real command"; else fail "the gate does not run this test"; fi
+if has_in '^gate_stamp_write "\$BASE" "\$RACE_MODE" "\$VULN_MODE" "\$PROVIDER_SMOKE_MODE" "\$A11Y_MODE"$' "$STRIPPED"; then pass "the gate writes the stamp with its base and four modes"; else fail "gate_stamp_write call"; fi
+if has_in '^bash "\$SCRIPT_DIR/test-gate-receipt-valid.sh"$' "$STRIPPED"; then pass "the gate runs this test as a real command"; else fail "the gate does not run this test"; fi
+
+# Regression: has_in must report a match on line 1 of an input far larger than a
+# pipe buffer. The old `writer | grep -q` shape returned 141 here every time
+# (grep -q quits on line 1, the blocked writer dies of SIGPIPE, pipefail).
+BIGF="$WORK/big-input.txt"
+awk 'BEGIN { print "needle line"; for (i = 0; i < 150000; i++) print "filler line that is not a comment" }' >"$BIGF"
+BIG=$(cat "$BIGF")
+bigsize=$(wc -c <"$BIGF")
+if [ "$bigsize" -gt 1048576 ] && [ "$(head -n 1 "$BIGF")" = 'needle line' ]; then
+  if has_in '^needle line$' "$BIG"; then pass "has_in finds an early match in an input larger than the pipe buffer"
+  else fail "has_in lost an early match in a $bigsize byte input"; fi
+else fail "fixture precondition: $bigsize bytes, first line '$(head -n 1 "$BIGF")'"; fi
 
 echo "--- allow-list: skip-style output outside gate_skip"
 # Scans the gate, the hook and every script the gate runs (a `$SCRIPT_DIR/..`
