@@ -9,7 +9,7 @@
     "studio": "remotion studio src/index.ts"
   },
   "dependencies": {
-    "@remotion/cli": "4.0.516",
+    "@remotion/cli": "4.0.534",
     "@remotion/google-fonts": "4.0.507",
     "@remotion/transitions": "4.0.534",
     "react": "19.3.0",
