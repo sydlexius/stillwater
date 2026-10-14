@@ -1,0 +1,331 @@
+# Regenerate templ output on Dependabot templ bumps.
+#
+# WHY THIS EXISTS
+#
+# Every committed *_templ.go carries a `// templ: version: vX` stamp, and the
+# Generated Files (gate.yml) and Lint Check (ci.yml) jobs regenerate and fail on
+# any diff. Dependabot updates go.mod/go.sum and stops: it cannot run a
+# post-update generator (a long-standing dependabot-core limitation). So every
+# templ bump arrived permanently red (#3503) and needed a human to regenerate.
+# This workflow does that regeneration and commits it back to the PR branch.
+#
+# TWO JOBS, SPLIT BY PRIVILEGE
+#
+# Regenerating means running the newly bumped third-party templ code, so it is
+# untrusted for the purpose of this workflow. It runs in `regenerate`, which has
+# a read-only token, persist-credentials: false, and references no secret. It
+# hands back only an artifact of regenerated files.
+#
+# `commit` holds the PAT. It runs no repository or PR code (no checkout, no Go):
+# it validates every artifact path against a positive allow-list and creates the
+# commit through the API. If the generator were compromised, the most it could
+# do is propose new contents for *_templ.go files that already exist, as a
+# commit that still has to pass every required check.
+#
+# WHY THE PAT, AND WHY createCommitOnBranch
+#
+#   1. Identity. A commit pushed with GITHUB_TOKEN is authored by
+#      github-actions[bot], and every workflow run on that head is HELD in
+#      action_required until a human approves it (measured; see the
+#      CONFIRMED AND FIXED note in dependabot-merge.yml). The PAT makes the
+#      head user-authored, so the checks start.
+#   2. Signature. main has a required_signatures ruleset and signed-commits.yml
+#      fails any PR commit whose verification.verified is false. A runner has
+#      no signing key, so a plain push would fail it. GitHub's GraphQL reference
+#      for createCommitOnBranch: the commit "will be authored by the owner of
+#      the credential" and "Commits made using this mutation are automatically
+#      signed by GitHub if supported and will be marked as verified"
+#      (docs.github.com/en/graphql/reference/mutations#createcommitonbranch).
+#      "If supported" is not a guarantee, so the job reads the signature back
+#      and fails loudly if it is not verified.
+#   3. Race safety. expectedHeadOid pins the commit to the head that was
+#      regenerated. If Dependabot rebases meanwhile, the mutation is rejected
+#      instead of committing stale output on top of new go.mod content.
+#
+# WHY `pull_request` AND NOT workflow_run / pull_request_target
+#
+# A Dependabot-triggered pull_request run reads secrets from the DEPENDABOT
+# secret store (not the Actions store), so the PAT is reachable here without a
+# base-context trigger. That keeps this file off the dangerous-triggers list
+# and out of scripts/check-zizmor-suppressions.sh. On pull_request the workflow
+# definition itself comes from the PR merge ref; for an in-repo Dependabot
+# branch that is main plus Dependabot's own manifest edits.
+#
+# SETUP (one time): the SAME fine-grained PAT that dependabot-merge.yml uses
+# (this repository only; Contents RW, Pull requests RW), stored a second time
+# in the Dependabot store:
+#   gh secret set DEPENDABOT_UPDATE_TOKEN --app dependabot --repo sydlexius/stillwater
+
+name: Regenerate templ on Dependabot bumps
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions: {}
+
+jobs:
+  regenerate:
+    name: Regenerate templ output
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    # Job-level, not workflow-level: our own commit fires `synchronize`, and a
+    # workflow-level cancel-in-progress group would cancel the still-running
+    # commit job mid-way through its signature read-back. Superseding only the
+    # regeneration is enough; a commit job working from a stale head is
+    # already rejected by expectedHeadOid.
+    concurrency:
+      group: dependabot-regenerate-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    # The head-repo clause is the fork boundary: branch names and PR titles are
+    # attacker-controlled strings, the repository identity is not. There is
+    # deliberately no `github.actor` check (zizmor bot-conditions: the actor is
+    # whoever last touched the run, so it is spoofable). The loop guard is the
+    # head-commit author check in the first step instead: our own regen commit
+    # is authored by the PAT owner, so its `synchronize` run is a no-op.
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    outputs:
+      changed: ${{ steps.collect.outputs.changed }}
+      version: ${{ steps.detect.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Detect a templ version change
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # Loop guard: act only on a head commit Dependabot authored. Our own
+          # regen commit, a maintainer push, or a PAT update-branch from
+          # dependabot-merge.yml all stop here.
+          AUTHOR=$(gh api "repos/$REPO/commits/$HEAD_SHA" --jq '.author.login // ""')
+          if [ "$AUTHOR" != "dependabot[bot]" ]; then
+            echo "::notice::Head commit $HEAD_SHA is authored by '$AUTHOR', not Dependabot; nothing to do."
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          templ_version() { awk '$1 == "github.com/a-h/templ" { print $2; exit }'; }
+          HEAD_VER=$(templ_version < go.mod)
+          # Captured first, not piped: awk exits on the first match, and under
+          # pipefail a SIGPIPE on gh would fail the step.
+          BASE_GOMOD=$(gh api -H 'Accept: application/vnd.github.raw' \
+            "repos/$REPO/contents/go.mod?ref=$BASE_SHA")
+          BASE_VER=$(printf '%s\n' "$BASE_GOMOD" | templ_version)
+          if [ -z "$HEAD_VER" ] || [ -z "$BASE_VER" ]; then
+            echo "::error::Could not read the templ version from go.mod (head='$HEAD_VER', base='$BASE_VER')."
+            exit 1
+          fi
+          if [ "$HEAD_VER" = "$BASE_VER" ]; then
+            echo "templ is unchanged at $HEAD_VER; nothing to regenerate."
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "templ $BASE_VER -> $HEAD_VER"
+          echo "bumped=true" >> "$GITHUB_OUTPUT"
+          echo "version=$HEAD_VER" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: steps.detect.outputs.bumped == 'true'
+        with:
+          go-version-file: go.mod
+          # No cache: a cache written by a job running freshly bumped code
+          # should not be restored into anything else.
+          cache: false
+
+      - name: Regenerate templ output
+        if: steps.detect.outputs.bumped == 'true'
+        run: go tool templ generate
+
+      - name: Collect regenerated files
+        id: collect
+        if: steps.detect.outputs.bumped == 'true'
+        env:
+          STAGE: ${{ runner.temp }}/templ-regen
+        run: |
+          set -euo pipefail
+
+          # templ generate must touch nothing but tracked *_templ.go files. A
+          # new file or any other modified path is outside what the commit job
+          # will accept, so stop here with the reason instead of there.
+          UNEXPECTED=$(git status --porcelain=v1 --untracked-files=all \
+            | grep -vE '^ M [^ ]+_templ\.go$' || true)
+          if [ -n "$UNEXPECTED" ]; then
+            echo "::error::templ generate changed paths other than tracked *_templ.go files:"
+            printf '%s\n' "$UNEXPECTED"
+            exit 1
+          fi
+
+          mkdir -p "$STAGE"
+          git diff --name-only -z -- '*_templ.go' > "$RUNNER_TEMP/changed.lst"
+          if [ ! -s "$RUNNER_TEMP/changed.lst" ]; then
+            echo "::notice::Regeneration produced no diff; the committed output is already current."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          xargs -0 cp --parents -t "$STAGE" -- < "$RUNNER_TEMP/changed.lst"
+          echo "Regenerated $(tr -cd '\0' < "$RUNNER_TEMP/changed.lst" | wc -c) file(s)."
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: steps.collect.outputs.changed == 'true'
+        with:
+          name: templ-regen
+          path: ${{ runner.temp }}/templ-regen
+          if-no-files-found: error
+          retention-days: 1
+
+  commit:
+    name: Commit regenerated templ output
+    needs: regenerate
+    if: needs.regenerate.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    # The job's own token only reads this run's artifact; every write uses the
+    # PAT.
+    permissions:
+      actions: read # gh run download of this run's artifact
+    timeout-minutes: 10
+    # INVARIANT: this job runs ZERO `uses:` actions. It holds the PAT, and any
+    # action executing in it could write GITHUB_ENV / GITHUB_PATH and so
+    # redirect `gh` or `python3` in the steps that read the token. Everything
+    # here is `run:` with the runner's preinstalled gh and python3; that is why
+    # the artifact is fetched with `gh run download`, not download-artifact.
+    steps:
+      - name: Require the Dependabot-store PAT
+        env:
+          UPDATE_TOKEN: ${{ secrets.DEPENDABOT_UPDATE_TOKEN }}
+        run: |
+          # Decline rather than fall back to GITHUB_TOKEN: a bot-authored head
+          # holds every run for manual approval and is unsigned, so it would
+          # trade one wedged PR for a worse one (same asymmetry as
+          # dependabot-merge.yml's UNCONFIGURED PATH).
+          if [ -z "${UPDATE_TOKEN:-}" ]; then
+            echo "::error::DEPENDABOT_UPDATE_TOKEN is not set in the Dependabot secret store, so the regenerated templ output was NOT committed. Run: gh secret set DEPENDABOT_UPDATE_TOKEN --app dependabot --repo sydlexius/stillwater (the same fine-grained PAT dependabot-merge.yml uses; Dependabot-triggered runs cannot read the Actions store)."
+            exit 1
+          fi
+
+      - name: Download the regenerated files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          STAGE: ${{ runner.temp }}/templ-regen
+        run: gh run download "$GITHUB_RUN_ID" --repo "$REPO" --name templ-regen --dir "$STAGE"
+
+      - name: Validate and commit
+        env:
+          GH_TOKEN: ${{ secrets.DEPENDABOT_UPDATE_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          VERSION: ${{ needs.regenerate.outputs.version }}
+          STAGE: ${{ runner.temp }}/templ-regen
+          WORK: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+
+          # Every path that exists at the PR head. The allow-list below accepts
+          # only regenerations of files already in this list.
+          gh api "repos/$REPO/git/trees/$HEAD_SHA?recursive=1" > "$WORK/tree.json"
+
+          # Positive allow-list, fail-closed. -I: no site or cwd imports.
+          python3 -I - <<'PYEOF'
+          import base64, json, os, re, stat, sys
+
+          stage = os.environ["STAGE"]
+          work = os.environ["WORK"]
+          tree = json.load(open(os.path.join(work, "tree.json")))
+          if tree.get("truncated"):
+              print("::error::The head tree listing was truncated; cannot validate paths against it.")
+              sys.exit(1)
+          existing = {e["path"] for e in tree["tree"] if e["type"] == "blob" and e["mode"] == "100644"}
+
+          # fullmatch, not a `$` anchor: `$` also matches before a trailing
+          # newline, so "x_templ.go\n" would pass a `$`-anchored match.
+          ALLOWED = re.compile(r"web/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+_templ\.go")
+          HEADER = b"// Code generated by templ - DO NOT EDIT."
+          MAX_BYTES = 2 * 1024 * 1024
+
+          bad, additions = [], []
+          for root, dirs, files in os.walk(stage, followlinks=False):
+              for name in dirs + files:
+                  full = os.path.join(root, name)
+                  rel = os.path.relpath(full, stage)
+                  st = os.lstat(full)
+                  if stat.S_ISDIR(st.st_mode):
+                      continue
+                  if not stat.S_ISREG(st.st_mode):
+                      bad.append(f"{rel!r}: not a regular file")
+                  elif not ALLOWED.fullmatch(rel):
+                      bad.append(f"{rel!r}: path outside the web/**/*_templ.go allow-list")
+                  elif rel not in existing:
+                      bad.append(f"{rel!r}: not an existing file at the PR head")
+                  elif st.st_size > MAX_BYTES:
+                      bad.append(f"{rel!r}: {st.st_size} bytes exceeds the {MAX_BYTES}-byte cap")
+                  else:
+                      data = open(full, "rb").read()
+                      if not data.startswith(HEADER):
+                          bad.append(f"{rel!r}: missing the templ generated-code header")
+                      else:
+                          additions.append({"path": rel, "contents": base64.b64encode(data).decode()})
+
+          if bad:
+              # Names are printed as repr(), so a newline or `::` in a file
+              # name stays inside this one line and cannot start a workflow
+              # command of its own.
+              for b in bad:
+                  print(f"::error::Rejected artifact entry {b}")
+              sys.exit(1)
+          if not additions:
+              print("::error::The artifact contained no files, but the regenerate job reported changes.")
+              sys.exit(1)
+
+          version = os.environ["VERSION"]
+          payload = {
+              "query": "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+              "variables": {"input": {
+                  "branch": {"repositoryNameWithOwner": os.environ["REPO"], "branchName": os.environ["HEAD_REF"]},
+                  "expectedHeadOid": os.environ["HEAD_SHA"],
+                  "message": {
+                      "headline": f"chore(deps): regenerate templ output for templ {version}",
+                      "body": "Generated by .github/workflows/dependabot-regenerate.yml: go tool templ generate at the bumped version.",
+                  },
+                  "fileChanges": {"additions": sorted(additions, key=lambda a: a["path"])},
+              }},
+          }
+          json.dump(payload, open(os.path.join(work, "mutation.json"), "w"))
+          print(f"Validated {len(additions)} file(s).")
+          PYEOF
+
+          # expectedHeadOid makes a racing Dependabot push fail this call
+          # rather than be overwritten.
+          OID=$(gh api graphql --input "$WORK/mutation.json" --jq '.data.createCommitOnBranch.commit.oid')
+          if [ -z "$OID" ] || [ "$OID" = "null" ]; then
+            echo "::error::createCommitOnBranch returned no commit oid."
+            exit 1
+          fi
+          echo "Committed $OID to $HEAD_REF."
+
+          # Read the signature back. Signed Commits would fail the PR anyway,
+          # but saying so here names the cause.
+          VERIFIED=$(gh api "repos/$REPO/commits/$OID" --jq '.commit.verification.verified')
+          if [ "$VERIFIED" != "true" ]; then
+            REASON=$(gh api "repos/$REPO/commits/$OID" --jq '.commit.verification.reason')
+            echo "::error::Commit $OID is not verified (reason: $REASON). Signed Commits will fail this PR; regenerate locally with a signed commit instead."
+            exit 1
+          fi
+          echo "Commit $OID is GitHub-signed and verified."

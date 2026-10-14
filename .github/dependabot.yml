@@ -1,5 +1,10 @@
 version: 2
 updates:
+  # A github.com/a-h/templ bump changes the version stamp in every committed
+  # *_templ.go, and Dependabot cannot run the generator, so the generated-file
+  # checks would fail. .github/workflows/dependabot-regenerate.yml regenerates
+  # and commits the output to the PR (needs DEPENDABOT_UPDATE_TOKEN in the
+  # Dependabot secret store).
   - package-ecosystem: gomod
     directory: /
     schedule:
