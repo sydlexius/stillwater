@@ -117,6 +117,17 @@ updates:
       - dependencies
       - documentation
     open-pull-requests-limit: 2
+    # Every dependency here shares one package-lock.json, so separate
+    # per-package PRs conflict with each other once the first one merges. A
+    # conflicted PR gets no pull_request CI (#3518 sat DIRTY with zero required
+    # checks after its siblings merged; only its pull_request_target workflows
+    # ran). Remotion also requires every remotion / @remotion/* package at one
+    # version, which per-package PRs had already split on main. One grouped PR
+    # per monthly run avoids both problems.
+    groups:
+      captions:
+        patterns:
+          - "*"
 
   # Docs site uses pip-compile with --generate-hashes; Dependabot detects the
   # autogen header on requirements.txt and updates both .in and .txt together
