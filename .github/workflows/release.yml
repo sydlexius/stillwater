@@ -274,6 +274,32 @@ jobs:
             echo "version=${GITHUB_REF_NAME#v}"
           } >> "$GITHUB_OUTPUT"
 
+      # Docker Hub rate limits anonymous pulls (and so does ECR Public), so
+      # log in before anything pulls from it: the base images, plus
+      # moby/buildkit (setup-buildx) and tonistiivi/binfmt (setup-qemu) where
+      # those run (#3487). Secrets never reach fork pull requests, and the
+      # token may not be set yet: then the job still runs, pulls anonymously,
+      # and says so with a warning. `secrets` is not allowed in a step `if:`,
+      # hence the separate check step.
+      - name: Check Docker Hub credentials
+        id: dockerhub
+        env:
+          HAS_DOCKERHUB_CREDS: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+        run: |
+          if [ "$HAS_DOCKERHUB_CREDS" = "true" ]; then
+            echo "login=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "login=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Anonymous Docker Hub pulls::DOCKERHUB_USERNAME / DOCKERHUB_TOKEN are not available to this run (a fork pull request, or the secrets are not set). Pulling from Docker Hub anonymously, which is rate limited and may fail with 429 Too Many Requests."
+          fi
+
+      - name: Log in to Docker Hub
+        if: steps.dockerhub.outputs.login == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -458,6 +484,32 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Docker Hub rate limits anonymous pulls (and so does ECR Public), so
+      # log in before anything pulls from it: the base images, plus
+      # moby/buildkit (setup-buildx) and tonistiivi/binfmt (setup-qemu) where
+      # those run (#3487). Secrets never reach fork pull requests, and the
+      # token may not be set yet: then the job still runs, pulls anonymously,
+      # and says so with a warning. `secrets` is not allowed in a step `if:`,
+      # hence the separate check step.
+      - name: Check Docker Hub credentials
+        id: dockerhub
+        env:
+          HAS_DOCKERHUB_CREDS: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+        run: |
+          if [ "$HAS_DOCKERHUB_CREDS" = "true" ]; then
+            echo "login=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "login=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Anonymous Docker Hub pulls::DOCKERHUB_USERNAME / DOCKERHUB_TOKEN are not available to this run (a fork pull request, or the secrets are not set). Pulling from Docker Hub anonymously, which is rate limited and may fail with 429 Too Many Requests."
+          fi
+
+      - name: Log in to Docker Hub
+        if: steps.dockerhub.outputs.login == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
