@@ -1,11 +1,12 @@
-# Base images come from Amazon's public ECR mirror of the official Docker Hub
-# library (same manifest-list digests), because anonymous Docker Hub pulls are
-# rate limited and flaky in CI (#3487). No `# syntax=` line on purpose: it would
-# pull the dockerfile frontend from Docker Hub, and nothing here needs one
-# beyond what the bundled BuildKit frontend provides.
+# Base images are the Docker Hub official images, pinned by digest. CI logs in
+# to Docker Hub before building (DOCKERHUB_USERNAME / DOCKERHUB_TOKEN), because
+# anonymous pulls are rate limited there and on Amazon's ECR Public mirror
+# alike (#3487). No `# syntax=` line on purpose: it would pull the dockerfile
+# frontend as one more image, and nothing here needs one beyond what the
+# bundled BuildKit frontend provides.
 
 # Build stage
-FROM public.ecr.aws/docker/library/golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS builder
+FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS builder
 
 RUN apk add --no-cache curl libstdc++ libgcc
 
@@ -63,7 +64,7 @@ RUN tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minif
 # --- END SYNC ---
 
 # Runtime stage
-FROM public.ecr.aws/docker/library/alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 LABEL org.opencontainers.image.source="https://github.com/sydlexius/stillwater" \
       org.opencontainers.image.description="Artist metadata and image manager for Emby, Jellyfin, and Kodi" \
