@@ -73,7 +73,7 @@ jobs:
         if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
           cache-dependency-path: .github/bruno/package-lock.json
 
@@ -114,7 +114,10 @@ jobs:
         # enforces SHA-512 integrity for the full transitive tree, and the
         # lockfile + npm-ecosystem entry in .github/dependabot.yml gives
         # Dependabot ownership of bumps. Bumping = open .github/bruno, run
-        # `npm install <pkg>@<new>`, commit both files.
+        # `npm install <pkg>@<new>`, commit both files. Relock with npm 11 or
+        # later (what Node 24 ships): npm 10 applies overrides across
+        # peer-dependency edges differently, so a lockfile it writes after an
+        # override change can be rejected by CI's `npm ci`.
         run: |
           cd .github/bruno
           npm ci --no-audit --no-fund
