@@ -1,5 +1,9 @@
 # Read by gate-runner.py (cc-orchestrator >= v0.49.0).
 [prep_pr]
+# Cost in the machine-wide gate pool (cc-orchestrator 0.107.0; inert until a
+# [pool] budget exists in ~/.claude/gate-queue/config.toml). Measured 2026-10-26
+# against budget 10 on a 10-core Mac: full race suite ~5.5 cores avg, peak load 28; slowed a side-by-side canticle run 1.87x.
+weight = 8
 # pre-push-gate.sh now also runs scripts/prefs-coverage.py (.prefs.toml
 # UI-preference coverage, #2195) as one of its steps.
 gate = "bash scripts/pre-push-gate.sh"
