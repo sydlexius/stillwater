@@ -10,6 +10,8 @@
   "overrides": {
     "uuid": "^14.0.0",
     "axios": "^1.18.1",
+    "glob": "^14.0.2",
+    "minimatch": "^11.0.1",
     "tmp": "^0.2.6",
     "form-data": "^4.0.6",
     "ws": "^8.21.0",
@@ -27,11 +29,11 @@
     "ip-address": "^10.7.4",
     "fast-uri": "^3.1.9",
     "browserslist": "^4.28.8",
-    "qs": "^6.16.0",
+    "qs": "^6.16.1",
     "@faker-js/faker": "^10.6.0",
     "csv-parse": "^7.0.2",
     "yaml": "^2.8.3",
-    "follow-redirects": "^1.16.1",
+    "follow-redirects": "^1.16.2",
     "@azure/msal-node": "^7.1.0"
   }
 }
