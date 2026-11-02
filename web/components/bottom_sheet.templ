@@ -37,7 +37,13 @@ type BottomSheetItemData struct {
 	// device does not briefly see the previous user's appearance settings.
 	// Without it the mobile Log Out (the ONLY Log Out at mobile widths) left
 	// that cache behind.
-	HXOnBeforeRequest string
+	//
+	// It is a templ.ComponentScript, not a string: templ >= v0.3.1100 treats
+	// every hx-on* attribute as an event handler and renders a failed-
+	// sanitization comment for a string value, even through a spread
+	// templ.Attributes. Callers pass developer-authored JS via
+	// templ.JSUnsafeFuncCall (never user input) or templ.JSFuncCall.
+	HXOnBeforeRequest templ.ComponentScript
 }
 
 // BottomSheet renders a standalone mobile-first action sheet that slides up from
@@ -121,16 +127,6 @@ templ BottomSheet(id, label string, items []BottomSheetItemData) {
 	</div>
 }
 
-// bsBeforeRequestAttr renders hx-on::before-request as a PLAIN attribute.
-//
-// It cannot be written literally in the markup: templ classifies any attribute
-// matching on* / hx-on* as a script attribute and requires a
-// templ.ComponentScript, so `hx-on::before-request={ someString }` fails to
-// compile. templ.Attributes emits it verbatim, which is what HTMX reads.
-func bsBeforeRequestAttr(handler string) templ.Attributes {
-	return templ.Attributes{"hx-on::before-request": handler}
-}
-
 // bsFirstDestructiveIndex returns the index of the first destructive item or -1.
 func bsFirstDestructiveIndex(items []BottomSheetItemData) int {
 	for i, item := range items {
@@ -197,8 +193,8 @@ templ bottomSheetItem(item BottomSheetItemData) {
 				if item.HXRedirect != "" {
 					hx-redirect={ item.HXRedirect }
 				}
-				if item.HXOnBeforeRequest != "" {
-					{ bsBeforeRequestAttr(item.HXOnBeforeRequest)... }
+				if item.HXOnBeforeRequest.Call != "" {
+					hx-on::before-request={ item.HXOnBeforeRequest }
 				}
 			}
 			if item.HXPost == "" && item.OnClick.Name != "" {

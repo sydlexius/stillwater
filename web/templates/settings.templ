@@ -468,7 +468,22 @@ func scopePillClasses(scope string) string {
 // t(ctx, ...) at the call site), so the strings stay localized. `var btn=this`
 // captures the button up front because `this` would not refer to it inside the
 // setTimeout callback.
-func tokenAfterRequest(rowID, action string) string {
+//
+// templ >= v0.3.1100 classifies every hx-on* attribute as an event handler and
+// requires a templ.ComponentScript value (internal/htmlattr.Classify), so the
+// handler is wrapped with templ.JSUnsafeFuncCall. That wrapper HTML-escapes the
+// whole handler for the attribute (the same escaping a plain string attribute
+// got before) but does not JS-escape anything inside it, so the only dynamic
+// input, rowID, is JSON-encoded into a JS string literal here: json.Marshal
+// escapes quotes, backslashes, <, >, & and U+2028/U+2029, so a token ID can
+// never break out of the getElementById argument.
+func tokenAfterRequest(rowID, action string) templ.ComponentScript {
+	return templ.JSUnsafeFuncCall(tokenAfterRequestJS(rowID, action))
+}
+
+// tokenAfterRequestJS returns the raw (not yet HTML-escaped) JS body for
+// tokenAfterRequest.
+func tokenAfterRequestJS(rowID, action string) string {
 	fail := "{ try { var r=JSON.parse(event.detail.xhr.responseText); " +
 		"showToast(r.error||btn.dataset.toastFail); } catch(e) { showToast(btn.dataset.toastFail); } }"
 	if action == "revoke" {
@@ -481,11 +496,19 @@ func tokenAfterRequest(rowID, action string) string {
 			"} else " + fail
 	}
 	return "var btn=this; if(event.detail.successful) { " +
-		"var row = document.getElementById('" + rowID + "'); " +
+		"var row = document.getElementById(" + jsStringLiteral(rowID) + "); " +
 		"if(row) { row.style.transition='opacity 0.3s'; row.style.opacity='0'; " +
 		"setTimeout(function(){ row.remove(); }, 300); } " +
 		"showSuccessToast(btn.dataset.toastSuccess); " +
 		"} else " + fail
+}
+
+// jsStringLiteral encodes s as a double-quoted JS string literal. json.Marshal
+// cannot fail for a string, and its default HTML escaping (<, >, &) plus its
+// U+2028/U+2029 escaping keep the literal safe inside an inline handler.
+func jsStringLiteral(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
 
 func hasActiveTokens(tokens []auth.APIToken) bool {

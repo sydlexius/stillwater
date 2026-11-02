@@ -105,7 +105,7 @@ func moreTabItems(ctx context.Context, bp string, isAdmin bool) []components.Bot
 			// preferences BEFORE the request so the next user on a shared
 			// device does not see the previous user's appearance settings.
 			// At mobile widths this is the only Log Out there is.
-			HXOnBeforeRequest: "if(window.swPreferences)swPreferences.clearCache()",
+			HXOnBeforeRequest: templ.JSUnsafeFuncCall("if(window.swPreferences)swPreferences.clearCache()"),
 		},
 	)
 	return items
