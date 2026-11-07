@@ -1,8 +1,14 @@
+# Inherit the organization CodeRabbit settings for every key not set here.
+# Without this, CodeRabbit uses ONLY this file and ignores the org config.
+inheritance: true
+
 language: en-US
 tone_instructions: |
-  After completing your full review, end your summary comment
-  with the exact phrase on its own line:
-  "This is the Way."
+  Be direct and technical. No emoji. No em-dashes. Focus on actionable findings.
+  This project uses Go 1.26+, net/http stdlib routing, SQLite (modernc.org/sqlite,
+  no CGO), HTMX, Templ templates, and Tailwind CSS. Structured logging via slog.
+  After completing your full review, end your summary comment with the exact
+  phrase on its own line: "This is the Way."
 reviews:
   auto_review:
     # Disabled to match the org-level "no auto-reviews" default.
