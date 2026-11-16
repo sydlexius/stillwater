@@ -52,7 +52,8 @@ test-cover:
 	go tool cover -html=coverage.out -o coverage.html
 
 ## test-js: Install JS dev dependencies and run Node.js unit tests for client-side JS modules.
-# Uses Node's built-in test runner (node:test, Node 18+) and jsdom (the only npm dep).
+# Uses Node's built-in test runner (node:test, Node ^22.22.2, ^24.15.0, or >=26.0.0,
+# the engines range in package.json) and jsdom (plus the other devDependencies).
 # No server required; tests exercise fanart-manage.js, lightbox.js, and artwork-modal.js
 # in an isolated jsdom environment, plus axe-core structural a11y scans.
 # Run command: make test-js
@@ -63,7 +64,8 @@ test-js:
 ## test-a11y: Build an ephemeral server and run Playwright axe-core a11y smoke tests.
 # Two-tier: (1) make test-js covers structural violations in jsdom (fast, no server);
 # (2) this target covers rendered-color-contrast violations in a real Chromium browser.
-# Required: Node 18+, Go toolchain, templ + tailwindcss on PATH (same as make build).
+# Required: Node ^22.22.2, ^24.15.0, or >=26.0.0 (the engines range in package.json),
+# Go toolchain, templ + tailwindcss on PATH (same as make build).
 # Environment variables (all optional -- defaults are ephemeral and CI-safe):
 #   SW_PORT                  Port the ephemeral server binds to (default: random free port)
 #   STILLWATER_ADMIN_USER    Admin username (default: ci-a11y-admin)
