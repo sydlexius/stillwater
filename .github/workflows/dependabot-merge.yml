@@ -338,30 +338,68 @@ jobs:
               gh api -X PUT "repos/$REPO/pulls/$1/update-branch" >/dev/null
           }
 
-          # Transient GitHub-side failures of the arm call, worth retrying:
-          # a base-branch race, GraphQL's generic timeout, 5xx responses,
-          # transport errors from gh (reset, timeout, a bare EOF from the
-          # HTTP client), and the secondary rate limit. The 5xx pattern needs
-          # gh's `HTTP 5xx:` shape (colon included) so a required check whose
-          # NAME merely contains "HTTP 500" is not read as a server error.
+          # Transient GitHub-side failures of the arm call, worth retrying.
+          #
+          # Every pattern is anchored to the START OF A LINE in an error shape
+          # gh itself emits, never a bare phrase. gh prints the error alone on
+          # its own line (cli/cli internal/ghcmd/cmd.go printError:
+          # `fmt.Fprintln(out, err)`), and the arm call does not wrap it. Server
+          # text that embeds a check name or PR title ("Required status check
+          # \"...\" is expected") does so mid-line, after a fixed prefix, so it
+          # cannot satisfy a line-start pattern. A bare `*'Service
+          # Unavailable'*` did match such text, and turned a permanent block
+          # into three retries and a warning.
+          #
+          # Shapes, from the gh v2.104.0 sources:
+          #   GraphQL: <msg> (<path>)       go-gh pkg/api/errors.go GraphQLError
+          #   HTTP <code>: <msg> (<url>)    go-gh pkg/api/errors.go HTTPError
+          #   HTTP <code> (<url>)             same, when the body has no message
+          #   non-200 OK status code: <code> <reason> body: "<body>"
+          #                                 cli/shurcooL-graphql graphql.go, the
+          #                                 path a mutation takes on a non-200
+          #   Post "<url>": <net error>     Go net/url.Error, for transport
+          #                                 failures (reset, timeout, EOF)
+          #   unexpected EOF                a truncated GraphQL body
+          #                                 (io.ErrUnexpectedEOF, unwrapped)
+          # Only the first error of a multi-error GraphQL response sits at line
+          # start; a transient one listed later is not retried. That misses
+          # a retry, which is the safe direction.
           is_transient() {
-            case "$1" in
-              *'Base branch was modified'*|\
-              *'Something went wrong while executing your query'*|\
-              *'HTTP 5'[0-9][0-9]':'*|*'status code: 5'[0-9][0-9]*|\
-              *'Bad Gateway'*|*'Service Unavailable'*|*'Gateway Timeout'*|\
-              *'connection reset'*|*'i/o timeout'*|*'": EOF'*|*'unexpected EOF'*)
-                return 0 ;;
-            esac
+            local line
+            while IFS= read -r line; do
+              case "$line" in
+                'GraphQL: Base branch was modified.'*|\
+                'GraphQL: Something went wrong while executing your query.'*|\
+                'HTTP 5'[0-9][0-9]': '*|'HTTP 5'[0-9][0-9]' ('*|\
+                'non-200 OK status code: 5'[0-9][0-9]' '*|\
+                'Post "https://'*': connection reset by peer'|\
+                'Post "https://'*': i/o timeout'|\
+                'Post "https://'*': EOF'|\
+                'Post "https://'*': unexpected EOF'|'unexpected EOF')
+                  return 0 ;;
+              esac
+            done <<< "$1"
             is_rate_limited "$1"
           }
 
-          # The secondary rate limit ("was submitted too quickly") wants a much
-          # longer pause than a race does; see arm_delay.
+          # The secondary rate limit wants a much longer pause than a race
+          # does; see arm_delay. It arrives as a GraphQL error ("was submitted
+          # too quickly") or as a 403/429 whose server-written message says
+          # "secondary rate limit" (REST or GraphQL non-200 shape above). Both
+          # are anchored at line start; a 403/429 body is GitHub's fixed
+          # rate-limit text, not one that quotes a check name or PR title.
           is_rate_limited() {
-            case "$1" in
-              *'was submitted too quickly'*|*'secondary rate limit'*) return 0 ;;
-            esac
+            local line
+            while IFS= read -r line; do
+              case "$line" in
+                'GraphQL: was submitted too quickly'*|\
+                'HTTP 403: '*'secondary rate limit'*|\
+                'HTTP 429: '*'secondary rate limit'*|\
+                'non-200 OK status code: 403 '*'secondary rate limit'*|\
+                'non-200 OK status code: 429 '*'secondary rate limit'*)
+                  return 0 ;;
+              esac
+            done <<< "$1"
             return 1
           }
 
