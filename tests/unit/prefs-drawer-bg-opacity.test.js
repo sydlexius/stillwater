@@ -43,10 +43,11 @@ function setup(themeClass) {
   assert.equal(typeof win.swUpdateBgOpacity, 'undefined');
   assert.equal(typeof win.swSaveBgOpacity, 'undefined');
   // Wire the drawer explicitly. In production wire() runs on DOMContentLoaded
-  // (or after the HTMX lazy-mount swap); under jsdom the module evals while
-  // document.readyState is still 'loading', so it defers to a DOMContentLoaded
-  // listener that never fires synchronously. Calling the public entry point is
-  // the same path production takes.
+  // (or after the HTMX lazy-mount swap). Whether the module defers to a
+  // DOMContentLoaded listener depends on the jsdom version (readyState is
+  // 'loading' on jsdom 30 and 'interactive' on 31 when createDom returns), so
+  // wire explicitly. Calling the public entry point is the same path
+  // production takes.
   win.swPrefsDrawer.wire();
   return dom;
 }

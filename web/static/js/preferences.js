@@ -251,17 +251,47 @@
     return p;
   }
 
+  // defaultsPreservingTheme returns a copy of DEFAULTS whose theme is the one
+  // already on the page. themeInitScript applied the correct class and
+  // data-theme from localStorage / OS preference before first paint; applying
+  // DEFAULTS.theme ('dark') over it would flash the page dark for light users.
+  // Prefer the localStorage value (raw preference: 'dark', 'light', 'system');
+  // fall back to the DOM class themeInitScript set.
+  // localStorage.getItem throws in Safari/Firefox private-browsing mode; fall
+  // back to the DOM class in that case.
+  function defaultsPreservingTheme() {
+    var domTheme;
+    try { domTheme = localStorage.getItem('theme'); } catch (e) {}
+    domTheme = domTheme || (document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+    var out = {};
+    for (var k in DEFAULTS) {
+      if (DEFAULTS.hasOwnProperty(k)) {
+        out[k] = DEFAULTS[k];
+      }
+    }
+    out.theme = domTheme;
+    return out;
+  }
+
   function doLoad() {
     // Step 1: Apply cached preferences immediately (no flash of defaults).
     var cached = readCache();
     if (cached) {
       applyAll(cached);
     } else {
-      // No cache at all -- apply compiled defaults so the page is not unstyled.
-      applyAll(DEFAULTS);
+      // No cache at all (any fresh tab or first visit) -- apply compiled
+      // defaults so the page is not unstyled, but keep the theme already on the
+      // page. This branch runs on EVERY no-cache load, whether load() fires from
+      // DOMContentLoaded (script evaluated mid-parse) or immediately (script
+      // evaluated after parsing). Applying DEFAULTS.theme ('dark') here flashed
+      // a light user L -> D -> L until the API answered.
+      applyAll(defaultsPreservingTheme());
     }
 
-    // Step 2: Fetch fresh data from the API.
+    // Step 2: Fetch fresh data from the API. A failed GET falls back to the
+    // cache or the theme-preserving defaults and persists NOTHING: a transient
+    // failure must not write 'dark' (or any default) into the caches.
+    var fellBack = false;
     return fetch(API_BASE, { credentials: 'same-origin' })
       .then(function (resp) {
         if (!resp.ok) {
@@ -269,19 +299,20 @@
             handleSessionExpiry();
           }
           console.warn('swPreferences: API returned ' + resp.status + ' on load');
-          return cached || DEFAULTS;
+          fellBack = true;
+          return cached || defaultsPreservingTheme();
         }
         return resp.json();
       })
       .then(function (prefs) {
-        writeCache(prefs);
+        if (!fellBack) writeCache(prefs);
         applyAll(prefs);
         document.dispatchEvent(new CustomEvent('sw:preferences-applied'));
         return prefs;
       })
       .catch(function (err) {
         console.warn('swPreferences: failed to load preferences from API', err);
-        return cached || DEFAULTS;
+        return cached || defaultsPreservingTheme();
       });
   }
 
@@ -422,18 +453,7 @@
     // Wrapped in try/catch: localStorage.getItem throws in Safari/Firefox
     // private-browsing mode; fall back to the DOM class already set by
     // themeInitScript (which has its own guard in the inline script).
-    var domTheme;
-    try { domTheme = localStorage.getItem('theme'); } catch (e) {}
-    domTheme = domTheme || (document.documentElement.classList.contains('dark') ? 'dark' : 'light');
-    var initDefaults = {};
-    var initKey;
-    for (initKey in DEFAULTS) {
-      if (DEFAULTS.hasOwnProperty(initKey)) {
-        initDefaults[initKey] = DEFAULTS[initKey];
-      }
-    }
-    initDefaults.theme = domTheme;
-    applyAll(initDefaults);
+    applyAll(defaultsPreservingTheme());
   }
 
   // Step 2 (async): Fetch fresh preferences from the API once the DOM is ready.
