@@ -45,7 +45,8 @@ export const MODAL_ARTIST = 'Artwork Modal Fixture';
 const MODAL_MBID = '00000000-0000-4000-8000-000000003475';
 
 // Hand-rolled CRC-32 table for the PNG chunk checksums; it predates the Node
-// 22.22.2+ / 24.15.0+ floor, under which zlib.crc32 is always available and could replace it.
+// engines floor (^22.22.2, ^24.15.0, or >=26.0.0), under which zlib.crc32 is
+// always available and could replace it.
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
