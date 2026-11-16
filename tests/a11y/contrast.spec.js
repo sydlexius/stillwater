@@ -186,7 +186,16 @@ test.describe('artwork modal', () => {
 
     // The body starts as a "Loading" placeholder and is swapped for the editor;
     // scanning before that scans the placeholder, not the surface.
-    await expect(page.locator('#artwork-modal-body [data-context-menu]').first(), `${kind} editor must render`).toBeVisible({ timeout: 15_000 });
+    // waitFor() BEFORE the assertion, for an element that may not exist yet:
+    // under Playwright 1.65, an expect() that polls while its locator matches
+    // nothing captures an aria snapshot of the whole page, which computes
+    // accessible names in Playwright's isolated world. The axe scan that
+    // follows then crashes Firefox (see buildAxeBuilder in helpers/axe.js).
+    // waitFor() takes no snapshot, so the expect() below passes on its first
+    // poll. The assertion itself is unchanged.
+    const editor = page.locator('#artwork-modal-body [data-context-menu]').first();
+    await editor.waitFor({ state: 'visible', timeout: 15_000 });
+    await expect(editor, `${kind} editor must render`).toBeVisible({ timeout: 15_000 });
     const decoded = (img) => img.evaluate((el) => el.complete && el.naturalWidth > 0);
 
     if (kind === 'primary') {
@@ -199,6 +208,8 @@ test.describe('artwork modal', () => {
       // with no backdrops the slot list is empty, there is no slot image and no
       // Crop / Fetch buttons, and this fails instead of scanning an empty tab.
       const slotImg = page.locator('#artwork-modal-body img[src*="/images/fanart/0/file"]').first();
+      // waitFor() first for the same Firefox crash as the editor wait above.
+      await slotImg.waitFor({ state: 'visible', timeout: 15_000 });
       await expect(slotImg, 'fixture: seeded backdrop must render as backdrop slot 0').toBeVisible({ timeout: 15_000 });
       await expect.poll(() => decoded(slotImg), { message: 'seeded backdrop must decode (naturalWidth > 0)' }).toBe(true);
       // Three seeded backdrops: Crop + Fetch on each slot = 6 buttons.
@@ -242,7 +253,15 @@ test.describe('artwork modal', () => {
     const fragment = renderImageResults(artistId, imageURL, k.fragment);
     await page.route('**/images/search**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: fragment }));
     await page.locator('#artwork-modal-body [data-context-menu] [aria-haspopup]').first().click();
-    await page.getByRole('menuitem', { name: /search|fetch/i }).first().click();
+    // Matched by text, NOT getByRole({ name }): a name-based role query followed
+    // by an axe scan of the same page can crash the tab under Playwright 1.65
+    // Firefox (see buildAxeBuilder in helpers/axe.js; expected to be fixed in a
+    // future Firefox roll in Playwright, microsoft/playwright#43967, Mozilla bug
+    // 2090055). These menu items carry no
+    // aria-label, so their text IS their accessible name; visible: true matches
+    // getByRole's default of skipping hidden elements (the page's own closed
+    // Actions menu has a Fetch item earlier in the DOM). Same item either way.
+    await page.locator('[role="menuitem"]').filter({ hasText: /search|fetch/i, visible: true }).first().click();
     // The renderer emits a fixed card count; fewer means the swap did not take.
     await expect(page.locator(k.cards), `${k.kind} provider result cards must render`).toHaveCount(k.count, { timeout: 10_000 });
     await expect(page.locator('#artwork-modal [data-sw-providers-skipped]'), 'provider status banner (skipped) must render').toHaveCount(1);
@@ -390,6 +409,12 @@ test('prefs drawer passes a11y scan', async ({ page }) => {
   // The drawer is lazy-mounted over HTMX on first open and is open once its
   // aria-hidden flips to "false".
   const drawer = page.locator('#sw-prefs-drawer');
+  // waitFor() first: until HTMX mounts it the drawer does not exist, and an
+  // expect() polling an absent element crashes the axe scan below under
+  // Playwright 1.65 Firefox (see buildAxeBuilder in helpers/axe.js; expected
+  // to be fixed in a future Firefox roll in Playwright, microsoft/playwright#43967,
+  // Mozilla bug 2090055).
+  await drawer.waitFor({ state: 'attached', timeout: 10_000 });
   await expect(drawer, 'prefs drawer must open').toHaveAttribute('aria-hidden', 'false', { timeout: 10_000 });
 
   const results = await buildAxeBuilder(page)

@@ -96,7 +96,23 @@ test('turning the option on asks first; cancel stores nothing, accept stores it 
 
   const sw = await openPanel(page);
   await expect(sw).toHaveAttribute('aria-checked', 'false');
-  await expect(sw).toHaveAccessibleName('Also delete near-duplicate backdrops on media servers');
+  // The accessible name is asserted on a SEPARATE page that axe never scans.
+  // Playwright 1.65 computes it in its isolated world by reading the switch's
+  // element.ariaLabelledByElements; axe reads the same property in the page's
+  // world, and Firefox 159 crashes the tab ("Page crashed") once both worlds
+  // have read it on one element, in either order. Expected to be fixed in a
+  // future Firefox roll in Playwright; nobody has confirmed which release:
+  // https://github.com/microsoft/playwright/issues/43967 and
+  // https://bugzilla.mozilla.org/show_bug.cgi?id=2090055 (see buildAxeBuilder).
+  // Same template, same off state, so the assertion is unchanged.
+  const namePage = await page.context().newPage();
+  try {
+    const namedSwitch = await openPanel(namePage);
+    await expect(namedSwitch).toHaveAttribute('aria-checked', 'false');
+    await expect(namedSwitch).toHaveAccessibleName('Also delete near-duplicate backdrops on media servers');
+  } finally {
+    await namePage.close();
+  }
   await expect(page.locator(`${PANEL} [data-prune-threshold]`)).toHaveText('Similarity threshold in use: 95%');
   const off = await rendered(sw);
   await scan(page, PANEL, 'panel open, switch off');
