@@ -51,8 +51,14 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
+      # A POSITIVE allow-list, not `!= semver-major`. fetch-metadata can
+      # report an EMPTY update-type when it cannot classify an update, and a
+      # negated check approved that empty case as if it were a minor bump.
+      # Only an update positively known to be patch or minor is approved.
       - name: Auto-approve patch and minor updates
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        if: >-
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
         run: gh pr review --approve "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
@@ -116,3 +122,19 @@ jobs:
           gh api "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$BODY" >/dev/null
 
           echo "Posted the major-bump skip notice on PR #$PR_NUMBER."
+
+      # The exact complement of the approve and major-skip conditions: any
+      # update-type that is neither patch, minor nor major (including empty)
+      # is declined by the allow-list above, and says so here rather than
+      # being mislabelled "major". Log-only; the value is reduced to a safe
+      # character set before it reaches a workflow command.
+      - name: Announce that an unclassified update was not auto-approved
+        if: >-
+          steps.metadata.outputs.update-type != 'version-update:semver-patch' &&
+          steps.metadata.outputs.update-type != 'version-update:semver-minor' &&
+          steps.metadata.outputs.update-type != 'version-update:semver-major'
+        env:
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+        run: |
+          SAFE_TYPE=${UPDATE_TYPE//[^a-z0-9:.-]/}
+          echo "::notice::Not auto-approved: Dependabot update-type is '${SAFE_TYPE:-<empty>}', not semver-patch or semver-minor, so this PR needs a human review."
