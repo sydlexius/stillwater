@@ -16,10 +16,15 @@ const HTML = '<!doctype html><html class="" data-theme="light"><body></body></ht
 // Build a light-theme page and eval preferences.js with the given fetch stub.
 // Returns the window; the module's own startup load() has already been invoked
 // (immediately or on DOMContentLoaded, per jsdom version).
-function lightPage(fetchStub) {
-  const dom = new JSDOM(HTML, { runScripts: 'dangerously', url: 'http://localhost:1973/' });
+function lightPage(fetchStub, { storedTheme = 'light', html = HTML, osDark } = {}) {
+  const dom = new JSDOM(html, { runScripts: 'dangerously', url: 'http://localhost:1973/' });
   const win = dom.window;
-  win.localStorage.setItem('theme', 'light');
+  if (osDark !== undefined) {
+    // jsdom has no matchMedia; stub the OS colour-scheme query.
+    win.matchMedia = (q) => ({ matches: /dark/.test(q) ? osDark : !osDark, media: q,
+      addEventListener() {}, removeEventListener() {} });
+  }
+  if (storedTheme !== null) win.localStorage.setItem('theme', storedTheme);
   assert.equal(win.sessionStorage.length, 0, 'precondition: no session cache');
   win.fetch = fetchStub;
   win.eval(readFileSync(MODULE_PATHS.preferences, 'utf-8'));
@@ -70,5 +75,35 @@ describe('preferences GET failure persists nothing and keeps the theme', () => {
     assertLight(win, 'after rejection');
     assert.equal(win.localStorage.getItem('theme'), 'light');
     assert.equal(win.sessionStorage.getItem('sw-preferences'), null);
+  });
+});
+
+describe('no stored theme preference (first visit) with a failed GET', () => {
+  // themeInitScript resolved the OS (light) before first paint: no class, data-theme light.
+  it('HTTP 500, OS light: stays light, no theme key written, no dark flash', async () => {
+    const classLog = [];
+    const stub = makeFetchMock({ ok: false, status: 500 });
+    const win = lightPage(stub, { storedTheme: null, osDark: false });
+    const root = win.document.documentElement;
+    new win.MutationObserver(() => classLog.push(root.className)).observe(root, { attributes: true });
+    await domReady(win);
+    await win.swPreferences.load();
+    await flush();
+    assert.equal(win.localStorage.getItem('theme'), null, 'no-preference user still has no theme key');
+    assert.equal(root.classList.contains('dark'), false, 'OS light: no dark class');
+    assert.equal(root.getAttribute('data-theme'), 'system', 'follows the system setting');
+    assert.equal(classLog.some((c) => /dark/.test(c)), false, 'never flashed dark');
+    assert.equal(win.sessionStorage.getItem('sw-preferences'), null);
+  });
+
+  it('HTTP 500, OS dark: follows the OS (dark), still no theme key', async () => {
+    const win = lightPage(makeFetchMock({ ok: false, status: 500 }), {
+      storedTheme: null, osDark: true,
+      html: '<!doctype html><html class="dark" data-theme="dark"><body></body></html>' });
+    await domReady(win);
+    await win.swPreferences.load();
+    await flush();
+    assert.equal(win.localStorage.getItem('theme'), null);
+    assert.equal(win.document.documentElement.classList.contains('dark'), true);
   });
 });
