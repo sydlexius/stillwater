@@ -348,13 +348,28 @@
     return save(key, value).then(function (r) { return r.value; });
   }
 
+  // appliedValue returns the raw value currently APPLIED for key when the cache
+  // does not hold it, so a rollback restores what the user actually had rather
+  // than a compiled default that may never have been applied. A failed GET with
+  // no cache leaves the cache empty while the page keeps the stored theme, so
+  // DEFAULTS.theme ('dark') would be a lie there. Theme: the localStorage raw
+  // preference, else 'system' (see defaultsPreservingTheme). Other attribute
+  // keys: the live data-* attribute, else the compiled default. Keys with no
+  // DOM attribute (e.g. bg_opacity) were applied from DEFAULTS, so it is truthful.
+  function appliedValue(key) {
+    if (key === 'theme') return defaultsPreservingTheme().theme;
+    var attr = ATTR_MAP[key];
+    var live = attr ? document.documentElement.getAttribute(attr) : null;
+    return live || DEFAULTS[key];
+  }
+
   // save is set() with an explicit outcome: it resolves {ok, value}, where ok is
   // true only when the server accepted the write and value is what the client
   // now holds (the server's normalized value, or the reverted previous value).
   function save(key, value) {
     // Save previous value for rollback if the server rejects.
     var cached = readCache() || {};
-    var previousValue = cached[key] || DEFAULTS[key];
+    var previousValue = cached[key] || appliedValue(key);
 
     // Optimistic: apply immediately so the UI feels instant.
     applySingle(key, value);

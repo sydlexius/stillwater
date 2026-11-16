@@ -27,12 +27,27 @@ function lightPage(fetchStub, { storedTheme = 'light', html = HTML, osDark } = {
   if (storedTheme !== null) win.localStorage.setItem('theme', storedTheme);
   assert.equal(win.sessionStorage.length, 0, 'precondition: no session cache');
   win.fetch = fetchStub;
+  // Observe <html> BEFORE the module is evaluated so a dark class applied during
+  // synchronous init and undone later (e.g. at DOMContentLoaded) is still
+  // recorded. attributeOldValue captures each class value being replaced, so a
+  // transient dark is visible even though the final state is light.
+  const root = win.document.documentElement;
+  const seen = [];
+  const mo = new win.MutationObserver((recs) => {
+    for (const r of recs) if (r.attributeName === 'class') seen.push(r.oldValue, r.target.className);
+  });
+  mo.observe(root, { attributes: true, attributeOldValue: true, attributeFilter: ['class'] });
+  win.__sawDark = () => {
+    for (const r of mo.takeRecords()) seen.push(r.oldValue, r.target.className);
+    return seen.some((c) => /\bdark\b/.test(c || ''));
+  };
   win.eval(readFileSync(MODULE_PATHS.preferences, 'utf-8'));
   return win;
 }
 
 function assertLight(win, msg) {
   const root = win.document.documentElement;
+  assert.equal(win.__sawDark(), false, `${msg}: dark must never have been applied`);
   assert.equal(root.classList.contains('dark'), false, `${msg}: dark class must stay off`);
   assert.equal(root.getAttribute('data-theme'), 'light', `${msg}: data-theme must stay light`);
 }
@@ -47,6 +62,7 @@ function domReady(win) {
 describe('preferences load with no session cache keeps the on-page theme', () => {
   it('stays light while the API call is still pending', async () => {
     const win = lightPage(() => new Promise(() => {})); // never settles
+    assertLight(win, 'right after synchronous init');
     await domReady(win);
     // Also drive the public load path explicitly.
     win.swPreferences.load();
@@ -59,6 +75,7 @@ describe('preferences GET failure persists nothing and keeps the theme', () => {
   it('HTTP 500: page stays light, caches untouched', async () => {
     const stub = makeFetchMock({ ok: false, status: 500 });
     const win = lightPage(stub);
+    assertLight(win, 'right after synchronous init');
     await domReady(win);
     await win.swPreferences.load();
     await flush();
@@ -69,6 +86,7 @@ describe('preferences GET failure persists nothing and keeps the theme', () => {
 
   it('network rejection: page stays light, caches untouched', async () => {
     const win = lightPage(() => Promise.reject(new Error('offline')));
+    assertLight(win, 'right after synchronous init');
     await domReady(win);
     await win.swPreferences.load();
     await flush();
@@ -81,18 +99,18 @@ describe('preferences GET failure persists nothing and keeps the theme', () => {
 describe('no stored theme preference (first visit) with a failed GET', () => {
   // themeInitScript resolved the OS (light) before first paint: no class, data-theme light.
   it('HTTP 500, OS light: stays light, no theme key written, no dark flash', async () => {
-    const classLog = [];
     const stub = makeFetchMock({ ok: false, status: 500 });
     const win = lightPage(stub, { storedTheme: null, osDark: false });
     const root = win.document.documentElement;
-    new win.MutationObserver(() => classLog.push(root.className)).observe(root, { attributes: true });
+    assert.equal(win.__sawDark(), false, 'no dark right after synchronous init');
+    assert.equal(root.getAttribute('data-theme'), 'system', 'system right after synchronous init');
     await domReady(win);
     await win.swPreferences.load();
     await flush();
     assert.equal(win.localStorage.getItem('theme'), null, 'no-preference user still has no theme key');
     assert.equal(root.classList.contains('dark'), false, 'OS light: no dark class');
     assert.equal(root.getAttribute('data-theme'), 'system', 'follows the system setting');
-    assert.equal(classLog.some((c) => /dark/.test(c)), false, 'never flashed dark');
+    assert.equal(win.__sawDark(), false, 'never flashed dark');
     assert.equal(win.sessionStorage.getItem('sw-preferences'), null);
   });
 
@@ -105,5 +123,23 @@ describe('no stored theme preference (first visit) with a failed GET', () => {
     await flush();
     assert.equal(win.localStorage.getItem('theme'), null);
     assert.equal(win.document.documentElement.classList.contains('dark'), true);
+  });
+});
+
+describe('failed rollback restores the APPLIED theme, not DEFAULTS', () => {
+  it('stored light, no cache, GET 500, set(theme, dark) with PUT 500: back to light', async () => {
+    // GET 500 leaves the session cache empty; the PUT then fails too.
+    const win = lightPage(makeFetchMock({ ok: false, status: 500 }));
+    await domReady(win);
+    await win.swPreferences.load();
+    await flush();
+    assert.equal(win.sessionStorage.getItem('sw-preferences'), null, 'precondition: cache still empty');
+    const r = await win.swPreferences.save('theme', 'dark');
+    assert.equal(r.ok, false);
+    assert.equal(r.value, 'light', 'rollback value is the applied theme');
+    const root = win.document.documentElement;
+    assert.equal(root.classList.contains('dark'), false, 'page back to light');
+    assert.equal(root.getAttribute('data-theme'), 'light');
+    assert.equal(win.localStorage.getItem('theme'), 'light', 'localStorage restored to light');
   });
 });
