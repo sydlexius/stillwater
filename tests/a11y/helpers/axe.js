@@ -26,6 +26,19 @@ import AxeBuilder from '@axe-core/playwright';
 // catch RENDERED-style violations rather than structural completeness. Keeping
 // the exemption here, once, means a future change to it cannot apply to some
 // specs and not others.
+//
+// FIREFOX CRASH HAZARD (Playwright 1.65, Firefox 159): a name-based role query
+// (getByRole/getByLabel with a name) or toHaveAccessibleName, followed by an axe
+// scan of the same page, crashes the tab with "Page crashed". Both sides read
+// element.ariaLabelledByElements, one from Playwright's isolated world and one
+// from the page, and Firefox breaks once both have read it on one element, in
+// either order. Locate by text or attribute on a page you scan, or make the name
+// assertion on a separate page. A web-first expect() that polls while its
+// locator matches NOTHING triggers it too: Playwright then captures an aria
+// snapshot of the whole page, so call locator.waitFor() before asserting on an
+// element that appears late. Expected to be fixed in a future Firefox roll
+// in Playwright: https://github.com/microsoft/playwright/issues/43967,
+// https://bugzilla.mozilla.org/show_bug.cgi?id=2090055
 export function buildAxeBuilder(page) {
   return new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'best-practice'])
