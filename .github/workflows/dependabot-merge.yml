@@ -383,16 +383,28 @@ jobs:
           }
 
           # The secondary rate limit wants a much longer pause than a race
-          # does; see arm_delay. It arrives as a GraphQL error ("was submitted
-          # too quickly") or as a 403/429 whose server-written message says
-          # "secondary rate limit" (REST or GraphQL non-200 shape above). Both
-          # are anchored at line start; a 403/429 body is GitHub's fixed
-          # rate-limit text, not one that quotes a check name or PR title.
+          # does; see arm_delay. It arrives as a 403/429 whose server-written
+          # message says "secondary rate limit" (REST or GraphQL non-200 shape
+          # above), or, per GitHub's GraphQL rate-limit docs, as an HTTP 200
+          # carrying a GraphQL error, whose wording is not fixed:
+          # https://docs.github.com/en/graphql/overview/rate-limits-and-query-limits-for-the-graphql-api
+          # The GraphQL forms matched are the two seen in practice: "was
+          # submitted too quickly" and GitHub's standard "You have exceeded a
+          # secondary rate limit" text, each right after `GraphQL: `.
+          #
+          # Deliberately NOT a broader `'GraphQL: '*'secondary rate limit'*`.
+          # GitHub text that quotes a check name also starts with `GraphQL: `
+          # (`GraphQL: Required status check "<name>" is expected.`), so a
+          # check named "secondary rate limit" would match it and a permanent
+          # block would be retried and downgraded to a warning. A GraphQL
+          # wording outside these two falls through to the error path: loud,
+          # and fixed by adding its exact prefix here.
           is_rate_limited() {
             local line
             while IFS= read -r line; do
               case "$line" in
                 'GraphQL: was submitted too quickly'*|\
+                'GraphQL: You have exceeded a secondary rate limit'*|\
                 'HTTP 403: '*'secondary rate limit'*|\
                 'HTTP 429: '*'secondary rate limit'*|\
                 'non-200 OK status code: 403 '*'secondary rate limit'*|\
