@@ -16,8 +16,10 @@ const HTML = `<!doctype html><html><body>
   <div data-disabled-provider="genius"></div>
 </div></body></html>`;
 
-// jsdom parses asynchronously: createDom returns with readyState 'loading' and
-// fires DOMContentLoaded afterwards, exactly like a browser parsing the page.
+// Whether createDom returns mid-parse is a jsdom implementation detail: jsdom
+// <= 30 returned with readyState 'loading' and fired DOMContentLoaded
+// afterwards, jsdom >= 31 parses synchronously and returns already past
+// 'loading'. domReady waits only when the document really is still loading.
 function domReady(win) {
   if (win.document.readyState !== 'loading') return Promise.resolve();
   return new Promise((res) => win.document.addEventListener('DOMContentLoaded', res));
@@ -34,10 +36,15 @@ function loadInit(win) {
 describe('sortable-init initial init timing (#2189)', () => {
   it('defers while the document is loading, then inits on DOMContentLoaded', async () => {
     const win = createDom({ html: HTML, csrfToken: 'tok' }).window;
+    // Pin the document to 'loading' for the module's eval so the test does not
+    // depend on how far this jsdom version parsed before returning.
+    Object.defineProperty(win.document, 'readyState', { configurable: true, get: () => 'loading' });
     assert.equal(win.document.readyState, 'loading', 'precondition: still parsing');
     const calls = loadInit(win);
     assert.equal(calls.length, 0, 'must not init at parse time');
-    await domReady(win);
+    // Parsing finishes: drop the pin and fire the event the browser would.
+    delete win.document.readyState;
+    win.document.dispatchEvent(new win.Event('DOMContentLoaded'));
     assert.equal(calls.length, 1, 'inits once DOMContentLoaded fires');
   });
 

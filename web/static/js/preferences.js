@@ -251,17 +251,66 @@
     return p;
   }
 
+  // defaultsPreservingTheme returns a copy of DEFAULTS whose theme is the user's
+  // existing preference rather than DEFAULTS.theme ('dark'), which would flash
+  // the page dark for light users. Source of truth is localStorage (raw
+  // preference: 'dark', 'light', 'system'). When there is NO stored preference
+  // (first visit, or localStorage unreadable in Safari/Firefox private mode) the
+  // value is 'system', the no-preference value: applying it resolves through
+  // matchMedia exactly as themeInitScript did before first paint, so there is no
+  // flash, and it does not pin the user to today's resolved OS value. The DOM
+  // class is deliberately NOT consulted: it is the RESOLVED result, and
+  // re-applying it as a preference would turn "follow the OS" into a fixed theme.
+  function defaultsPreservingTheme() {
+    var theme;
+    try { theme = localStorage.getItem('theme'); } catch (e) {}
+    var out = {};
+    for (var k in DEFAULTS) {
+      if (DEFAULTS.hasOwnProperty(k)) {
+        out[k] = DEFAULTS[k];
+      }
+    }
+    out.theme = theme || 'system';
+    return out;
+  }
+
+  // applyFallbackDefaults applies defaultsPreservingTheme() to the DOM WITHOUT
+  // leaving a localStorage theme behind that was not there before. applySingle
+  // writes the theme key as a side effect; for fallback defaults that is not a
+  // user choice, so a no-preference user must still have no key afterwards (and
+  // an existing key is left exactly as it was). The server value, when it
+  // arrives, is persisted by the normal applyAll path.
+  function applyFallbackDefaults(defaults) {
+    var before = null;
+    var readable = true;
+    try { before = localStorage.getItem('theme'); } catch (e) { readable = false; }
+    applyAll(defaults);
+    if (!readable) return;
+    try {
+      if (before === null) localStorage.removeItem('theme');
+      else localStorage.setItem('theme', before);
+    } catch (e) { /* private browsing or quota - non-fatal */ }
+  }
+
   function doLoad() {
     // Step 1: Apply cached preferences immediately (no flash of defaults).
     var cached = readCache();
     if (cached) {
       applyAll(cached);
     } else {
-      // No cache at all -- apply compiled defaults so the page is not unstyled.
-      applyAll(DEFAULTS);
+      // No cache at all (any fresh tab or first visit) -- apply compiled
+      // defaults so the page is not unstyled, but keep the theme already on the
+      // page. This branch runs on EVERY no-cache load, whether load() fires from
+      // DOMContentLoaded (script evaluated mid-parse) or immediately (script
+      // evaluated after parsing). Applying DEFAULTS.theme ('dark') here flashed
+      // a light user L -> D -> L until the API answered.
+      applyFallbackDefaults(defaultsPreservingTheme());
     }
 
-    // Step 2: Fetch fresh data from the API.
+    // Step 2: Fetch fresh data from the API. A failed GET falls back to the
+    // cache or the theme-preserving defaults and persists NOTHING: a transient
+    // failure must not write 'dark' (or any default) into the caches.
+    var fellBack = false;
     return fetch(API_BASE, { credentials: 'same-origin' })
       .then(function (resp) {
         if (!resp.ok) {
@@ -269,19 +318,24 @@
             handleSessionExpiry();
           }
           console.warn('swPreferences: API returned ' + resp.status + ' on load');
-          return cached || DEFAULTS;
+          fellBack = true;
+          return cached || defaultsPreservingTheme();
         }
         return resp.json();
       })
       .then(function (prefs) {
-        writeCache(prefs);
-        applyAll(prefs);
+        // Step 1 already applied the cache or the fallback defaults, so a failed
+        // GET neither re-applies nor persists anything.
+        if (!fellBack) {
+          writeCache(prefs);
+          applyAll(prefs);
+        }
         document.dispatchEvent(new CustomEvent('sw:preferences-applied'));
         return prefs;
       })
       .catch(function (err) {
         console.warn('swPreferences: failed to load preferences from API', err);
-        return cached || DEFAULTS;
+        return cached || defaultsPreservingTheme();
       });
   }
 
@@ -294,13 +348,28 @@
     return save(key, value).then(function (r) { return r.value; });
   }
 
+  // appliedValue returns the raw value currently APPLIED for key when the cache
+  // does not hold it, so a rollback restores what the user actually had rather
+  // than a compiled default that may never have been applied. A failed GET with
+  // no cache leaves the cache empty while the page keeps the stored theme, so
+  // DEFAULTS.theme ('dark') would be a lie there. Theme: the localStorage raw
+  // preference, else 'system' (see defaultsPreservingTheme). Other attribute
+  // keys: the live data-* attribute, else the compiled default. Keys with no
+  // DOM attribute (e.g. bg_opacity) were applied from DEFAULTS, so it is truthful.
+  function appliedValue(key) {
+    if (key === 'theme') return defaultsPreservingTheme().theme;
+    var attr = ATTR_MAP[key];
+    var live = attr ? document.documentElement.getAttribute(attr) : null;
+    return live || DEFAULTS[key];
+  }
+
   // save is set() with an explicit outcome: it resolves {ok, value}, where ok is
   // true only when the server accepted the write and value is what the client
   // now holds (the server's normalized value, or the reverted previous value).
   function save(key, value) {
     // Save previous value for rollback if the server rejects.
     var cached = readCache() || {};
-    var previousValue = cached[key] || DEFAULTS[key];
+    var previousValue = cached[key] || appliedValue(key);
 
     // Optimistic: apply immediately so the UI feels instant.
     applySingle(key, value);
@@ -411,29 +480,11 @@
   } else {
     // No session cache yet (new tab or cleared sessionStorage). themeInitScript
     // already applied the correct theme class and data-theme attribute from
-    // localStorage / OS preference before first paint. Preserve that by reading
-    // the current theme back from the DOM rather than blindly applying
-    // DEFAULTS.theme = 'dark', which would flash the page to dark even for
-    // users whose preference is light or system-light.
-    //
-    // Prefer the localStorage value (raw preference: 'dark', 'light', 'system')
-    // set by preferences.js on prior loads; fall back to the DOM class that
-    // themeInitScript set for the current paint.
-    // Wrapped in try/catch: localStorage.getItem throws in Safari/Firefox
-    // private-browsing mode; fall back to the DOM class already set by
-    // themeInitScript (which has its own guard in the inline script).
-    var domTheme;
-    try { domTheme = localStorage.getItem('theme'); } catch (e) {}
-    domTheme = domTheme || (document.documentElement.classList.contains('dark') ? 'dark' : 'light');
-    var initDefaults = {};
-    var initKey;
-    for (initKey in DEFAULTS) {
-      if (DEFAULTS.hasOwnProperty(initKey)) {
-        initDefaults[initKey] = DEFAULTS[initKey];
-      }
-    }
-    initDefaults.theme = domTheme;
-    applyAll(initDefaults);
+    // localStorage / OS preference before first paint. Re-apply the stored
+    // preference (or 'system' when none) rather than DEFAULTS.theme = 'dark',
+    // which would flash the page dark for light and system-light users. See
+    // defaultsPreservingTheme / applyFallbackDefaults.
+    applyFallbackDefaults(defaultsPreservingTheme());
   }
 
   // Step 2 (async): Fetch fresh preferences from the API once the DOM is ready.

@@ -41,6 +41,16 @@ export function createDom({ html, modules = [], csrfToken = null } = {}) {
   );
   const win = dom.window;
 
+  // jsdom has no matchMedia. Model the OS colour scheme as whatever
+  // themeInitScript resolved before first paint (the initial <html> dark class),
+  // so a 'system' theme preference resolves the same way it does in a browser.
+  // Tests that need a different OS setting overwrite win.matchMedia.
+  const osDark = win.document.documentElement.classList.contains('dark');
+  win.matchMedia = (q) => ({
+    matches: /prefers-color-scheme:\s*dark/.test(q) ? osDark : false,
+    media: q, addEventListener() {}, removeEventListener() {},
+  });
+
   win.confirm = () => true;
   win.alert   = () => {};
   win.htmx    = { ajax: () => Promise.resolve() };
