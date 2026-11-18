@@ -71,21 +71,24 @@ func ResolveFanartFilesNamed(ctx context.Context, dir string, candidates []strin
 		}
 	}
 
+	// Both passes match against the SAME entries snapshot (DiscoverFanartFrom
+	// does no I/O), so the chosen candidate and the ordinal list can never come
+	// from two different directory states.
+	//
 	// Pass 1: a primary file on disk decides which naming convention applies.
 	for _, candidate := range candidates {
 		if present[strings.ToLower(candidate)] {
-			paths, err := DiscoverFanart(ctx, dir, candidate)
-			return candidate, paths, err
+			return candidate, DiscoverFanartFrom(dir, entries, candidate), nil
 		}
 	}
 
 	// Pass 2: no primary anywhere, so numbered variants may still be present.
 	// Strictly additive -- it cannot change any artist pass 1 resolved.
 	for _, candidate := range candidates {
-		paths, err := DiscoverFanart(ctx, dir, candidate)
-		if err != nil {
+		if err := ctx.Err(); err != nil {
 			return "", nil, err
 		}
+		paths := DiscoverFanartFrom(dir, entries, candidate)
 		if len(paths) > 0 {
 			return candidate, paths, nil
 		}

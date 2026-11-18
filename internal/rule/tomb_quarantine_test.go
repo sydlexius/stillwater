@@ -65,6 +65,7 @@ func requireBytesUnderOrphan(t *testing.T, dir, pattern string, want []byte) {
 func TestImageDuplicateFixer_Fix_PreservesStrandedTomb(t *testing.T) {
 	db := setupTestDB(t)
 	insertTestArtist(t, db, "art-2956", "Tomb Artist")
+	insertTestImage(t, db, "art-2956", "fanart", 0)
 	insertTestImage(t, db, "art-2956", "fanart", 1)
 	insertTestImage(t, db, "art-2956", "fanart", 2)
 

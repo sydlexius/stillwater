@@ -96,11 +96,13 @@ func (p *Pipeline) ScanFanartDuplicates(ctx context.Context) (FanartDupReport, e
 				continue
 			}
 			if res.unresolvedFanart > 0 {
-				// A fanart row whose file could not be resolved is excluded
-				// from detection. The artist is NOT skipped: it still feeds
-				// the duplicate tallies below from the rows that did resolve.
-				// Counting it in ScanErrors only keeps a partial look from
-				// being reported as a clean one (#2632).
+				// Fanart rows that could not be resolved to files are excluded
+				// from detection. When the row count and the files on disk
+				// disagree, findImageDuplicates excludes ALL of the artist's
+				// fanart (no hash persisted, no duplicate reported), so the
+				// tallies below see none of it. Counting it in ScanErrors keeps
+				// that unexamined artist from being reported as clean (#2632).
+				// The artist's other image types are unaffected.
 				p.logger.Warn("fanart duplicate scan could not resolve every fanart row",
 					slog.String("artist_id", a.ID), slog.Int("unresolved_rows", res.unresolvedFanart))
 				report.ScanErrors++

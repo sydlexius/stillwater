@@ -505,7 +505,31 @@ func findImageDuplicatesImpl(
 		return out, err
 	}
 
-	fanartPaths := discoverFanartForDup(ctx, a, raw, fanartPrimaryName, fresh, logger)
+	fanartPaths, discovered := discoverFanartForDup(ctx, a, raw, fanartPrimaryName, fresh, logger)
+
+	// Rows map to files by POSITION (slot_index indexes the ordinal list), which
+	// is only sound when the directory still holds exactly one file per row. If
+	// a file vanished (or appeared) since the rows were written, every row after
+	// the gap would be paired with a neighbor's file, and a fresh pass would
+	// persist that file's hash onto the wrong row. So a count mismatch withdraws
+	// the file mapping for ALL of the artist's fanart rows: no file is read, no
+	// hash is persisted, and (on a fresh pass, which ignores stored hashes) no
+	// row is usable, so nothing is reported as a duplicate or offered to the
+	// fixer for deletion. A non-fresh pass still honors hashes already stored,
+	// exactly as it does for a path-less artist.
+	if discovered {
+		rows := 0
+		for _, r := range raw {
+			if r.imageType == "fanart" {
+				rows++
+			}
+		}
+		if rows > 0 && rows != len(fanartPaths) {
+			logger.Warn("fanart row count differs from files on disk; not mapping rows to files for duplicate detection",
+				"artist", a.Name, "rows", rows, "files", len(fanartPaths))
+			fanartPaths = nil
+		}
+	}
 
 	var hashes []uint64
 	for _, r := range raw {
@@ -536,12 +560,16 @@ func findImageDuplicatesImpl(
 // stored). An artist whose hashes are all persisted causes no directory scan
 // at all, which is the steady state after the first evaluation.
 // A fresh pass always needs the paths: it re-reads every file by definition.
-func discoverFanartForDup(ctx context.Context, a *artist.Artist, raw []imageDupRawRow, _ string, fresh bool, logger *slog.Logger) []string {
+//
+// The bool reports whether a discovery actually produced a path list (false
+// when none was needed, there is no path, or the directory could not be read),
+// so the caller applies the row-count check only to a real listing.
+func discoverFanartForDup(ctx context.Context, a *artist.Artist, raw []imageDupRawRow, _ string, fresh bool, logger *slog.Logger) ([]string, bool) {
 	// No local directory: nothing to discover. The caller then runs entirely off
 	// the hashes already stored in artist_images, which is the whole point of
 	// letting a path-less artist reach detection at all.
 	if a.Path == "" {
-		return nil
+		return nil, false
 	}
 	needed := fresh
 	for _, r := range raw {
@@ -558,7 +586,7 @@ func discoverFanartForDup(ctx context.Context, a *artist.Artist, raw []imageDupR
 		}
 	}
 	if !needed {
-		return nil
+		return nil, false
 	}
 
 	// The primary-name parameter is unused: see ResolveScannerFanart. It stays
@@ -566,9 +594,9 @@ func discoverFanartForDup(ctx context.Context, a *artist.Artist, raw []imageDupR
 	_, discovered, discErr := ResolveScannerFanart(ctx, a.Path)
 	if discErr != nil {
 		logger.Debug("discovering fanart for duplicate detection", "artist", a.Name, "error", discErr)
-		return nil
+		return nil, false
 	}
-	return discovered
+	return discovered, true
 }
 
 // ResolveScannerFanart resolves an artist directory's fanart exactly as the
