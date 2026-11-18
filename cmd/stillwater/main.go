@@ -1248,6 +1248,47 @@ func (a *Application) startFanartHashBackfill(ctx context.Context, db *sql.DB) {
 	go a.maintenanceService.StartFanartHashBackfill(ctx, primaryFn, time.Duration(backfillHours)*time.Hour, 45*time.Second)
 }
 
+// startPlatformHashBackfill launches the #2513 pass hashing thumb/logo/banner of
+// platform-only artists via the image bridge; interval_hours <= 0 disables it.
+func (a *Application) startPlatformHashBackfill(ctx context.Context, db *sql.DB) {
+	if a.imageBridge == nil || a.maintenanceService == nil {
+		return
+	}
+	hours := getDBIntSetting(ctx, db, "platform_hash_backfill.interval_hours", 6)
+	if hours <= 0 {
+		a.logger.Info("platform hash backfill disabled", slog.String("setting", "platform_hash_backfill.interval_hours"))
+		return
+	}
+	opts := maintenance.PlatformHashBackfillOpts{
+		RequestsPerMinute: getDBIntSetting(ctx, db, "platform_hash_backfill.requests_per_minute", 120),
+		MaxPerPass:        getDBIntSetting(ctx, db, "platform_hash_backfill.max_per_pass", 200),
+	}
+	if a.platformService != nil {
+		// The save path's configured names; a read failure leaves the row unverified.
+		opts.Names = profileImageNames(a.platformService.GetActive)
+	}
+	go a.maintenanceService.StartPlatformHashBackfill(ctx, a.imageBridge, opts, time.Duration(hours)*time.Hour, 60*time.Second)
+}
+
+// profileImageNames builds the backfill's Names hook. GetActive returns
+// (nil, nil) when no profile is active; that is an error here, never a silent
+// fall back to the default names, so the pass stays fail-closed (the row is
+// unverifiable: nothing fetched, nothing written), as fanartPrimaryResolver does.
+func profileImageNames(
+	getActive func(context.Context) (*platform.Profile, error),
+) func(context.Context, string) ([]string, error) {
+	return func(c context.Context, imageType string) ([]string, error) {
+		profile, err := getActive(c)
+		if err != nil {
+			return nil, err
+		}
+		if profile == nil {
+			return nil, errors.New("no active platform profile")
+		}
+		return profile.ImageNaming.NamesForType(imageType), nil
+	}
+}
+
 // fanartPrimaryResolver builds the maintenance.FanartPrimaryFn that resolves the
 // active profile's primary fanart filename.
 //
@@ -1477,6 +1518,7 @@ func (a *Application) startListeners() error {
 
 	// Fanart per-slot hash backfill (issue #2564).
 	a.startFanartHashBackfill(ctx, db)
+	a.startPlatformHashBackfill(ctx, db) // #2513, independent of the fanart pass
 
 	// LockSync platform-pull scheduler (issue #1726 Part C).
 	a.startLockSyncScheduler(ctx, db, logger)

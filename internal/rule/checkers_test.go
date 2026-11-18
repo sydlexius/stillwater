@@ -1818,6 +1818,11 @@ func (m *mockImageFetcher) FetchArtistImage(_ context.Context, _, _ string) ([]b
 	return m.fetchData, m.fetchType, m.fetchErr
 }
 
+func (m *mockImageFetcher) FetchArtistImageSlot(_ context.Context, _, _ string, _ int) ([]byte, string, error) {
+	m.fetchCalls++
+	return m.fetchData, m.fetchType, m.fetchErr
+}
+
 func (m *mockImageFetcher) UploadArtistImage(_ context.Context, _, _ string, data []byte, contentType string) error {
 	m.uploadCalls++
 	m.uploadData = data

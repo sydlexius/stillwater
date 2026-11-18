@@ -58,7 +58,7 @@ func insertAPIImage(t *testing.T, db *sql.DB, artistID, imageType string, slot i
 	}
 }
 
-// insertBlindFanartPair seeds the ONLY shape in which a duplicate rule is
+// insertBlindFanartPair seeds the canonical shape in which a duplicate rule is
 // genuinely SKIPPED for a path-less artist: TWO fanart images -- so a pair
 // exists and a duplicate is possible -- with neither a perceptual nor a content
 // hash on either, so nothing about that pair can be compared.
@@ -289,6 +289,45 @@ func TestPathlessArtist_ExactDuplicateIsDetected(t *testing.T) {
 	}
 	if reason != SkipReasonNoComparablePerceptualHashes {
 		t.Errorf("skip reason = %q; want %q", reason, SkipReasonNoComparablePerceptualHashes)
+	}
+}
+
+// Hashed thumb and logo (#2513) must not un-skip the perceptual rule while
+// fanart is under-hashed: it needs min(2, fanart count) hashed fanart (#2509).
+// Kills: dropping the fanart condition, `< 1`, the one-fanart gap.
+func TestPathlessArtist_HashedNonFanartKeepsPerceptualRuleSkipped(t *testing.T) {
+	h, u := uint64(0x00FF00FF00FF00FF), hashUnknown
+	tests := []struct {
+		name    string
+		fanart  []uint64
+		skipped bool
+	}{
+		{"one fanart unhashed", []uint64{u}, true},
+		{"one fanart hashed", []uint64{h}, false},
+		{"two fanart zero hashed", []uint64{u, u}, true},
+		{"two fanart one hashed", []uint64{h, u}, true},
+		{"two fanart both hashed", []uint64{h, ^h}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupTestDB(t)
+			engine, _ := dupRuleEngine(t, db)
+			a := apiOnlyArtist(t, db, "API Single Slot")
+			insertAPIImage(t, db, a.ID, "thumb", 0, 0xF0F0F0F0F0F0F0F0, "")
+			insertAPIImage(t, db, a.ID, "logo", 0, 0x0F0F0F0F0F0F0F0F, "")
+			for i, ph := range tc.fanart {
+				insertAPIImage(t, db, a.ID, "fanart", i, ph, "")
+			}
+			res, err := engine.Evaluate(t.Context(), a)
+			if err != nil {
+				t.Fatalf("Evaluate: %v", err)
+			}
+			reason, skipped := skipReasonFor(res, RuleImageDuplicate)
+			if considered := slices.Contains(res.RulesConsidered, RuleImageDuplicate); skipped != tc.skipped ||
+				considered == tc.skipped || (skipped && reason != SkipReasonNoComparableFanartPerceptualHashes) {
+				t.Fatalf("considered=%v skipped=%v reason=%q, want skipped=%v", considered, skipped, reason, tc.skipped)
+			}
+		})
 	}
 }
 
