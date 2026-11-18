@@ -204,13 +204,16 @@ func TestBackfillFanartHashes_RejectsMissingResolver(t *testing.T) {
 }
 
 // TestBackfillFanartHashes_SkipsVanishedSlot covers a row that outlived its
-// file (or whose slots were renumbered between the SELECT and the read). It
-// must be skipped, not fail the pass and not fill the row with a neighbour's
-// hash.
+// file (or whose slots were renumbered between the SELECT and the read). The
+// artist's rows (slots 0 and 5 against one file) are not exactly {0..n-1}, so
+// the positional mapping is withdrawn: NEITHER row is hashed (a hash from the
+// wrong file is worse than none), the pass does not fail, and an unrelated
+// healthy artist is still healed.
 func TestBackfillFanartHashes_SkipsVanishedSlot(t *testing.T) {
 	db, dbPath := setupTestDBWithImages(t)
 	svc := NewService(db, dbPath, "", slog.Default())
 	seedFanartArtist(t, db, "artist-vanished", 1)
+	seedFanartArtist(t, db, "artist-healthy", 1)
 
 	// A row for a slot with no file behind it.
 	if _, err := db.ExecContext(context.Background(),
@@ -226,9 +229,13 @@ func TestBackfillFanartHashes_SkipsVanishedSlot(t *testing.T) {
 	if ph, _ := fanartHashes(t, db, "artist-vanished", 5); ph != "" {
 		t.Errorf("ghost slot 5 phash = %q, want empty -- a slot with no file was given some other file's hash", ph)
 	}
-	// The real slot must still be healed: one bad row must not poison the pass.
-	if ph, _ := fanartHashes(t, db, "artist-vanished", 0); ph == "" {
-		t.Error("slot 0 phash is empty -- a vanished sibling slot aborted the whole pass")
+	// The mapping is unsound for this artist, so its real slot stays unhashed too.
+	if ph, _ := fanartHashes(t, db, "artist-vanished", 0); ph != "" {
+		t.Errorf("slot 0 phash = %q, want empty: the artist's slot map is not contiguous", ph)
+	}
+	// One bad artist must not poison the pass.
+	if ph, _ := fanartHashes(t, db, "artist-healthy", 0); ph == "" {
+		t.Error("healthy artist's slot 0 phash is empty -- a bad sibling artist aborted the whole pass")
 	}
 }
 

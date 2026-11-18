@@ -95,3 +95,25 @@ func ResolveFanartFilesNamed(ctx context.Context, dir string, candidates []strin
 	}
 	return "", nil, nil
 }
+
+// FanartSlotsContiguous reports whether slots (the slot_index of every live
+// fanart row for one artist) are exactly {0..n-1}, where n is the number of
+// fanart files on disk. Rows map to files by POSITION (slot_index indexes the
+// ordinal list), so that mapping is only sound when every ordinal has exactly
+// one row. A count match alone is not enough: rows 0, 2, 3 against three files
+// pass a count check yet pair slot 2 with the second file. Duplicate slots
+// cannot occur (UNIQUE(artist_id, image_type, slot_index)), but this checks
+// the set anyway rather than lean on that.
+func FanartSlotsContiguous(slots []int, n int) bool {
+	if len(slots) != n {
+		return false
+	}
+	seen := make([]bool, n)
+	for _, s := range slots {
+		if s < 0 || s >= n || seen[s] {
+			return false
+		}
+		seen[s] = true
+	}
+	return true
+}

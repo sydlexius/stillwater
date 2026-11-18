@@ -111,3 +111,47 @@ func TestBackfillFanartHashes_MixedDirectoryUsesScannerOrder(t *testing.T) {
 		}
 	}
 }
+
+// TestBackfillFanartHashes_GappedSlotsLeftUnhashed pins that positional mapping
+// is withdrawn when the live fanart rows are not exactly slots {0..n-1}. Rows
+// 0, 2, 3 against three files pass a bounds check (and a count check), yet
+// slot 2 would be hashed from the second file and slot 3 would be skipped, so
+// a hash from another row's file would land on slot 2.
+//
+// REVERT-AND-RERUN: dropping the contiguity check must turn this RED.
+func TestBackfillFanartHashes_GappedSlotsLeftUnhashed(t *testing.T) {
+	db, dbPath := setupTestDBWithImages(t)
+	svc := NewService(db, dbPath, "", slog.Default())
+	ctx := context.Background()
+	dir := t.TempDir()
+	const id = "artist-gapped-slots"
+
+	if _, err := db.ExecContext(ctx, `INSERT INTO artists (id, name, path) VALUES (?, ?, ?)`, id, id, dir); err != nil {
+		t.Fatalf("seeding artist: %v", err)
+	}
+	files := []string{"fanart.jpg", "fanart2.jpg", "fanart3.jpg"}
+	for i, name := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), backfillJPEG(t, i), 0o644); err != nil {
+			t.Fatalf("writing %s: %v", name, err)
+		}
+	}
+	slots := []int{0, 2, 3}
+	for _, slot := range slots {
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag, phash, content_hash)
+			 VALUES (?, ?, 'fanart', ?, 1, '', '')`, id+"-"+string(rune('0'+slot)), id, slot); err != nil {
+			t.Fatalf("seeding image row slot %d: %v", slot, err)
+		}
+	}
+
+	if err := svc.BackfillFanartHashes(ctx, embyPrimary, 0); err != nil {
+		t.Fatalf("BackfillFanartHashes: %v", err)
+	}
+
+	for _, slot := range slots {
+		gotPH, gotContent := fanartHashes(t, db, id, slot)
+		if gotPH != "" || gotContent != "" {
+			t.Errorf("slot %d hashes = (%q, %q), want unhashed: the row/file mapping is unsound", slot, gotPH, gotContent)
+		}
+	}
+}

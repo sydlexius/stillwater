@@ -508,25 +508,26 @@ func findImageDuplicatesImpl(
 	fanartPaths, discovered := discoverFanartForDup(ctx, a, raw, fanartPrimaryName, fresh, logger)
 
 	// Rows map to files by POSITION (slot_index indexes the ordinal list), which
-	// is only sound when the directory still holds exactly one file per row. If
+	// is only sound when the fanart rows' slot indices are exactly {0..n-1} for the n files
+	// on disk (a count match alone passes rows 0, 2, 3 against three files). If
 	// a file vanished (or appeared) since the rows were written, every row after
 	// the gap would be paired with a neighbor's file, and a fresh pass would
-	// persist that file's hash onto the wrong row. So a count mismatch withdraws
+	// persist that file's hash onto the wrong row. So a mismatch withdraws
 	// the file mapping for ALL of the artist's fanart rows: no file is read, no
 	// hash is persisted, and (on a fresh pass, which ignores stored hashes) no
 	// row is usable, so nothing is reported as a duplicate or offered to the
 	// fixer for deletion. A non-fresh pass still honors hashes already stored,
 	// exactly as it does for a path-less artist.
 	if discovered {
-		rows := 0
+		var slots []int
 		for _, r := range raw {
 			if r.imageType == "fanart" {
-				rows++
+				slots = append(slots, r.slotIndex)
 			}
 		}
-		if rows > 0 && rows != len(fanartPaths) {
-			logger.Warn("fanart row count differs from files on disk; not mapping rows to files for duplicate detection",
-				"artist", a.Name, "rows", rows, "files", len(fanartPaths))
+		if len(slots) > 0 && !image.FanartSlotsContiguous(slots, len(fanartPaths)) {
+			logger.Warn("fanart rows are not exactly one per file slot 0..n-1; not mapping rows to files for duplicate detection",
+				"artist", a.Name, "rows", len(slots), "files", len(fanartPaths), "slots", slots)
 			fanartPaths = nil
 		}
 	}

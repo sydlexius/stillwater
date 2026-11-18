@@ -587,6 +587,48 @@ func seedVanishedMiddleFanart(t *testing.T, file0, file2 []byte) (*Pipeline, str
 	return p, artistID, dir, before
 }
 
+// assertFixerDeletesNothing runs RemediateFanartDuplicates and asserts no slot
+// was removed, every file is byte-unchanged, and no stored hash moved.
+func assertFixerDeletesNothing(t *testing.T, p *Pipeline, artistID, dir string, before map[int]string) {
+	t.Helper()
+	files := listFanartFiles(t, dir)
+	snap := map[string][]byte{}
+	for _, n := range files {
+		b, err := os.ReadFile(filepath.Join(dir, n))
+		if err != nil {
+			t.Fatal(err)
+		}
+		snap[n] = b
+	}
+
+	res, err := p.RemediateFanartDuplicates(context.Background())
+	if err != nil {
+		t.Fatalf("RemediateFanartDuplicates: %v", err)
+	}
+	if res.SlotsRemoved != 0 {
+		t.Errorf("SlotsRemoved = %d, want 0", res.SlotsRemoved)
+	}
+	got := listFanartFiles(t, dir)
+	if len(got) != len(files) {
+		t.Fatalf("files after = %v, want %v", got, files)
+	}
+	for _, n := range files {
+		b, err := os.ReadFile(filepath.Join(dir, n))
+		if err != nil {
+			t.Fatalf("file %s missing after remediation: %v", n, err)
+		}
+		if !bytes.Equal(b, snap[n]) {
+			t.Errorf("file %s changed on disk", n)
+		}
+	}
+	after := storedFanartHashes(t, p, artistID)
+	for slot, want := range before {
+		if after[slot] != want {
+			t.Errorf("slot %d stored hash changed %q -> %q", slot, want, after[slot])
+		}
+	}
+}
+
 // A file vanished after the rows were written, so rows no longer map to files
 // by position. The scan must refuse to guess: report a scan error, report no
 // duplicates, and persist nothing onto the wrong row.
@@ -625,40 +667,76 @@ func TestRemediateFanartDuplicates_VanishedFileDeletesNothing(t *testing.T) {
 	dup := readFixture(t, "red.jpg")
 	p, artistID, dir, before := seedVanishedMiddleFanart(t, dup, dup)
 
-	files := listFanartFiles(t, dir)
-	snap := map[string][]byte{}
-	for _, n := range files {
-		b, err := os.ReadFile(filepath.Join(dir, n))
-		if err != nil {
-			t.Fatal(err)
-		}
-		snap[n] = b
-	}
+	assertFixerDeletesNothing(t, p, artistID, dir, before)
+}
 
-	res, err := p.RemediateFanartDuplicates(context.Background())
+// seedGappedSlotFanart builds the shape a count check alone misses: three
+// exists_flag=1 fanart rows with slots 0, 2, 3 (slot 1's row is gone) against
+// three files. The count matches, but slot 2 would map to the file at ordinal 2
+// and slot 3 to nothing/the wrong file. file0 and file2 carry the given bytes;
+// the middle file is a distinct image.
+func seedGappedSlotFanart(t *testing.T, file0, file2 []byte) (*Pipeline, string, string, map[int]string) {
+	t.Helper()
+	p, artistID, dir := newPipelineWithArtistFanart(t)
+	if _, err := p.engine.db.Exec(
+		`DELETE FROM artist_images WHERE artist_id = ? AND image_type = 'fanart' AND slot_index = 1`, artistID); err != nil {
+		t.Fatalf("dropping slot 1 row: %v", err)
+	}
+	for _, slot := range []int{0, 2, 3} {
+		if _, err := p.engine.db.Exec(
+			`UPDATE artist_images SET phash = ?, content_hash = ? WHERE artist_id = ? AND image_type = 'fanart' AND slot_index = ?`,
+			fmt.Sprintf("%016x", 0x1111*(slot+1)), fmt.Sprintf("sentinel-%d", slot), artistID, slot); err != nil {
+			t.Fatalf("seeding sentinel hashes: %v", err)
+		}
+	}
+	writeFanartFiles(t, dir, map[string][]byte{
+		"fanart.jpg":  file0,
+		"fanart2.jpg": readFixture(t, "blue.jpg"),
+		"fanart3.jpg": file2,
+	})
+	before := storedFanartHashes(t, p, artistID)
+	if len(before) != 3 {
+		t.Fatalf("precondition: want 3 fanart rows, got %d", len(before))
+	}
+	if _, ok := before[1]; ok {
+		t.Fatalf("precondition: slot 1 must have no row, got %v", before)
+	}
+	return p, artistID, dir, before
+}
+
+// Rows 0, 2, 3 against three files: the count matches but the slots are not
+// {0,1,2}, so positional mapping is unsound. The scan must refuse to guess.
+func TestScanFanartDuplicates_GappedSlotsExcludeTheArtistsFanart(t *testing.T) {
+	distinct := filepath.Join(t.TempDir(), "g.jpg")
+	createGradientJPEG(t, distinct, 5)
+	gb, err := os.ReadFile(distinct)
 	if err != nil {
-		t.Fatalf("RemediateFanartDuplicates: %v", err)
+		t.Fatal(err)
 	}
-	if res.SlotsRemoved != 0 {
-		t.Errorf("SlotsRemoved = %d, want 0", res.SlotsRemoved)
+	p, artistID, _, before := seedGappedSlotFanart(t, readFixture(t, "red.jpg"), gb)
+
+	report, err := p.ScanFanartDuplicates(context.Background())
+	if err != nil {
+		t.Fatalf("ScanFanartDuplicates: %v", err)
 	}
-	got := listFanartFiles(t, dir)
-	if len(got) != len(files) {
-		t.Fatalf("files after = %v, want %v", got, files)
+	if report.ScanErrors != 1 {
+		t.Errorf("ScanErrors = %d, want 1 (the artist's fanart was not examined)", report.ScanErrors)
 	}
-	for _, n := range files {
-		b, err := os.ReadFile(filepath.Join(dir, n))
-		if err != nil {
-			t.Fatalf("file %s missing after remediation: %v", n, err)
-		}
-		if !bytes.Equal(b, snap[n]) {
-			t.Errorf("file %s changed on disk", n)
-		}
+	if report.ArtistsAffected != 0 || report.ExactRedundantSlots != 0 || report.PerceptualRedundantSlots != 0 {
+		t.Errorf("report = %+v, want no duplicates for the unexamined artist", report)
 	}
 	after := storedFanartHashes(t, p, artistID)
 	for slot, want := range before {
 		if after[slot] != want {
-			t.Errorf("slot %d stored hash changed %q -> %q", slot, want, after[slot])
+			t.Errorf("slot %d stored hash changed %q -> %q: a hash from the wrong file was persisted", slot, want, after[slot])
 		}
 	}
+}
+
+// Same gapped shape with file0 and file2 byte-identical: the fixer must delete
+// nothing rather than act on a positional guess.
+func TestRemediateFanartDuplicates_GappedSlotsDeletesNothing(t *testing.T) {
+	dup := readFixture(t, "red.jpg")
+	p, artistID, dir, before := seedGappedSlotFanart(t, dup, dup)
+	assertFixerDeletesNothing(t, p, artistID, dir, before)
 }

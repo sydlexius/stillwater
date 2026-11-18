@@ -1021,11 +1021,12 @@ func (s *Service) BackfillFanartHashes(ctx context.Context, fanartPrimary Fanart
 	// rows are ordered by artist_id, but a map keeps that independent of the
 	// ORDER BY rather than silently depending on it.
 	discovered := make(map[string][]string)
+	mapSound := make(map[string]bool) // artist -> rows map to files by position
 	skipped := 0
 	filled, failed := 0, 0
 
 	for _, st := range pending {
-		path, resolveErr := s.backfillRowPath(ctx, discovered, st, primary)
+		path, resolveErr := s.backfillRowPath(ctx, discovered, mapSound, st, primary)
 		if resolveErr != nil {
 			return fmt.Errorf("fanart hash backfill canceled after %d rows filled: %w", filled, resolveErr)
 		}
@@ -1122,7 +1123,7 @@ func (s *Service) BackfillFanartHashes(ctx context.Context, fanartPrimary Fanart
 // actually performs (resolve, hash, store) rather than as a wall of skip
 // branches. It makes no decision the loop did not already make.
 func (s *Service) backfillRowPath(
-	ctx context.Context, discovered map[string][]string, st starvedFanartRow, primary string,
+	ctx context.Context, discovered map[string][]string, mapSound map[string]bool, st starvedFanartRow, primary string,
 ) (string, error) {
 	dir := s.artistImageDir(st.artistPath, st.artistID)
 	if dir == "" {
@@ -1137,6 +1138,34 @@ func (s *Service) backfillRowPath(
 	if !discOK {
 		return "", nil
 	}
+	// Positional mapping is only sound when the artist's live fanart rows are
+	// exactly slots {0..n-1} for the n files on disk. A gap (rows 0, 2, 3 for
+	// three files) passes a bounds check yet pairs a row with another file's
+	// hash. Judged over ALL live rows, not just the starved ones, and memoised
+	// per artist. On failure the artist's rows stay unhashed (same outcome as
+	// an unreadable directory).
+	sound, known := mapSound[st.artistID]
+	if !known {
+		slots, slotErr := s.liveFanartSlots(ctx, st.artistID)
+		if slotErr != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return "", ctxErr
+			}
+			s.logger.Warn("fanart hash backfill: reading fanart slots, skipping artist",
+				slog.String("artist_id", st.artistID), slog.Any("error", slotErr))
+			return "", nil
+		}
+		sound = img.FanartSlotsContiguous(slots, len(paths))
+		if !sound {
+			s.logger.Warn("fanart hash backfill: fanart rows are not exactly one per file slot 0..n-1; leaving rows unhashed",
+				slog.String("artist_id", st.artistID),
+				slog.Int("rows", len(slots)), slog.Int("files", len(paths)), slog.Any("slots", slots))
+		}
+		mapSound[st.artistID] = sound
+	}
+	if !sound {
+		return "", nil
+	}
 	// slot_index is the DiscoverFanart ORDINAL, so it indexes the slice
 	// directly -- the same mapping imageDupRowPath uses. Matching it exactly
 	// matters: reading the numeric filename suffix instead would drift the
@@ -1148,6 +1177,29 @@ func (s *Service) backfillRowPath(
 		return "", nil
 	}
 	return paths[st.slotIndex], nil
+}
+
+// liveFanartSlots returns the slot_index of every exists_flag=1 fanart row for
+// the artist.
+func (s *Service) liveFanartSlots(ctx context.Context, artistID string) ([]int, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT slot_index FROM artist_images WHERE artist_id = ? AND image_type = 'fanart' AND exists_flag = 1`, artistID)
+	if err != nil {
+		return nil, fmt.Errorf("querying fanart slots: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // read-only cursor
+	var slots []int
+	for rows.Next() {
+		var slot int
+		if err := rows.Scan(&slot); err != nil {
+			return nil, fmt.Errorf("scanning fanart slot: %w", err)
+		}
+		slots = append(slots, slot)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating fanart slots: %w", err)
+	}
+	return slots, nil
 }
 
 // backfillFanartPaths resolves one artist's fanart paths for the backfill,
