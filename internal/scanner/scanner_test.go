@@ -71,7 +71,7 @@ func createArtistDirWithNFO(t *testing.T, base, name, nfoContent string) {
 	}
 }
 
-func waitForScan(t *testing.T, svc *Service, timeout time.Duration) *ScanResult { //nolint:unparam // timeout exposed for future per-test customization
+func waitForScan(t *testing.T, svc *Service, timeout time.Duration) *ScanResult {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {

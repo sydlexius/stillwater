@@ -2441,18 +2441,14 @@ func (f *ImageDuplicateFixer) fixLocal(ctx context.Context, a *artist.Artist, v 
 	// writes matching artist_images rows, mirroring the discover/remove/
 	// renumber/resync sequence used by Router.updateArtistFanartCount.
 	//
-	// Resolve the enumeration names via the convention-agnostic union rather
-	// than fanartNames (profile-names-OR-defaults). fanartNames commits to the
-	// active profile's write convention; if the fanart already on disk uses a
-	// different convention, resyncing against fanartNames alone would count zero
-	// and zero the FanartCount for artwork that still exists -- the exact
-	// convention-mismatch undercount this fix closes (#2635). On a resolver
-	// error, warn and leave the artist's fanart fields as-is rather than
-	// substitute a guessed count (matches Router.updateArtistFanartCount).
-	if names, namesErr := resolveFanartNames(ctx, f.platformService); namesErr != nil {
-		f.logger.Warn("resolving fanart naming convention after duplicate fix; artist fields left as-is",
-			slog.String("artist_id", a.ID), slog.String("error", namesErr.Error()))
-	} else if resyncErr := resyncFanartFields(ctx, a, names); resyncErr != nil {
+	// The duplicate fix acted on the scanner's file set (ResolveScannerFanart),
+	// so the resync must describe that same set: a profile-first resolution can
+	// pick the other convention in a mixed directory and report its count and
+	// geometry instead (#2632).
+	if resyncErr := resyncFanartFieldsFrom(ctx, a, func() ([]string, error) {
+		_, paths, err := ResolveScannerFanart(ctx, a.Path)
+		return paths, err
+	}); resyncErr != nil {
 		f.logger.Warn("resyncing fanart fields after duplicate fix; artist fields left as-is",
 			slog.String("artist_id", a.ID), slog.String("error", resyncErr.Error()))
 	}
@@ -2756,7 +2752,7 @@ func dupFanartDirMutex(dir string) *sync.Mutex {
 	return mu.(*sync.Mutex)
 }
 
-func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(ctx context.Context, a *artist.Artist, primaryName string, kodiNumbering bool, toDelete map[int]bool) ([]string, error) {
+func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(ctx context.Context, a *artist.Artist, _ string, kodiNumbering bool, toDelete map[int]bool) ([]string, error) {
 	// Serialize the WHOLE mutation for this directory: the sweep below cannot
 	// distinguish a concurrent invocation's live staged tomb from an orphan, and
 	// quarantining one turns that invocation's recoverable pre-commit failure
@@ -2768,7 +2764,11 @@ func (f *ImageDuplicateFixer) deleteDuplicateFanartWithRollback(ctx context.Cont
 
 	f.sweepOrphanedDupTombs(a)
 
-	paths, discErr := img.DiscoverFanart(ctx, a.Path, primaryName)
+	// toDelete holds slot ordinals from findImageDuplicates, which resolves via
+	// ResolveScannerFanart. Resolve identically here (and renumber under the
+	// convention that matched) or the ordinals point at different files and a
+	// delete lands on the wrong one (#2632).
+	primaryName, paths, discErr := ResolveScannerFanart(ctx, a.Path)
 	if discErr != nil {
 		return nil, fmt.Errorf("discovering fanart for %s: %w", a.Name, discErr)
 	}
@@ -2946,7 +2946,17 @@ func wrapWithRollbackErrs(rollbackErrs []string, err error) error {
 // caller should warn and persist the artist without them rather than treat the
 // unwritten fields as measured.
 func resyncFanartFields(ctx context.Context, a *artist.Artist, names []string) error {
-	_, existing, err := img.ResolveFanart(ctx, a.Path, names)
+	return resyncFanartFieldsFrom(ctx, a, func() ([]string, error) {
+		_, existing, err := img.ResolveFanart(ctx, a.Path, names)
+		return existing, err
+	})
+}
+
+// resyncFanartFieldsFrom is resyncFanartFields with the enumeration injected,
+// so a caller whose mutation acted on a specific file set (the duplicate fixer:
+// the scanner's) can resync from that same set.
+func resyncFanartFieldsFrom(ctx context.Context, a *artist.Artist, resolve func() ([]string, error)) error {
+	existing, err := resolve()
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return fmt.Errorf("resolving fanart for resync: %w", ctxErr)

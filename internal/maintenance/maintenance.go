@@ -1179,7 +1179,7 @@ func (s *Service) backfillRowPath(
 // slice before caching, so a cache hit can tell the two apart and a failed
 // artist keeps reporting as a failure for every row it owns.
 func (s *Service) backfillFanartPaths(
-	ctx context.Context, cache map[string][]string, artistID, dir, primary string,
+	ctx context.Context, cache map[string][]string, artistID, dir, _ string,
 ) ([]string, bool, error) {
 	if paths, ok := cache[artistID]; ok {
 		// nil is the FAILURE sentinel on a cache hit, which is why the success
@@ -1201,7 +1201,17 @@ func (s *Service) backfillFanartPaths(
 		}
 		return paths, true, nil
 	}
-	paths, err := img.DiscoverFanart(ctx, dir, primary)
+	// Resolve across every default convention, in the scanner's order, so the
+	// ordinal matches the one the scanner stored (ResolveFanartFiles is pinned
+	// against the scanner's discoverFanartFiles). The active
+	// profile's primary name only says what Stillwater WRITES; a library whose
+	// files use the other convention would otherwise resolve to nothing and
+	// every row would be skipped silently (#2632). primary is unused here.
+	names, namesErr := img.ResolveFanartNames(nil)
+	if namesErr != nil {
+		return nil, false, namesErr
+	}
+	paths, err := img.ResolveFanartFiles(ctx, dir, names)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, false, ctxErr

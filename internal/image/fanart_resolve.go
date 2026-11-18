@@ -35,9 +35,20 @@ import (
 // the registry-repair rebuild path, inside the registry-repair job, whose singleton a wedged
 // run never releases.
 func ResolveFanartFiles(ctx context.Context, dir string, candidates []string) ([]string, error) {
+	_, paths, err := ResolveFanartFilesNamed(ctx, dir, candidates)
+	return paths, err
+}
+
+// ResolveFanartFilesNamed is ResolveFanartFiles plus the candidate pattern that
+// matched ("" when nothing matched). It is the ONE implementation of the
+// scanner-parity resolution: ResolveFanartFiles wraps it, so the two cannot
+// drift. A caller that must renumber under the matched convention
+// (RenumberFanart) needs the name; a caller that only needs paths uses the
+// wrapper.
+func ResolveFanartFilesNamed(ctx context.Context, dir string, candidates []string) (string, []string, error) {
 	entries, err := readDirCtx(ctx, dir)
 	if err != nil {
-		return nil, fmt.Errorf("reading directory %s: %w", dir, err)
+		return "", nil, fmt.Errorf("reading directory %s: %w", dir, err)
 	}
 
 	// Case-insensitive PRESENCE index. It answers one question -- "is this
@@ -63,7 +74,8 @@ func ResolveFanartFiles(ctx context.Context, dir string, candidates []string) ([
 	// Pass 1: a primary file on disk decides which naming convention applies.
 	for _, candidate := range candidates {
 		if present[strings.ToLower(candidate)] {
-			return DiscoverFanart(ctx, dir, candidate)
+			paths, err := DiscoverFanart(ctx, dir, candidate)
+			return candidate, paths, err
 		}
 	}
 
@@ -72,11 +84,11 @@ func ResolveFanartFiles(ctx context.Context, dir string, candidates []string) ([
 	for _, candidate := range candidates {
 		paths, err := DiscoverFanart(ctx, dir, candidate)
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
 		if len(paths) > 0 {
-			return paths, nil
+			return candidate, paths, nil
 		}
 	}
-	return nil, nil
+	return "", nil, nil
 }
