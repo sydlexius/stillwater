@@ -51,6 +51,7 @@ type Service struct {
 	// take this one, never logger, so the component key is not stacked (#2787).
 	baseLogger *slog.Logger
 
+	platformHash platformHashCooldown // failure cooldown of the #2513 platform hash backfill
 	// lockDamageHistory and artistService are the locked-field damage
 	// repair's dependencies (#3075), attached via SetLockDamageDeps after
 	// wireAuth constructs them. Nil until then; RepairLockDamage refuses to

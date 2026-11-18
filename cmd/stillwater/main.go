@@ -1248,6 +1248,34 @@ func (a *Application) startFanartHashBackfill(ctx context.Context, db *sql.DB) {
 	go a.maintenanceService.StartFanartHashBackfill(ctx, primaryFn, time.Duration(backfillHours)*time.Hour, 45*time.Second)
 }
 
+// startPlatformHashBackfill launches the #2513 pass hashing thumb/logo/banner of
+// platform-only artists via the image bridge; interval_hours <= 0 disables it.
+func (a *Application) startPlatformHashBackfill(ctx context.Context, db *sql.DB) {
+	if a.imageBridge == nil || a.maintenanceService == nil {
+		return
+	}
+	hours := getDBIntSetting(ctx, db, "platform_hash_backfill.interval_hours", 6)
+	if hours <= 0 {
+		a.logger.Info("platform hash backfill disabled", slog.String("setting", "platform_hash_backfill.interval_hours"))
+		return
+	}
+	opts := maintenance.PlatformHashBackfillOpts{
+		RequestsPerMinute: getDBIntSetting(ctx, db, "platform_hash_backfill.requests_per_minute", 120),
+		MaxPerPass:        getDBIntSetting(ctx, db, "platform_hash_backfill.max_per_pass", 200),
+	}
+	if a.platformService != nil {
+		// The save path's configured names; a read failure leaves the row unverified.
+		opts.Names = func(c context.Context, imageType string) ([]string, error) {
+			profile, err := a.platformService.GetActive(c)
+			if err != nil || profile == nil {
+				return nil, err
+			}
+			return profile.ImageNaming.NamesForType(imageType), nil
+		}
+	}
+	go a.maintenanceService.StartPlatformHashBackfill(ctx, a.imageBridge, opts, time.Duration(hours)*time.Hour, 60*time.Second)
+}
+
 // fanartPrimaryResolver builds the maintenance.FanartPrimaryFn that resolves the
 // active profile's primary fanart filename.
 //
@@ -1477,6 +1505,7 @@ func (a *Application) startListeners() error {
 
 	// Fanart per-slot hash backfill (issue #2564).
 	a.startFanartHashBackfill(ctx, db)
+	a.startPlatformHashBackfill(ctx, db) // #2513, independent of the fanart pass
 
 	// LockSync platform-pull scheduler (issue #1726 Part C).
 	a.startLockSyncScheduler(ctx, db, logger)

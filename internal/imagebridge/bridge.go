@@ -9,6 +9,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
+	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -85,6 +87,45 @@ func (b *Bridge) FetchArtistImage(ctx context.Context, artistID, imageType strin
 		return nil, "", fmt.Errorf("all platform connections failed; last error: %w", lastErr)
 	}
 	return nil, "", fmt.Errorf("no enabled platform connections for artist %s", artistID)
+}
+
+// FetchArtistImageSlot downloads one slot of an artist image from the artist's
+// pinned connection (pinnedConnection), with no fall-through: an image held only
+// elsewhere is never hashed (a missed hash, never a wrong one). Only slot 0 is
+// served (indexed fanart is #3602). Pure transport.
+func (b *Bridge) FetchArtistImageSlot(ctx context.Context, artistID, imageType string, slotIndex int) ([]byte, string, error) {
+	if slotIndex != 0 {
+		return nil, "", fmt.Errorf("image type %q: slot %d is not fetchable (only slot 0)", imageType, slotIndex)
+	}
+	conn, platformArtistID, err := b.pinnedConnection(ctx, artistID)
+	if err != nil {
+		return nil, "", err
+	}
+	return b.fetchFromConnection(ctx, conn, platformArtistID, imageType)
+}
+
+// pinnedConnection picks the ONE connection used for slot reads: the lowest ID
+// of the artist's enabled Emby and Jellyfin connections (never Lidarr). A failed
+// lookup is an error, never skipped, so a transient failure cannot move the
+// artist onto another connection.
+func (b *Bridge) pinnedConnection(ctx context.Context, artistID string) (*connection.Connection, string, error) {
+	platformIDs, err := b.artistService.GetPlatformIDs(ctx, artistID)
+	if err != nil {
+		return nil, "", fmt.Errorf("resolving platform IDs for artist %s: %w", artistID, err)
+	}
+	sorted := slices.SortedFunc(slices.Values(platformIDs), func(x, y artist.PlatformID) int {
+		return strings.Compare(x.ConnectionID, y.ConnectionID)
+	})
+	for _, pid := range sorted {
+		conn, connErr := b.connService.GetByID(ctx, pid.ConnectionID)
+		if connErr != nil {
+			return nil, "", fmt.Errorf("looking up connection %s: %w", pid.ConnectionID, connErr)
+		}
+		if conn.Enabled && (conn.Type == connection.TypeEmby || conn.Type == connection.TypeJellyfin) {
+			return conn, pid.PlatformArtistID, nil
+		}
+	}
+	return nil, "", fmt.Errorf("no enabled emby or jellyfin connection for artist %s", artistID)
 }
 
 // UploadArtistImage pushes image bytes to all enabled platform connections with

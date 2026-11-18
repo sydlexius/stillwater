@@ -30,6 +30,9 @@ const (
 	// claiming an ignorance the code does not have, where the old code claimed
 	// a pass it had not earned.
 	SkipReasonNoComparablePerceptualHashes = "artist has no local files and, of its 2 or more images, fewer than 2 carry a stored perceptual hash to compare"
+	// SkipReasonNoComparableFanartPerceptualHashes: fanart present but under-hashed;
+	// hashed thumbs/logos/banners alone must not make the rule pass (#2509).
+	SkipReasonNoComparableFanartPerceptualHashes = "artist has no local files and, of its fanart images, not every one up to two carries a stored perceptual hash to compare"
 	// SkipReasonNoComparableContentHashes is the exact-duplicate equivalent,
 	// counted over FANART rows only (the exact rule groups fanart by content
 	// hash and looks at nothing else): two or more fanart images, fewer than
@@ -102,6 +105,8 @@ type imageHashCapability struct {
 	exactFanartCandidates int
 	// exactFanartComparable counts fanart rows with a known content hash.
 	exactFanartComparable int
+	// fanartPerceptualComparable counts fanart rows with a usable phash.
+	fanartPerceptualComparable int
 }
 
 // imageHashCapabilities loads the per-artist image-hash summary, computing it at
@@ -154,11 +159,16 @@ func (e *Engine) imageHashCapabilities(ctx context.Context, a *artist.Artist) (i
 			continue
 		}
 		capa.perceptualCandidates++
+		hashed := false
 		if h, parseErr := image.ParseHashHex(phashHex); parseErr == nil && h != hashUnknown {
 			capa.perceptualComparable++
+			hashed = true
 		}
 		if imageType == "fanart" {
 			capa.exactFanartCandidates++
+			if hashed {
+				capa.fanartPerceptualComparable++
+			}
 			if contentHash != contentHashUnknown {
 				capa.exactFanartComparable++
 			}
@@ -190,10 +200,12 @@ func (e *Engine) imageHashCapabilities(ctx context.Context, a *artist.Artist) (i
 //     fix a path-less artist down to one image and the rule must report a clean
 //     pass, not stop reporting on it;
 //   - at least two of its images carry a usable perceptual hash -- enough data to
-//     compare without touching a filesystem.
+//     compare without touching a filesystem -- unless fanart is under-hashed (see
+//     below).
 //
-// It is skipped ONLY when a pair of candidate images exists but fewer than two of
-// them can be compared: that, and only that, is a blind comparison.
+// It is skipped when a pair of candidate images exists but fewer than two of
+// them can be compared, or when fanart (the only fixable duplicates, #2509) has
+// fewer than min(2, its count) hashed: either is a blind comparison.
 func (e *Engine) capImageDuplicate(ctx context.Context, a *artist.Artist) (bool, string, error) {
 	if e.db == nil {
 		return false, SkipReasonNoDatabase, nil
@@ -206,6 +218,9 @@ func (e *Engine) capImageDuplicate(ctx context.Context, a *artist.Artist) (bool,
 		return false, "", err
 	}
 	if capa.perceptualCandidates < 2 || capa.perceptualComparable >= 2 {
+		if capa.perceptualCandidates >= 2 && capa.fanartPerceptualComparable < min(2, capa.exactFanartCandidates) {
+			return false, SkipReasonNoComparableFanartPerceptualHashes, nil
+		}
 		return true, "", nil
 	}
 	return false, SkipReasonNoComparablePerceptualHashes, nil

@@ -79,6 +79,9 @@ type PlatformImageFetcher interface {
 	// FetchArtistImage downloads the image bytes for the given Stillwater artist ID
 	// and image type (e.g. "logo", "thumb") from a connected media platform.
 	FetchArtistImage(ctx context.Context, artistID, imageType string) (data []byte, contentType string, err error)
+	// FetchArtistImageSlot downloads one 0-based slot from the artist's pinned
+	// connection (slot 0 only; fanart is #3602). Hash backfill only, never a checker (#2476).
+	FetchArtistImageSlot(ctx context.Context, artistID, imageType string, slotIndex int) (data []byte, contentType string, err error)
 	// UploadArtistImage pushes image bytes to the connected media platform(s)
 	// for the given Stillwater artist ID and image type.
 	UploadArtistImage(ctx context.Context, artistID, imageType string, data []byte, contentType string) error

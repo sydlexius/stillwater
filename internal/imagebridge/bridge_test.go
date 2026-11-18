@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -493,5 +494,61 @@ func TestListArtistImageSlots_UnsupportedType(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "does not support artist detail") {
 		t.Errorf("error = %q, want 'does not support artist detail'", err.Error())
+	}
+}
+
+// Reads pin to the lowest-ID enabled Emby/Jellyfin connection (never Lidarr) with
+// no fall-through; slot 0 of a thumb is Primary, any other slot is rejected.
+func TestPinnedConnection_NoFallThroughAndSkipsImagelessTypes(t *testing.T) {
+	t.Parallel()
+	var otherHits atomic.Int32
+	pinnedSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	otherSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		otherHits.Add(1)
+		if r.URL.Path != "/Items/p2/Images/Primary" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte("other"))
+	}))
+	defer pinnedSrv.Close()
+	defer otherSrv.Close()
+	connSvc := setupTestConnService(t)
+	ctx := context.Background()
+	mk := func(id, typ, url string) *connection.Connection {
+		c := &connection.Connection{ID: id, Name: id, Type: typ, URL: url, APIKey: "k", Enabled: true}
+		if err := connSvc.Create(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	// Explicit IDs fix the ordering under test: lidarr < pinned < other.
+	lid, a, b := mk("1-lidarr", connection.TypeLidarr, "http://127.0.0.1:1"), mk("2-pinned", connection.TypeEmby, pinnedSrv.URL), mk("3-other", connection.TypeJellyfin, otherSrv.URL)
+	br := New(connSvc, &stubPlatformIDProvider{ids: []artist.PlatformID{
+		{ArtistID: "x", ConnectionID: b.ID, PlatformArtistID: "p2"},
+		{ArtistID: "x", ConnectionID: lid.ID, PlatformArtistID: "p-lidarr"},
+		{ArtistID: "x", ConnectionID: a.ID, PlatformArtistID: "p1"},
+	}}, slog.Default())
+
+	if _, _, err := br.FetchArtistImageSlot(ctx, "x", "thumb", 0); err == nil || otherHits.Load() != 0 {
+		t.Errorf("err = %v, other connection hit %d times; the pinned one 404s and nothing may fall through", err, otherHits.Load())
+	}
+	cur, err := connSvc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cur.Enabled = false
+	if err := connSvc.Update(ctx, cur); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, err := br.FetchArtistImageSlot(ctx, "x", "thumb", 0); err != nil || string(got) != "other" {
+		t.Errorf("after disabling the pinned connection got %q, %v; want the next Emby/Jellyfin one (never Lidarr)", got, err)
+	}
+	for _, slot := range []int{1, -1} {
+		if _, _, err := br.FetchArtistImageSlot(ctx, "x", "thumb", slot); err == nil {
+			t.Errorf("slot %d must be rejected, not served as slot 0", slot)
+		}
 	}
 }
