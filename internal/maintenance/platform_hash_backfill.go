@@ -46,16 +46,54 @@ type platformHashRow struct {
 	slotIndex                               int
 }
 
+// before reports whether r sorts before o in the candidate query's order.
+func (r platformHashRow) before(o platformHashRow) bool {
+	if r.artistID != o.artistID {
+		return r.artistID < o.artistID
+	}
+	if r.imageType != o.imageType {
+		return r.imageType < o.imageType
+	}
+	return r.slotIndex < o.slotIndex
+}
+
 func (r platformHashRow) key() string {
 	return fmt.Sprintf("%s/%s/%d", r.artistID, r.imageType, r.slotIndex)
 }
 
 // platformHashCooldown keeps rows that never succeed from starving healthy ones
 // of the per-pass cap; a failed row sits out platformFailureCooldownPasses passes.
+//
+// It also holds the fairness cursor: a pass that stops on the cap resumes at
+// that row next time (resume), so a long run of failing rows ahead of a healthy
+// one is walked past rather than retried from the top each cooldown cycle.
 type platformHashCooldown struct {
-	mu    sync.Mutex
-	pass  int
-	until map[string]int
+	mu     sync.Mutex
+	pass   int
+	until  map[string]int
+	resume *platformHashRow // first row not reached by a capped pass; nil = start at the top
+}
+
+// startIndex is the position in the (artist, type, slot)-ordered candidates to
+// start at: the first row at or after the resume point (wrapping to 0 if none).
+func (c *platformHashCooldown) startIndex(rows []platformHashRow) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.resume == nil {
+		return 0
+	}
+	for i, r := range rows {
+		if !r.before(*c.resume) {
+			return i
+		}
+	}
+	return 0
+}
+
+func (c *platformHashCooldown) setResume(r *platformHashRow) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.resume = r
 }
 
 func (c *platformHashCooldown) begin() int {
@@ -120,7 +158,10 @@ func (s *Service) BackfillPlatformImageHashes(
 	}
 	pass := s.platformHash.begin() // burst-1 limiter below: requests are evenly spaced
 	limiter := rate.NewLimiter(rate.Limit(float64(opts.RequestsPerMinute)/60.0), 1)
-	for _, row := range candidates {
+	start := s.platformHash.startIndex(candidates)
+	s.platformHash.setResume(nil) // a pass that finishes the list leaves the cursor at the top
+	for n := range candidates {
+		row := candidates[(start+n)%len(candidates)]
 		if s.platformHash.cooling(row.key(), pass) {
 			continue
 		}
@@ -128,6 +169,7 @@ func (s *Service) BackfillPlatformImageHashes(
 		if reason == "" && !found {
 			if res.Selected == opts.MaxPerPass {
 				res.Truncated = true
+				s.platformHash.setResume(&row)
 				break
 			}
 			res.Selected++
@@ -139,6 +181,10 @@ func (s *Service) BackfillPlatformImageHashes(
 		var stored bool
 		if reason == "" {
 			stored, reason = s.storeHashes(ctx, row, phash, content)
+			if stored && reason == "" && phash == "" {
+				// The content hash is kept, but an unknown phash leaves the row unfilled.
+				reason = "perceptual hash unusable (zero is the unknown sentinel)"
+			}
 		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return res, fmt.Errorf("platform hash backfill canceled after %d rows filled: %w", res.Filled, ctxErr)
@@ -235,7 +281,7 @@ func (s *Service) localRowHashes(
 	if err != nil {
 		return "", "", false, "hashing local image failed: " + err.Error()
 	}
-	return keepPhash(row, img.HashHex(fh.Perceptual)), fh.Content, true, ""
+	return keepPhash(row, perceptualHex(fh.Perceptual)), fh.Content, true, ""
 }
 
 func (s *Service) fetchedRowHashes(
@@ -252,7 +298,16 @@ func (s *Service) fetchedRowHashes(
 	if err != nil {
 		return "", "", "decode failed: " + err.Error()
 	}
-	return keepPhash(row, img.HashHex(ph)), img.ContentHash(data), ""
+	return keepPhash(row, perceptualHex(ph)), img.ContentHash(data), ""
+}
+
+// perceptualHex renders a perceptual hash; 0 is the "unknown" sentinel the
+// rules read as unhashed, so it is stored as the empty string, never "000...0".
+func perceptualHex(h uint64) string {
+	if h == 0 {
+		return ""
+	}
+	return img.HashHex(h)
 }
 
 // keepPhash keeps a phash the save path recorded (it may be EXIF-aware).

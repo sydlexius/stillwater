@@ -1265,15 +1265,28 @@ func (a *Application) startPlatformHashBackfill(ctx context.Context, db *sql.DB)
 	}
 	if a.platformService != nil {
 		// The save path's configured names; a read failure leaves the row unverified.
-		opts.Names = func(c context.Context, imageType string) ([]string, error) {
-			profile, err := a.platformService.GetActive(c)
-			if err != nil || profile == nil {
-				return nil, err
-			}
-			return profile.ImageNaming.NamesForType(imageType), nil
-		}
+		opts.Names = profileImageNames(a.platformService.GetActive)
 	}
 	go a.maintenanceService.StartPlatformHashBackfill(ctx, a.imageBridge, opts, time.Duration(hours)*time.Hour, 60*time.Second)
+}
+
+// profileImageNames builds the backfill's Names hook. GetActive returns
+// (nil, nil) when no profile is active; that is an error here, never a silent
+// fall back to the default names, so the pass stays fail-closed (the row is
+// unverifiable: nothing fetched, nothing written), as fanartPrimaryResolver does.
+func profileImageNames(
+	getActive func(context.Context) (*platform.Profile, error),
+) func(context.Context, string) ([]string, error) {
+	return func(c context.Context, imageType string) ([]string, error) {
+		profile, err := getActive(c)
+		if err != nil {
+			return nil, err
+		}
+		if profile == nil {
+			return nil, errors.New("no active platform profile")
+		}
+		return profile.ImageNaming.NamesForType(imageType), nil
+	}
 }
 
 // fanartPrimaryResolver builds the maintenance.FanartPrimaryFn that resolves the
