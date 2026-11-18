@@ -112,6 +112,7 @@ func TestImageDuplicateFixer_Fix_WithPlatformProfile(t *testing.T) {
 	}
 
 	insertTestArtist(t, db, "art-profile-dup", "Profile Dup Artist")
+	insertTestImage(t, db, "art-profile-dup", "fanart", 0)
 	insertTestImage(t, db, "art-profile-dup", "fanart", 1)
 	insertTestImage(t, db, "art-profile-dup", "fanart", 2)
 

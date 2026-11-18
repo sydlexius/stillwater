@@ -283,9 +283,14 @@ func ReadImageFileBounded(ctx context.Context, path string) ([]byte, error) {
 // and do no I/O of their own -- need no change at all.
 func readDirCtx(ctx context.Context, dir string) ([]os.DirEntry, error) {
 	return runCancellable(ctx, func() ([]os.DirEntry, error) {
-		return os.ReadDir(dir)
+		return osReadDir(dir)
 	})
 }
+
+// osReadDir is os.ReadDir behind a package variable so a test can observe how
+// many times a resolver reads a directory and mutate it between reads. Nothing
+// else assigns it.
+var osReadDir = os.ReadDir
 
 // statCtx stats path under context control.
 //

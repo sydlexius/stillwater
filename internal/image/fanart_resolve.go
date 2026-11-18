@@ -35,9 +35,20 @@ import (
 // the registry-repair rebuild path, inside the registry-repair job, whose singleton a wedged
 // run never releases.
 func ResolveFanartFiles(ctx context.Context, dir string, candidates []string) ([]string, error) {
+	_, paths, err := ResolveFanartFilesNamed(ctx, dir, candidates)
+	return paths, err
+}
+
+// ResolveFanartFilesNamed is ResolveFanartFiles plus the candidate pattern that
+// matched ("" when nothing matched). It is the ONE implementation of the
+// scanner-parity resolution: ResolveFanartFiles wraps it, so the two cannot
+// drift. A caller that must renumber under the matched convention
+// (RenumberFanart) needs the name; a caller that only needs paths uses the
+// wrapper.
+func ResolveFanartFilesNamed(ctx context.Context, dir string, candidates []string) (string, []string, error) {
 	entries, err := readDirCtx(ctx, dir)
 	if err != nil {
-		return nil, fmt.Errorf("reading directory %s: %w", dir, err)
+		return "", nil, fmt.Errorf("reading directory %s: %w", dir, err)
 	}
 
 	// Case-insensitive PRESENCE index. It answers one question -- "is this
@@ -60,23 +71,49 @@ func ResolveFanartFiles(ctx context.Context, dir string, candidates []string) ([
 		}
 	}
 
+	// Both passes match against the SAME entries snapshot (DiscoverFanartFrom
+	// does no I/O), so the chosen candidate and the ordinal list can never come
+	// from two different directory states.
+	//
 	// Pass 1: a primary file on disk decides which naming convention applies.
 	for _, candidate := range candidates {
 		if present[strings.ToLower(candidate)] {
-			return DiscoverFanart(ctx, dir, candidate)
+			return candidate, DiscoverFanartFrom(dir, entries, candidate), nil
 		}
 	}
 
 	// Pass 2: no primary anywhere, so numbered variants may still be present.
 	// Strictly additive -- it cannot change any artist pass 1 resolved.
 	for _, candidate := range candidates {
-		paths, err := DiscoverFanart(ctx, dir, candidate)
-		if err != nil {
-			return nil, err
+		if err := ctx.Err(); err != nil {
+			return "", nil, err
 		}
+		paths := DiscoverFanartFrom(dir, entries, candidate)
 		if len(paths) > 0 {
-			return paths, nil
+			return candidate, paths, nil
 		}
 	}
-	return nil, nil
+	return "", nil, nil
+}
+
+// FanartSlotsContiguous reports whether slots (the slot_index of every live
+// fanart row for one artist) are exactly {0..n-1}, where n is the number of
+// fanart files on disk. Rows map to files by POSITION (slot_index indexes the
+// ordinal list), so that mapping is only sound when every ordinal has exactly
+// one row. A count match alone is not enough: rows 0, 2, 3 against three files
+// pass a count check yet pair slot 2 with the second file. Duplicate slots
+// cannot occur (UNIQUE(artist_id, image_type, slot_index)), but this checks
+// the set anyway rather than lean on that.
+func FanartSlotsContiguous(slots []int, n int) bool {
+	if len(slots) != n {
+		return false
+	}
+	seen := make([]bool, n)
+	for _, s := range slots {
+		if s < 0 || s >= n || seen[s] {
+			return false
+		}
+		seen[s] = true
+	}
+	return true
 }

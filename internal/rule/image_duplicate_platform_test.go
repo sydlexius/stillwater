@@ -115,7 +115,7 @@ func dupFixtureDB(t *testing.T, id string, logger *slog.Logger) (*ImageDuplicate
 	t.Helper()
 	db := setupTestDB(t)
 	insertTestArtist(t, db, id, "Platform Dup Artist")
-	for i := 1; i <= 2; i++ {
+	for i := 0; i <= 2; i++ {
 		insertTestImage(t, db, id, "fanart", i)
 	}
 	dir := t.TempDir()

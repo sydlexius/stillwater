@@ -85,6 +85,7 @@ func TestMakeImageDuplicateChecker_WithinTypeFanartDuplicateIsFixable(t *testing
 	// must hash them on demand from disk to notice the duplicate.
 	e, db := newRuleCovTestEngine(t)
 	insertTestArtist(t, db, "art-fanart-dup", "Fanart Dup Artist")
+	insertTestImage(t, db, "art-fanart-dup", "fanart", 0)
 	insertTestImage(t, db, "art-fanart-dup", "fanart", 1)
 	insertTestImage(t, db, "art-fanart-dup", "fanart", 2)
 
@@ -115,6 +116,7 @@ func TestMakeImageDuplicateChecker_WithinTypeFanartDistinctNoViolation(t *testin
 	// gradients -- no duplicate should be reported.
 	e, db := newRuleCovTestEngine(t)
 	insertTestArtist(t, db, "art-fanart-distinct", "Fanart Distinct Artist")
+	insertTestImage(t, db, "art-fanart-distinct", "fanart", 0)
 	insertTestImage(t, db, "art-fanart-distinct", "fanart", 1)
 	insertTestImage(t, db, "art-fanart-distinct", "fanart", 2)
 
@@ -311,6 +313,7 @@ func TestImageDuplicateFixer_Fix_RemovesDuplicateAndRenumbersSurvivors(t *testin
 	// close the gap, ending as fanart.jpg, fanart2.jpg, fanart3.jpg (unique C).
 	db := setupTestDB(t)
 	insertTestArtist(t, db, "art-fix-dup", "Fix Dup Artist")
+	insertTestImage(t, db, "art-fix-dup", "fanart", 0)
 	insertTestImage(t, db, "art-fix-dup", "fanart", 1)
 	insertTestImage(t, db, "art-fix-dup", "fanart", 2)
 	insertTestImage(t, db, "art-fix-dup", "fanart", 3)
@@ -379,6 +382,7 @@ func TestImageDuplicateFixer_Fix_RemovesDuplicateAndRenumbersSurvivors(t *testin
 func TestImageDuplicateFixer_Fix_RestoresStagedTombsOnRenumberFailure(t *testing.T) {
 	db := setupTestDB(t)
 	insertTestArtist(t, db, "art-rollback", "Rollback Artist")
+	insertTestImage(t, db, "art-rollback", "fanart", 0)
 	insertTestImage(t, db, "art-rollback", "fanart", 1)
 	insertTestImage(t, db, "art-rollback", "fanart", 2)
 

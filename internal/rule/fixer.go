@@ -13,9 +13,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
-	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/logging"
-	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/publish"
 )
@@ -2425,18 +2423,11 @@ func (p *Pipeline) reconcileAfterFix(ctx context.Context, a *artist.Artist, remo
 	mu.Lock()
 	defer mu.Unlock()
 
-	var platformService *platform.Service
-	if p.engine != nil {
-		platformService = p.engine.platformService
-	}
-	primaryName := resolveFanartPrimaryName(ctx, platformService)
-	if primaryName == "" {
-		p.logger.Error("no fanart naming convention available to reconcile after fix; skipping reconcile",
-			"artist", a.Name, "artist_id", a.ID)
-		return
-	}
-
-	paths, walkErr := img.DiscoverFanart(ctx, a.Path, primaryName)
+	// Enumerate exactly as the scanner (and the duplicate fixer that just ran)
+	// does, not under the profile primary: in a mixed directory the profile
+	// convention can name a different file set and keep rows the scanner
+	// would not (#2632).
+	_, paths, walkErr := ResolveScannerFanart(ctx, a.Path)
 	if walkErr != nil {
 		p.logger.Warn("walking artist directory to reconcile after fix; skipping reconcile",
 			"artist", a.Name, "artist_id", a.ID, "error", walkErr)

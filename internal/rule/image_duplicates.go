@@ -409,6 +409,12 @@ type imageDupResult struct {
 	exactFanartToDelete map[int]bool
 	// members is every row that yielded at least one usable hash.
 	members []imageDupMember
+	// unresolvedFanart counts exists_flag=1 fanart rows (of an artist WITH a
+	// local path) that yielded no usable hash: no file could be resolved for
+	// the slot and nothing was stored. Such a row is excluded from detection,
+	// so a caller that must not mistake a partial look for a clean one
+	// (ScanFanartDuplicates) surfaces it (#2632).
+	unresolvedFanart int
 }
 
 // findImageDuplicates enumerates an artist's exists_flag=1 image rows and
@@ -499,12 +505,40 @@ func findImageDuplicatesImpl(
 		return out, err
 	}
 
-	fanartPaths := discoverFanartForDup(ctx, a, raw, fanartPrimaryName, fresh, logger)
+	fanartPaths, discovered := discoverFanartForDup(ctx, a, raw, fanartPrimaryName, fresh, logger)
+
+	// Rows map to files by POSITION (slot_index indexes the ordinal list), which
+	// is only sound when the fanart rows' slot indices are exactly {0..n-1} for the n files
+	// on disk (a count match alone passes rows 0, 2, 3 against three files). If
+	// a file vanished (or appeared) since the rows were written, every row after
+	// the gap would be paired with a neighbor's file, and a fresh pass would
+	// persist that file's hash onto the wrong row. So a mismatch withdraws
+	// the file mapping for ALL of the artist's fanart rows: no file is read, no
+	// hash is persisted, and (on a fresh pass, which ignores stored hashes) no
+	// row is usable, so nothing is reported as a duplicate or offered to the
+	// fixer for deletion. A non-fresh pass still honors hashes already stored,
+	// exactly as it does for a path-less artist.
+	if discovered {
+		var slots []int
+		for _, r := range raw {
+			if r.imageType == "fanart" {
+				slots = append(slots, r.slotIndex)
+			}
+		}
+		if len(slots) > 0 && !image.FanartSlotsContiguous(slots, len(fanartPaths)) {
+			logger.Warn("fanart rows are not exactly one per file slot 0..n-1; not mapping rows to files for duplicate detection",
+				"artist", a.Name, "rows", len(slots), "files", len(fanartPaths), "slots", slots)
+			fanartPaths = nil
+		}
+	}
 
 	var hashes []uint64
 	for _, r := range raw {
 		res := resolveImageDupHashes(ctx, a, r, fanartPaths, persist, fresh, logger)
 		if !res.usable {
+			if r.imageType == "fanart" && a.Path != "" {
+				out.unresolvedFanart++
+			}
 			continue
 		}
 		out.members = append(out.members, imageDupMember{
@@ -527,12 +561,16 @@ func findImageDuplicatesImpl(
 // stored). An artist whose hashes are all persisted causes no directory scan
 // at all, which is the steady state after the first evaluation.
 // A fresh pass always needs the paths: it re-reads every file by definition.
-func discoverFanartForDup(ctx context.Context, a *artist.Artist, raw []imageDupRawRow, fanartPrimaryName string, fresh bool, logger *slog.Logger) []string {
+//
+// The bool reports whether a discovery actually produced a path list (false
+// when none was needed, there is no path, or the directory could not be read),
+// so the caller applies the row-count check only to a real listing.
+func discoverFanartForDup(ctx context.Context, a *artist.Artist, raw []imageDupRawRow, _ string, fresh bool, logger *slog.Logger) ([]string, bool) {
 	// No local directory: nothing to discover. The caller then runs entirely off
 	// the hashes already stored in artist_images, which is the whole point of
 	// letting a path-less artist reach detection at all.
-	if a.Path == "" || fanartPrimaryName == "" {
-		return nil
+	if a.Path == "" {
+		return nil, false
 	}
 	needed := fresh
 	for _, r := range raw {
@@ -549,15 +587,36 @@ func discoverFanartForDup(ctx context.Context, a *artist.Artist, raw []imageDupR
 		}
 	}
 	if !needed {
-		return nil
+		return nil, false
 	}
 
-	discovered, discErr := image.DiscoverFanart(ctx, a.Path, fanartPrimaryName)
+	// The primary-name parameter is unused: see ResolveScannerFanart. It stays
+	// only to keep the shared findImageDuplicates signature stable (#2632).
+	_, discovered, discErr := ResolveScannerFanart(ctx, a.Path)
 	if discErr != nil {
 		logger.Debug("discovering fanart for duplicate detection", "artist", a.Name, "error", discErr)
-		return nil
+		return nil, false
 	}
-	return discovered
+	return discovered, true
+}
+
+// ResolveScannerFanart resolves an artist directory's fanart exactly as the
+// library scanner's discoverFanartFiles does, returning the convention that
+// matched and the paths in slot-ordinal order. It is image.ResolveFanartFilesNamed
+// over the fixed default set (ResolveFanartNames(nil)), the one implementation
+// whose agreement with the scanner is pinned by a table test.
+//
+// slot_index is the scanner's ordinal and bounds deletes, so this must match
+// the scanner exactly: exact pattern names decide pass 1 (a .jpeg is never a
+// primary), and the extension preference follows the pattern that matched. It
+// is deliberately NOT profile-first and NOT image.ResolveFanart, which differs
+// from the scanner in both ways (#2632).
+func ResolveScannerFanart(ctx context.Context, dir string) (string, []string, error) {
+	names, err := image.ResolveFanartNames(nil)
+	if err != nil {
+		return "", nil, err
+	}
+	return image.ResolveFanartFilesNamed(ctx, dir, names)
 }
 
 // nonTransitiveFanartDeletionSet returns the set of within-type fanart slot

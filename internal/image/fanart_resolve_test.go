@@ -131,3 +131,67 @@ func base(paths []string) []string {
 	}
 	return out
 }
+
+// TestResolveFanartFilesNamed_UsesOneDirectorySnapshot pins that the chosen
+// candidate and the ordinal list both come from the single directory read. The
+// seam mutates the directory right after the first read; a resolver that reads
+// again (pass 1's DiscoverFanart, or pass 2 once per candidate) would see the
+// mutation and mix two snapshots.
+func TestResolveFanartFilesNamed_UsesOneDirectorySnapshot(t *testing.T) {
+	// Not parallel: it swaps a package variable.
+	run := func(t *testing.T, initial []string, mutate func(dir string) error) (string, []string, int) {
+		t.Helper()
+		dir := resolveTestDir(t, initial...)
+		reads := 0
+		orig := osReadDir
+		osReadDir = func(d string) ([]os.DirEntry, error) {
+			entries, err := orig(d)
+			reads++
+			if reads == 1 {
+				// Runs in the resolver's worker goroutine, so it must not
+				// call t.Fatal; hand the failure back as the read error and
+				// let the test goroutine report it after the resolver returns.
+				if mErr := mutate(dir); mErr != nil {
+					return nil, mErr
+				}
+			}
+			return entries, err
+		}
+		t.Cleanup(func() { osReadDir = orig })
+		name, paths, err := ResolveFanartFilesNamed(context.Background(), dir, []string{"backdrop.jpg", "fanart.jpg"})
+		if err != nil {
+			t.Fatalf("ResolveFanartFilesNamed: %v", err)
+		}
+		return name, paths, reads
+	}
+
+	t.Run("pass 1: a primary removed after the read is still reported", func(t *testing.T) {
+		name, paths, reads := run(t, []string{"fanart.jpg"}, func(dir string) error {
+			return os.Remove(filepath.Join(dir, "fanart.jpg"))
+		})
+		if name != "fanart.jpg" || len(paths) != 1 || filepath.Base(paths[0]) != "fanart.jpg" {
+			t.Errorf("got (%q, %v), want the first snapshot's fanart.jpg", name, paths)
+		}
+		if reads != 1 {
+			t.Errorf("directory read %d times, want 1", reads)
+		}
+	})
+
+	t.Run("pass 2: a file added after the read is not picked up", func(t *testing.T) {
+		// Prepare the bytes up front, on the test goroutine.
+		src := resolveTestDir(t, "x.jpg")
+		b, err := os.ReadFile(filepath.Join(src, "x.jpg"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		name, paths, reads := run(t, []string{"fanart2.jpg"}, func(dir string) error {
+			return os.WriteFile(filepath.Join(dir, "fanart3.jpg"), b, 0o600)
+		})
+		if name != "fanart.jpg" || len(paths) != 1 || filepath.Base(paths[0]) != "fanart2.jpg" {
+			t.Errorf("got (%q, %v), want only the first snapshot's fanart2.jpg", name, paths)
+		}
+		if reads != 1 {
+			t.Errorf("directory read %d times, want 1", reads)
+		}
+	})
+}

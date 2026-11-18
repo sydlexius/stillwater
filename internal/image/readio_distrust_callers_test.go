@@ -135,7 +135,7 @@ var acknowledgedCtxOnlySites = map[string]string{
 		"deliberately refuses to let one vouch for the other (that leniency is what let two " +
 		"mutations survive at function granularity). Correct as written.",
 
-	"internal/rule/fixers.go:resyncFanartFields": "" +
+	"internal/rule/fixers.go:resyncFanartFieldsFrom": "" +
 		"Deliberately swallows the read error: zero geometry means 'unknown, go measure', " +
 		"which the rule resolver already handles by re-measuring. Documented at the site.",
 }
