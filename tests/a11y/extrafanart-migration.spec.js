@@ -47,6 +47,10 @@ async function gotoPlan(page) {
   await expect(page.locator('#extrafanart-migration-empty')).toHaveCount(0);
   await expect(page.locator('#extrafanart-migration-error')).toHaveCount(0);
   await expect(page.locator('#extrafanart-migration-run-button')).toHaveCount(1);
+  // The preview is dated and can be refreshed (#3434): both are the fixture's
+  // defining property here, asserted before any scan.
+  await expect(page.locator('#extrafanart-migration-as-of')).toHaveText(/^Preview as of .+\.$/);
+  await expect(page.locator('#extrafanart-migration-refresh-button')).toHaveCount(1);
   const rows = page.locator('#extrafanart-migration-table tbody tr');
   const fixtureRows = rows.filter({ hasText: /Extra Fixture (One|Two)/ });
   await expect(fixtureRows).toHaveCount(ARTISTS.length * FILES_PER_ARTIST);
@@ -77,6 +81,8 @@ for (const theme of ['dark', 'light']) {
       subtitle: page.locator('.sw-extrafanart-migration > div').first().locator('p'),
       skippedLine: page.locator('#extrafanart-migration-skipped'),
       warning: page.locator('#extrafanart-migration-warning'),
+      asOf: page.locator('#extrafanart-migration-as-of'),
+      refreshButton: page.locator('#extrafanart-migration-refresh-button'),
       statLabel: page.locator('#extrafanart-migration-body dl dt').first(),
       tableHeader: page.locator('#extrafanart-migration-table thead th').first(),
       tableCell: page.locator('#extrafanart-migration-table tbody td').nth(1),
@@ -91,3 +97,35 @@ for (const theme of ['dark', 'light']) {
     expect(results.violations, formatViolations(results.violations)).toEqual([]);
   });
 }
+
+// Refresh is read-only, so it is safe on the server this spec shares. One click
+// sends one POST dry run, swaps the body, keeps every row, re-enables the button,
+// and hands focus to the as-of line (the clicked button
+// was replaced by the swap). The swapped page is scanned too.
+test('Refresh re-reads the preview, re-dates it, moves focus to the as-of line and passes axe', async ({ page }) => {
+  const errors = [];
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await gotoPlan(page);
+  await applyTheme(expect, page, 'light');
+  const posts = [];
+  page.on('request', (r) => { if (r.method() === 'POST') posts.push(r.postData()); });
+  const answered = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/api/v1/reports/extrafanart-migration'));
+  await page.locator('#extrafanart-migration-refresh-button').click();
+  expect((await answered).status()).toBe(200);
+
+  await expect(page.locator('#extrafanart-migration-as-of')).toHaveText('Preview as of just now.');
+  await expect(page.locator('#extrafanart-migration-as-of')).toBeFocused();
+  const button = page.locator('#extrafanart-migration-refresh-button');
+  await expect(button).toBeEnabled();
+  await expect(button).not.toHaveAttribute('aria-busy', 'true');
+  await expect(button).toHaveText('Refresh preview');
+  expect(posts.length, 'exactly one POST').toBe(1);
+  expect(posts[0], 'a dry run, never a live one').toBe('dry_run=true');
+  const fixtureRows = page.locator('#extrafanart-migration-table tbody tr').filter({ hasText: /Extra Fixture (One|Two)/ });
+  await expect(fixtureRows).toHaveCount(ARTISTS.length * FILES_PER_ARTIST);
+
+  const results = await buildAxeBuilder(page).analyze();
+  expect(results.violations, formatViolations(results.violations)).toEqual([]);
+  expect(errors, 'no console errors').toEqual([]);
+});

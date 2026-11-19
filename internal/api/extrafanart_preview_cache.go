@@ -21,8 +21,7 @@
 //
 // Files changed on disk behind the server's back (size, mtime, renames) are NOT
 // detected: a cached preview can be stale. The operator's remedy is a refreshing
-// POST dry run, which always reads the disk (and the page will say "as of" in a
-// later change). A snapshot older than extraFanartPreviewMaxAge is not served.
+// POST dry run, which always reads the disk. A snapshot older than extraFanartPreviewMaxAge is not served.
 package api
 
 import (
@@ -33,7 +32,7 @@ import (
 
 // extraFanartPreviewMaxAge bounds how old a served snapshot may be. The artist
 // set and the artists' paths are in neither the cache key nor any invalidation,
-// so age is the only bound on staleness until a Refresh control exists. Same
+// so age is the only bound on staleness. Same
 // order as extraFanartRunTimeout.
 const extraFanartPreviewMaxAge = 10 * time.Minute
 

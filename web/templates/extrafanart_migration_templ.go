@@ -12,6 +12,7 @@ import templruntime "github.com/a-h/templ/runtime"
 import (
 	"context"
 	"strconv"
+	"time"
 )
 
 // ExtraFanartMaxRows is how many table rows the preview renders. A library-wide
@@ -104,11 +105,19 @@ type ExtraFanartMigrationView struct {
 	SkippedIdentical int
 	Problems         int
 	Rows             []ExtraFanartMigrationRow
-	RowCap           int  // 0 means ExtraFanartMaxRows; only tests set it
-	Receipt          bool // the result of a live run, not a preview
-	Fragment         bool // swapped into an open page: its first heading takes focus
-	Moved            int  // files a run moved
-	Failed           int  // files a run was due to move and did not
+	RowCap           int       // 0 means ExtraFanartMaxRows; only tests set it
+	Receipt          bool      // the result of a live run, not a preview
+	Fragment         bool      // swapped into an open page: its first heading takes focus
+	Moved            int       // files a run moved
+	Failed           int       // files a run was due to move and did not
+	AsOf             time.Time // when the preview began reading the disk (a cached one keeps its original stamp)
+}
+
+// showAsOf reports whether the "Preview as of" line renders: only a finished
+// preview carries one. A receipt is not a preview, and a stopped preview is not a
+// result worth dating.
+func (v ExtraFanartMigrationView) showAsOf() bool {
+	return !v.Receipt && !v.Aborted && !v.AsOf.IsZero()
 }
 
 // ExtraFanartMigrationPage renders the admin-gated extrafanart/ migration
@@ -150,7 +159,7 @@ func ExtraFanartMigrationPage(assets AssetPaths, view ExtraFanartMigrationView) 
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.title"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 113, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 122, Col: 92}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -163,7 +172,7 @@ func ExtraFanartMigrationPage(assets AssetPaths, view ExtraFanartMigrationView) 
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.subtitle"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 115, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 124, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -225,59 +234,72 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templruntime.NewAttributeExpression(t(ctx, "extrafanart_migration.run_lost")).Resolve(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 135, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 144, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" hx-on::before-swap=\"swExtraFanartRun.beforeSwap(event)\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" data-refresh-lost-toast=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var7 string
+		templ_7745c5c3_Var7, templ_7745c5c3_Err = templruntime.NewAttributeExpression(t(ctx, "extrafanart_migration.refresh_lost")).Resolve(ctx)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 145, Col: 72}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" hx-on::before-swap=\"swExtraFanartRun.beforeSwap(event)\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if view.Running {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div id=\"extrafanart-migration-running\" class=\"sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber\"><p class=\"text-xs font-semibold leading-tight text-amber-800 dark:text-amber-400\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<div id=\"extrafanart-migration-running\" class=\"sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber\"><p class=\"text-xs font-semibold leading-tight text-amber-800 dark:text-amber-400\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if view.Fragment {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, " tabindex=\"-1\" autofocus")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, " tabindex=\"-1\" autofocus")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, ">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var7 string
-			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.running_title"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 146, Col: 52}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</p><p class=\"mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug\" role=\"alert\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, ">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var8 string
-			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.running_body"))
+			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.running_title"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 147, Col: 135}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 156, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</p></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</p><p class=\"mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug\" role=\"alert\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var9 string
+			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.running_body"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 157, Col: 135}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</p></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else if view.Aborted && len(view.Rows) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "  ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "  ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -287,7 +309,11 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = extraFanartErrorCard().Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = extraFanartErrorCard(view).Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = extraFanartPreviewBar(view).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -299,412 +325,396 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			} else if view.Aborted {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "  ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "  ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = extraFanartErrorCard().Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = extraFanartErrorCard(view).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, " ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if !view.Receipt {
+				templ_7745c5c3_Err = extraFanartPreviewBar(view).Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if view.SkippedMissing > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<div id=\"extrafanart-migration-skipped\" class=\"sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber\" role=\"alert\"><p class=\"text-xs text-gray-600 dark:text-gray-300 leading-snug\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<div id=\"extrafanart-migration-skipped\" class=\"sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber\" role=\"alert\"><p class=\"text-xs text-gray-600 dark:text-gray-300 leading-snug\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var9 string
-				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "extrafanart_migration.skipped_missing", view.SkippedMissing))
+				var templ_7745c5c3_Var10 string
+				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "extrafanart_migration.skipped_missing", view.SkippedMissing))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 168, Col: 77}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 182, Col: 77}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</p></div>")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</p></div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, " <div class=\"sw-card rounded-lg px-3 py-2\"><dl class=\"grid grid-cols-1 sm:grid-cols-4 gap-3\"><div><dt class=\"text-xs text-gray-600 dark:text-gray-400\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var10 string
-			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.status_label"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 175, Col: 105}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</dt><dd class=\"text-lg font-semibold\" id=\"extrafanart-migration-status\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, " <div class=\"sw-card rounded-lg px-3 py-2\"><dl class=\"grid grid-cols-1 sm:grid-cols-4 gap-3\"><div><dt class=\"text-xs text-gray-600 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var11 string
-			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(extraFanartLabel(ctx, "status", view.Status))
+			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.status_label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 176, Col: 120}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 189, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</dd></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</dt><dd class=\"text-lg font-semibold\" id=\"extrafanart-migration-status\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var12 string
+			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(extraFanartLabel(ctx, "status", view.Status))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 190, Col: 120}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</dd></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if view.Receipt {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, " <div><dt class=\"text-xs text-gray-600 dark:text-gray-400\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var12 string
-				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.files_moved"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 181, Col: 105}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</dt><dd class=\"text-lg font-semibold\" id=\"extrafanart-migration-moved\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, " <div><dt class=\"text-xs text-gray-600 dark:text-gray-400\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var13 string
-				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(view.Moved))
+				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.files_moved"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 182, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 195, Col: 105}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</dd></div><div><dt class=\"text-xs text-gray-600 dark:text-gray-400\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</dt><dd class=\"text-lg font-semibold\" id=\"extrafanart-migration-moved\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var14 string
-				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.files_not_moved"))
+				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(view.Moved))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 185, Col: 109}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 196, Col: 100}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</dt><dd class=\"text-lg font-semibold\" id=\"extrafanart-migration-failed\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</dd></div><div><dt class=\"text-xs text-gray-600 dark:text-gray-400\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var15 string
-				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(view.Failed))
+				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.files_not_moved"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 186, Col: 102}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 199, Col: 109}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</dd></div>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<div><dt class=\"text-xs text-gray-600 dark:text-gray-400\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</dt><dd class=\"text-lg font-semibold\" id=\"extrafanart-migration-failed\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var16 string
-				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.artists_with_files"))
+				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(view.Failed))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 190, Col: 112}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 200, Col: 102}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</dt><dd class=\"text-lg font-semibold\" id=\"extrafanart-migration-artists\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</dd></div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<div><dt class=\"text-xs text-gray-600 dark:text-gray-400\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var17 string
-				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(view.ArtistsWithFiles))
+				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.artists_with_files"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 191, Col: 113}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 204, Col: 112}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</dd></div><div><dt class=\"text-xs text-gray-600 dark:text-gray-400\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</dt><dd class=\"text-lg font-semibold\" id=\"extrafanart-migration-artists\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var18 string
-				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.files_to_move"))
+				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(view.ArtistsWithFiles))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 194, Col: 107}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 205, Col: 113}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</dt><dd class=\"text-lg font-semibold\" id=\"extrafanart-migration-moves\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</dd></div><div><dt class=\"text-xs text-gray-600 dark:text-gray-400\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var19 string
-				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(view.Moves))
+				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.files_to_move"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 195, Col: 100}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 208, Col: 107}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</dd></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</dt><dd class=\"text-lg font-semibold\" id=\"extrafanart-migration-moves\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var20 string
+				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(view.Moves))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 209, Col: 100}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</dd></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<div><dt class=\"text-xs text-gray-600 dark:text-gray-400\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var20 string
-			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.files_identical"))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 199, Col: 108}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</dt><dd class=\"text-lg font-semibold\" id=\"extrafanart-migration-identical\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<div><dt class=\"text-xs text-gray-600 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var21 string
-			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(view.SkippedIdentical))
+			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.files_identical"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 200, Col: 114}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 213, Col: 108}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</dd></div></dl></div>  ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</dt><dd class=\"text-lg font-semibold\" id=\"extrafanart-migration-identical\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var22 string
+			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(view.SkippedIdentical))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 214, Col: 114}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</dd></div></dl></div>  ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if view.Problems > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<div id=\"extrafanart-migration-problems\" class=\"sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber\" role=\"alert\"><p class=\"text-xs font-semibold leading-tight text-amber-800 dark:text-amber-400\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var22 string
-				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.problems_title"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 208, Col: 135}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</p><p class=\"mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<div id=\"extrafanart-migration-problems\" class=\"sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber\" role=\"alert\"><p class=\"text-xs font-semibold leading-tight text-amber-800 dark:text-amber-400\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var23 string
-				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "extrafanart_migration.problems_body", view.Problems))
+				templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.problems_title"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 210, Col: 69}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 222, Col: 135}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</p></div>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, " ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if !view.Receipt {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "<div class=\"sw-card rounded-lg px-3 py-2 flex items-start justify-between gap-3 flex-wrap\"><p id=\"extrafanart-migration-warning\" class=\"text-xs text-gray-600 dark:text-gray-400 leading-snug max-w-prose\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</p><p class=\"mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var24 string
-				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.warning"))
+				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "extrafanart_migration.problems_body", view.Problems))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 217, Col: 47}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 224, Col: 69}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</p></div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, " ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if !view.Receipt {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "<div class=\"sw-card rounded-lg px-3 py-2 flex items-start justify-between gap-3 flex-wrap\"><p id=\"extrafanart-migration-warning\" class=\"text-xs text-gray-600 dark:text-gray-400 leading-snug max-w-prose\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var25 string
+				templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.warning"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 231, Col: 47}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if view.Moves > 0 && !view.Aborted {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "<button type=\"button\" id=\"extrafanart-migration-run-button\" class=\"text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-70 disabled:cursor-not-allowed shrink-0\" hx-post=\"/api/v1/reports/extrafanart-migration\" hx-vals='{\"dry_run\": false}' hx-target=\"#extrafanart-migration-body\" hx-swap=\"outerHTML\" hx-confirm=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var25 string
-					templ_7745c5c3_Var25, templ_7745c5c3_Err = templruntime.NewAttributeExpression(t(ctx, "extrafanart_migration.run_confirm")).Resolve(ctx)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 230, Col: 63}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "\" hx-disabled-elt=\"this\" data-label=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<button type=\"button\" id=\"extrafanart-migration-run-button\" class=\"text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-70 disabled:cursor-not-allowed shrink-0\" hx-post=\"/api/v1/reports/extrafanart-migration\" hx-vals='{\"dry_run\": false}' hx-target=\"#extrafanart-migration-body\" hx-swap=\"outerHTML\" hx-confirm=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var26 string
-					templ_7745c5c3_Var26, templ_7745c5c3_Err = templruntime.NewAttributeExpression(t(ctx, "extrafanart_migration.run_button")).Resolve(ctx)
+					templ_7745c5c3_Var26, templ_7745c5c3_Err = templruntime.NewAttributeExpression(t(ctx, "extrafanart_migration.run_confirm")).Resolve(ctx)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 232, Col: 62}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 244, Col: 63}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "\" data-running-label=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "\" hx-disabled-elt=\"#extrafanart-migration-run-button, #extrafanart-migration-refresh-button\" data-label=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var27 string
-					templ_7745c5c3_Var27, templ_7745c5c3_Err = templruntime.NewAttributeExpression(t(ctx, "extrafanart_migration.run_running")).Resolve(ctx)
+					templ_7745c5c3_Var27, templ_7745c5c3_Err = templruntime.NewAttributeExpression(t(ctx, "extrafanart_migration.run_button")).Resolve(ctx)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 233, Col: 71}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 246, Col: 62}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "\" data-running-label=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var28 string
-					templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.run_button"))
+					templ_7745c5c3_Var28, templ_7745c5c3_Err = templruntime.NewAttributeExpression(t(ctx, "extrafanart_migration.run_running")).Resolve(ctx)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 234, Col: 51}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 247, Col: 71}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var28)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</button>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var29 string
+					templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.run_button"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 248, Col: 51}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "</button>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, " ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if note := view.cappedNote(ctx); note != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<p id=\"extrafanart-migration-capped\" class=\"text-xs text-gray-600 dark:text-gray-400 leading-snug\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var29 string
-				templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(note)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 239, Col: 109}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "</p>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, " <div id=\"extrafanart-migration-table\" class=\"sw-card rounded-lg overflow-x-auto\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			if len(view.Rows) == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "<p id=\"extrafanart-migration-empty\" class=\"px-3 py-4 text-xs text-gray-600 dark:text-gray-400\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "<p id=\"extrafanart-migration-capped\" class=\"text-xs text-gray-600 dark:text-gray-400 leading-snug\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var30 string
-				templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.empty"))
+				templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(note)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 244, Col: 45}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 253, Col: 109}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "<table class=\"min-w-full text-xs\"><thead><tr class=\"text-left text-gray-600 dark:text-gray-400\"><th class=\"px-3 py-2 font-medium\">")
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, " <div id=\"extrafanart-migration-table\" class=\"sw-card rounded-lg overflow-x-auto\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if len(view.Rows) == 0 {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "<p id=\"extrafanart-migration-empty\" class=\"px-3 py-4 text-xs text-gray-600 dark:text-gray-400\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var31 string
-				templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.column_artist"))
+				templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.empty"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 250, Col: 89}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 258, Col: 45}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "</th><th class=\"px-3 py-2 font-medium\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "</p>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			} else {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "<table class=\"min-w-full text-xs\"><thead><tr class=\"text-left text-gray-600 dark:text-gray-400\"><th class=\"px-3 py-2 font-medium\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var32 string
-				templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.column_file"))
+				templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.column_artist"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 251, Col: 87}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 264, Col: 89}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "</th><th class=\"px-3 py-2 font-medium\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var33 string
-				templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.column_destination"))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 252, Col: 94}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -712,124 +722,150 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var34 string
-				templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.column_outcome"))
+				var templ_7745c5c3_Var33 string
+				templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.column_file"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 253, Col: 90}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 265, Col: 87}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "</th><th class=\"px-3 py-2 font-medium\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var34 string
+				templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.column_destination"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 266, Col: 94}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "</th></tr></thead> <tbody>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</th><th class=\"px-3 py-2 font-medium\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var35 string
+				templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.column_outcome"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 267, Col: 90}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</th></tr></thead> <tbody>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				for _, row := range view.visibleRows() {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "<tr class=\"border-t border-gray-100 dark:border-gray-800\"><td class=\"px-3 py-2\"><a class=\"underline\" href=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var35 string
-					templ_7745c5c3_Var35, templ_7745c5c3_Err = templruntime.NewAttributeExpression(templ.SafeURL(view.BasePath + "/artists/" + row.ArtistID)).ResolveURL(ctx)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 260, Col: 95}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var35)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "<tr class=\"border-t border-gray-100 dark:border-gray-800\"><td class=\"px-3 py-2\"><a class=\"underline\" href=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var36 string
-					templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(row.Artist)
+					templ_7745c5c3_Var36, templ_7745c5c3_Err = templruntime.NewAttributeExpression(templ.SafeURL(view.BasePath + "/artists/" + row.ArtistID)).ResolveURL(ctx)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 260, Col: 110}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 274, Col: 95}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var36)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</a></td><td class=\"px-3 py-2\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var37 string
-					templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(row.File)
+					templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(row.Artist)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 262, Col: 41}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 274, Col: 110}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "</td><td class=\"px-3 py-2\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "</a></td><td class=\"px-3 py-2\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var38 string
-					templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(row.Dest)
+					templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(row.File)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 263, Col: 41}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 276, Col: 41}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "</td><td class=\"px-3 py-2\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "</td><td class=\"px-3 py-2\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var39 string
-					templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(extraFanartLabel(ctx, "outcome", row.Outcome))
+					templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(row.Dest)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 265, Col: 57}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 277, Col: 41}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, " ")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</td><td class=\"px-3 py-2\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var40 string
+					templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(extraFanartLabel(ctx, "outcome", row.Outcome))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 279, Col: 57}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, " ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					if row.Reason != "" {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "<span class=\"text-gray-600 dark:text-gray-400\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "<span class=\"text-gray-600 dark:text-gray-400\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						var templ_7745c5c3_Var40 string
-						templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(" - " + extraFanartLabel(ctx, "reason", row.Reason))
+						var templ_7745c5c3_Var41 string
+						templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(" - " + extraFanartLabel(ctx, "reason", row.Reason))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 267, Col: 111}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 281, Col: 111}
 						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "</span>")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</span>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "</td></tr>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "</td></tr>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</tbody></table>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "</tbody></table>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -837,8 +873,23 @@ func ExtraFanartMigrationBody(view ExtraFanartMigrationView) templ.Component {
 	})
 }
 
-// extraFanartErrorCard is the notice shown when the preview stopped before finishing.
-func extraFanartErrorCard() templ.Component {
+// Run and Refresh swap the SAME body, so while either request is out BOTH buttons
+// are disabled (hx-disabled-elt names both by id; htmx does not expand "this" inside a list). Without that, a Refresh clicked during
+// a live run is answered 409 and swapped in, which removes the body the run's
+// receipt is aimed at; htmx then drops the receipt silently. Disabling was chosen
+// over hx-sync="...:drop" because a visibly disabled control tells the operator why
+// nothing happens, where a dropped click looks like a dead button. After a LOST run
+// htmx re-enables both and lost() disables Run again; Refresh is deliberately left
+// enabled (it reads only, and shows the running notice or the result).
+//
+// extraFanartPreviewBar dates the preview and offers the Refresh control. Refresh
+// is offered in every preview state (an empty or stopped preview too: that is how
+// an operator re-checks after fixing the cause) and reads the disk, never the
+// cache. When this is the swapped-in fragment, the as-of line takes focus (the
+// clicked button was replaced, so focus would otherwise drop to <body>). It has
+// no live-region role: a focused element inside one is announced twice. A stopped
+// preview has no as-of line, so its error card takes focus instead.
+func extraFanartPreviewBar(view ExtraFanartMigrationView) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -855,33 +906,146 @@ func extraFanartErrorCard() templ.Component {
 		}
 		ctx = templ.InitializeContext(ctx)
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<div id=\"extrafanart-migration-error\" class=\"sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber\" role=\"alert\"><p class=\"text-xs font-semibold leading-tight text-amber-800 dark:text-amber-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "<div class=\"sw-card rounded-lg px-3 py-2 flex items-center justify-between gap-3 flex-wrap\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var42 string
-		templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.error_title"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 283, Col: 129}
+		if view.showAsOf() {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "<p id=\"extrafanart-migration-as-of\" class=\"text-xs text-gray-600 dark:text-gray-400 leading-snug\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if view.Fragment {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, " tabindex=\"-1\" autofocus")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, ">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var43 string
+			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "extrafanart_migration.as_of", activityRelTime(ctx, view.AsOf)))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 320, Col: 77}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "</p>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<span></span> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<button type=\"button\" id=\"extrafanart-migration-refresh-button\" class=\"text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-70 disabled:cursor-not-allowed shrink-0\" hx-post=\"/api/v1/reports/extrafanart-migration\" hx-vals='{\"dry_run\": true}' hx-target=\"#extrafanart-migration-body\" hx-swap=\"outerHTML\" hx-disabled-elt=\"#extrafanart-migration-run-button, #extrafanart-migration-refresh-button\" data-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "</p><p class=\"mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug\">")
+		var templ_7745c5c3_Var44 string
+		templ_7745c5c3_Var44, templ_7745c5c3_Err = templruntime.NewAttributeExpression(t(ctx, "extrafanart_migration.refresh_button")).Resolve(ctx)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 333, Col: 62}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var44)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var43 string
-		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.error_body"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 284, Col: 118}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "\" data-running-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "</p></div>")
+		var templ_7745c5c3_Var45 string
+		templ_7745c5c3_Var45, templ_7745c5c3_Err = templruntime.NewAttributeExpression(t(ctx, "extrafanart_migration.refresh_running")).Resolve(ctx)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 334, Col: 71}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var45)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var46 string
+		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.refresh_button"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 335, Col: 51}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "</button></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// extraFanartErrorCard is the notice shown when the preview stopped before finishing.
+func extraFanartErrorCard(view ExtraFanartMigrationView) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "<div id=\"extrafanart-migration-error\" class=\"sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber\"><p class=\"text-xs font-semibold leading-tight text-amber-800 dark:text-amber-400\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if view.Fragment {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, " tabindex=\"-1\" autofocus")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, ">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var48 string
+		templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.error_title"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 348, Col: 48}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "</p><p class=\"mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug\" role=\"alert\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var49 string
+		templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.error_body"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 349, Col: 131}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "</p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -915,110 +1079,110 @@ func extraFanartReceipt(view ExtraFanartMigrationView) templ.Component {
 		}
 		ctx = templ.InitializeContext(ctx)
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "<div id=\"extrafanart-migration-receipt\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "<div id=\"extrafanart-migration-receipt\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if view.receiptNeedsAttention() {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, " class=\"sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, " class=\"sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, " class=\"sw-card rounded-lg px-3 py-2\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, " class=\"sw-card rounded-lg px-3 py-2\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "><h2 id=\"extrafanart-migration-receipt-title\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "><h2 id=\"extrafanart-migration-receipt-title\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if view.receiptNeedsAttention() {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, " class=\"text-xs font-semibold leading-tight text-amber-800 dark:text-amber-400\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, " class=\"text-xs font-semibold leading-tight text-amber-800 dark:text-amber-400\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, " class=\"text-xs font-semibold leading-tight\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, " class=\"text-xs font-semibold leading-tight\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if view.Fragment {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, " tabindex=\"-1\" autofocus")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, " tabindex=\"-1\" autofocus")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, ">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, ">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var45 string
-		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(view.receiptTitle(ctx))
+		var templ_7745c5c3_Var51 string
+		templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(view.receiptTitle(ctx))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 317, Col: 27}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 382, Col: 27}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "</h2><p id=\"extrafanart-migration-receipt-body\" class=\"mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug max-w-prose\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "</h2><p id=\"extrafanart-migration-receipt-body\" class=\"mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug max-w-prose\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if view.receiptNeedsAttention() {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, " role=\"alert\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, " role=\"alert\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, " role=\"status\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, " role=\"status\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, ">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, ">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var46 string
-		templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(view.receiptBody(ctx))
+		var templ_7745c5c3_Var52 string
+		templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(view.receiptBody(ctx))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 327, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 392, Col: 26}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, " <a class=\"underline\" href=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var47 string
-		templ_7745c5c3_Var47, templ_7745c5c3_Err = templruntime.NewAttributeExpression(templ.SafeURL(view.BasePath + "/reports/extrafanart-migration")).ResolveURL(ctx)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 328, Col: 94}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var47)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, " <a class=\"underline\" href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "\">")
+		var templ_7745c5c3_Var53 string
+		templ_7745c5c3_Var53, templ_7745c5c3_Err = templruntime.NewAttributeExpression(templ.SafeURL(view.BasePath + "/reports/extrafanart-migration")).ResolveURL(ctx)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 393, Col: 94}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var53)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var48 string
-		templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.receipt_preview_again"))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 328, Col: 152}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "</a></p></div>")
+		var templ_7745c5c3_Var54 string
+		templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "extrafanart_migration.receipt_preview_again"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/extrafanart_migration.templ`, Line: 393, Col: 152}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "</a></p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1045,6 +1209,8 @@ func extraFanartReceipt(view ExtraFanartMigrationView) templ.Component {
 //   - busy: hx-disabled-elt disables the button; this adds aria-busy and the
 //     running label, and hands focus back to the button when the run did not
 //     replace it (the confirm dialog cannot return focus to a disabled button).
+//     After a lost run it keeps Run disabled when ANY request (a failed Refresh
+//     too) swapped nothing in; only a swapped-in body clears that lock.
 //
 // htmx itself focuses the [autofocus] heading of a swapped-in body.
 func extraFanartRunScript() templ.Component {
@@ -1064,7 +1230,7 @@ func extraFanartRunScript() templ.Component {
 		}
 		ctx = templ.InitializeContext(ctx)
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "<script>\n\t\t(function () {\n\t\t\tvar page = document.getElementById('extrafanart-migration-page');\n\t\t\tvar BODY = 'extrafanart-migration-body';\n\t\t\tvar RUN = 'extrafanart-migration-run-button';\n\t\t\tvar lostRun = false;\n\t\t\twindow.swExtraFanartRun = {\n\t\t\t\tbeforeSwap: function (evt) {\n\t\t\t\t\tvar xhr = evt.detail.xhr;\n\t\t\t\t\tvar type = xhr.getResponseHeader('Content-Type') || '';\n\t\t\t\t\tvar ours = type.indexOf('text/html') === 0 && xhr.responseText.indexOf('id=\"' + BODY + '\"') !== -1;\n\t\t\t\t\tevt.detail.shouldSwap = ours;\n\t\t\t\t\tevt.detail.isError = !ours;\n\t\t\t\t}\n\t\t\t};\n\t\t\tif (!page) {\n\t\t\t\tconsole.error('extrafanart migration: page wrapper missing; the Run button cannot report a lost connection');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tfunction lost(evt) {\n\t\t\t\tvar status = evt.detail.xhr ? evt.detail.xhr.status : 0;\n\t\t\t\tif (status >= 400 && status < 500) return;\n\t\t\t\tevt.stopPropagation();\n\t\t\t\tlostRun = true;\n\t\t\t\t// htmx fires sendError/timeout AFTER it restored the disabled state and\n\t\t\t\t// after afterRequest, so busy() ran before lostRun was set: disable here.\n\t\t\t\t// (An answer-error path reaches here BEFORE the restore; busy() covers it.)\n\t\t\t\tvar run = document.getElementById(RUN);\n\t\t\t\tif (run) run.disabled = true;\n\t\t\t\t// A disabled button cannot hold focus, so a keyboard user would drop to\n\t\t\t\t// <body>. Hand focus to the skip-link target (<main tabindex=\"-1\">), as the\n\t\t\t\t// registry repair banner does, but only when focus is actually lost (none,\n\t\t\t\t// <body>, or the Run button): never from a link or control the user moved\n\t\t\t\t// to while the request was in flight.\n\t\t\t\tvar active = document.activeElement;\n\t\t\t\tif (!active || active === document.body || active === run) {\n\t\t\t\t\tvar main = document.getElementById('sw-main');\n\t\t\t\t\tif (main) main.focus(); else console.error('extrafanart migration: #sw-main missing; focus left on the disabled Run button');\n\t\t\t\t}\n\t\t\t\tif (typeof window.showWarningToast !== 'function') {\n\t\t\t\t\tconsole.error('extrafanart migration: showWarningToast unavailable; the run may still be going, reload to preview what is left');\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\twindow.showWarningToast(document.getElementById(BODY).dataset.lostToast);\n\t\t\t}\n\t\t\tfunction busy(evt, on) {\n\t\t\t\tvar btn = evt.detail.elt;\n\t\t\t\tif (!btn || btn.id !== RUN) return;\n\t\t\t\tif (on) btn.setAttribute('aria-busy', 'true'); else btn.removeAttribute('aria-busy');\n\t\t\t\tbtn.textContent = on ? btn.dataset.runningLabel : btn.dataset.label;\n\t\t\t\tif (!on && lostRun) btn.disabled = true;\n\t\t\t\tif (!on && btn.isConnected && document.activeElement === document.body) btn.focus();\n\t\t\t}\n\t\t\tpage.addEventListener('htmx:responseError', lost);\n\t\t\tpage.addEventListener('htmx:sendError', lost);\n\t\t\tpage.addEventListener('htmx:timeout', lost);\n\t\t\tpage.addEventListener('htmx:beforeRequest', function (evt) { busy(evt, true); });\n\t\t\tpage.addEventListener('htmx:afterRequest', function (evt) { busy(evt, false); });\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "<script>\n\t\t(function () {\n\t\t\tvar page = document.getElementById('extrafanart-migration-page');\n\t\t\tvar BODY = 'extrafanart-migration-body';\n\t\t\tvar RUN = 'extrafanart-migration-run-button';\n\t\t\tvar REFRESH = 'extrafanart-migration-refresh-button';\n\t\t\tvar lostRun = false;\n\t\t\twindow.swExtraFanartRun = {\n\t\t\t\tbeforeSwap: function (evt) {\n\t\t\t\t\tvar xhr = evt.detail.xhr;\n\t\t\t\t\tvar type = xhr.getResponseHeader('Content-Type') || '';\n\t\t\t\t\tvar ours = type.indexOf('text/html') === 0 && xhr.responseText.indexOf('id=\"' + BODY + '\"') !== -1;\n\t\t\t\t\tevt.detail.shouldSwap = ours;\n\t\t\t\t\tevt.detail.isError = !ours;\n\t\t\t\t\t// A swapped-in body is the server's current answer (the running notice\n\t\t\t\t\t// while a run is still going), so the lost-run lock ends with it.\n\t\t\t\t\tif (ours) lostRun = false;\n\t\t\t\t}\n\t\t\t};\n\t\t\tif (!page) {\n\t\t\t\tconsole.error('extrafanart migration: page wrapper missing; the Run button cannot report a lost connection');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\t// A refresh is read-only: a lost answer changes nothing on the server, so it\n\t\t\t// gets its own short toast, never the Run button's \"may still be running\".\n\t\t\tfunction refreshLost(evt) {\n\t\t\t\tif (!evt.detail.elt || evt.detail.elt.id !== REFRESH) return;\n\t\t\t\tvar status = evt.detail.xhr ? evt.detail.xhr.status : 0;\n\t\t\t\tif (status >= 400 && status < 500) return;\n\t\t\t\tevt.stopPropagation();\n\t\t\t\tif (typeof window.showWarningToast !== 'function') {\n\t\t\t\t\tconsole.error('extrafanart migration: showWarningToast unavailable; the preview could not be refreshed');\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\twindow.showWarningToast(document.getElementById(BODY).dataset.refreshLostToast);\n\t\t\t}\n\t\t\tfunction lost(evt) {\n\t\t\t\tif (evt.detail.elt && evt.detail.elt.id === REFRESH) { refreshLost(evt); return; }\n\t\t\t\tvar status = evt.detail.xhr ? evt.detail.xhr.status : 0;\n\t\t\t\tif (status >= 400 && status < 500) return;\n\t\t\t\tevt.stopPropagation();\n\t\t\t\tlostRun = true;\n\t\t\t\t// htmx fires sendError/timeout AFTER it restored the disabled state and\n\t\t\t\t// after afterRequest, so busy() ran before lostRun was set: disable here.\n\t\t\t\t// (An answer-error path reaches here BEFORE the restore; busy() covers it.)\n\t\t\t\tvar run = document.getElementById(RUN);\n\t\t\t\tif (run) run.disabled = true;\n\t\t\t\t// A disabled button cannot hold focus, so a keyboard user would drop to\n\t\t\t\t// <body>. Hand focus to the skip-link target (<main tabindex=\"-1\">), as the\n\t\t\t\t// registry repair banner does, but only when focus is actually lost (none,\n\t\t\t\t// <body>, or the Run button): never from a link or control the user moved\n\t\t\t\t// to while the request was in flight.\n\t\t\t\tvar active = document.activeElement;\n\t\t\t\tif (!active || active === document.body || active === run) {\n\t\t\t\t\tvar main = document.getElementById('sw-main');\n\t\t\t\t\tif (main) main.focus(); else console.error('extrafanart migration: #sw-main missing; focus left on the disabled Run button');\n\t\t\t\t}\n\t\t\t\tif (typeof window.showWarningToast !== 'function') {\n\t\t\t\t\tconsole.error('extrafanart migration: showWarningToast unavailable; the run may still be going, reload to preview what is left');\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\twindow.showWarningToast(document.getElementById(BODY).dataset.lostToast);\n\t\t\t}\n\t\t\tfunction busy(evt, on) {\n\t\t\t\tvar btn = evt.detail.elt;\n\t\t\t\tif (!btn || (btn.id !== RUN && btn.id !== REFRESH)) return;\n\t\t\t\tif (on) btn.setAttribute('aria-busy', 'true'); else btn.removeAttribute('aria-busy');\n\t\t\t\tbtn.textContent = on ? btn.dataset.runningLabel : btn.dataset.label;\n\t\t\t\t// htmx re-enables BOTH buttons when either request ends, so any request\n\t\t\t\t// that swapped nothing in (a failed Refresh too) re-locks Run here.\n\t\t\t\tvar run = document.getElementById(RUN);\n\t\t\t\tif (!on && lostRun && run) run.disabled = true;\n\t\t\t\tif (!on && btn.isConnected && document.activeElement === document.body) btn.focus();\n\t\t\t}\n\t\t\tpage.addEventListener('htmx:responseError', lost);\n\t\t\tpage.addEventListener('htmx:sendError', lost);\n\t\t\tpage.addEventListener('htmx:timeout', lost);\n\t\t\tpage.addEventListener('htmx:beforeRequest', function (evt) { busy(evt, true); });\n\t\t\tpage.addEventListener('htmx:afterRequest', function (evt) { busy(evt, false); });\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

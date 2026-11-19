@@ -145,8 +145,7 @@ type extraFanartRunResult struct {
 	// ended) rather than finishing. Not part of the body; it only steers Status.
 	aborted bool
 	// asOf is when a preview BEGAN reading the disk (not when it finished), or for a
-	// cache hit when the cached preview began. Not part of the body; the page shows
-	// it in a later change (#3434).
+	// cache hit when the cached preview began. Not part of the body.
 	asOf time.Time
 }
 

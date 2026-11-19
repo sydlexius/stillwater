@@ -22,11 +22,12 @@ import (
 // handleExtraFanartMigrationPage renders the admin preview page. The plan the
 // operator sees is the cached result of the last finished dry run when there is
 // one (#3434), else a real dry run; a live run drops the cache, and a POST dry run
-// refreshes it. Cached rows can be stale if files changed behind the server, which
-// is why the live run never reads them. The dry run takes the page's own preview
-// guard, never the run singleton, so an open preview cannot make a live run
-// answer 409. A second load during a preview, or any load during a run, sees the
-// running notice.
+// refreshes it. The page says when the plan was computed (AsOf, the begin time of
+// the read) and its Refresh button posts that dry run. Cached rows can be stale
+// if files changed behind the server, which is why the live run never reads
+// them. The dry run takes the page's own preview guard, never the run singleton,
+// so an open preview cannot make a live run answer 409. A second load during a
+// preview, or any load during a run, sees the running notice.
 func (r *Router) handleExtraFanartMigrationPage(w http.ResponseWriter, req *http.Request) {
 	if !r.requireForeignAdmin(w, req) {
 		return
@@ -63,7 +64,7 @@ func extraFanartView(res *extraFanartRunResult, basePath string) templates.Extra
 		BasePath: basePath, SkippedMissing: res.ArtistsSkippedMissing, Aborted: res.aborted, Status: res.Status,
 		ArtistsWithFiles: res.ArtistsWithFiles, Moves: res.Planned,
 		SkippedIdentical: res.SkippedIdentical, Problems: res.Problems,
-		Receipt: !res.DryRun, Moved: res.Moved, Failed: res.Failed,
+		Receipt: !res.DryRun, Moved: res.Moved, Failed: res.Failed, AsOf: res.asOf,
 	}
 	for _, a := range res.Artists {
 		if a.Error != "" {

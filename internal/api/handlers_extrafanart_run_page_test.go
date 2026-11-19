@@ -331,7 +331,7 @@ func TestExtraFanartPage_RunButtonOnlyForAFinishedPlan(t *testing.T) {
 		body := efMux(t, r)(http.MethodGet, efPagePath, "", false).Body.String()
 		for _, want := range []string{
 			efRunBtn, `hx-post="` + efRunPath + `"`, `hx-vals='{"dry_run": false}'`, `hx-target="#extrafanart-migration-body"`,
-			`hx-swap="outerHTML"`, `hx-confirm="Move the extrafanart files now?`, `hx-disabled-elt="this"`,
+			`hx-swap="outerHTML"`, `hx-confirm="Move the extrafanart files now?`, `hx-disabled-elt="#extrafanart-migration-run-button, #extrafanart-migration-refresh-button"`,
 			`hx-on::before-swap="swExtraFanartRun.beforeSwap(event)"`, "window.swExtraFanartRun",
 		} {
 			if !strings.Contains(body, want) {
