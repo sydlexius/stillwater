@@ -298,9 +298,9 @@ func TestHashImportedFanart_UnreadableDirWritesNothing(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 	if _, err := os.ReadDir(dir); err == nil {
-		t.Fatal("precondition: directory still readable (running as root?)")
+		t.Skip("directory still readable after chmod (running as root?); cannot exercise the unreadable path")
 	}
-	r.hashImportedFanart(ctx, a.ID, dir, nil)
+	r.hashImportedFanart(ctx, a.ID, dir)
 	for slot, h := range fanartHashes(t, r, a.ID) {
 		if h[0] != "" || h[1] != "" {
 			t.Errorf("slot %d hashed from an unreadable dir: %v", slot, h)
@@ -322,5 +322,76 @@ func TestStoreImportedFanartHash_CASKeepsConcurrentHash(t *testing.T) {
 	}
 	if got := fanartHashes(t, r, a.ID)[1]; got != [2]string{"other", "other"} {
 		t.Errorf("concurrent hash clobbered: %v", got)
+	}
+}
+
+// TestHashImportedFanart_ShiftedSlotRehashed: rows 0..2 hold A, B, C; B's file
+// is evicted and a later populate downloads D. The count stays 3 and nothing
+// renumbers, so row 1 now names C's file while still holding B's hashes. It
+// must be re-hashed from C, not skipped as "already hashed".
+func TestHashImportedFanart_ShiftedSlotRehashed(t *testing.T) {
+	r, a, _, _, _ := importFanart(t, "")
+	imgs := [][]byte{importJPEG(t, 0), importJPEG(t, 1), importJPEG(t, 2), importJPEG(t, 3)}
+	populate(t, r, a.ID, [][]byte{imgs[0], imgs[1], nil, imgs[2]}) // 3 slots: A, B, C
+	before := fanartHashes(t, r, a.ID)
+	if before[1][0] != importPhash(t, imgs[1]) || before[2][0] != importPhash(t, imgs[2]) {
+		t.Fatalf("precondition: want rows A, B, C hashed, got %v", before)
+	}
+	if err := os.Remove(fanartFiles(t, r, a.ID)[1]); err != nil {
+		t.Fatalf("evicting B: %v", err)
+	}
+	if res := populate(t, r, a.ID, [][]byte{nil, nil, nil, nil, imgs[3]}); res.Images != 1 {
+		t.Fatalf("precondition: want D downloaded, got %d", res.Images)
+	}
+	if n := len(fanartFiles(t, r, a.ID)); n != 3 {
+		t.Fatalf("precondition: want 3 files (A, C, D), got %d", n)
+	}
+	after := fanartHashes(t, r, a.ID)
+	if after[1][0] != importPhash(t, imgs[2]) || after[1][1] == before[1][1] {
+		t.Errorf("row 1 names C's file but keeps B's hashes: before %v after %v", before[1], after[1])
+	}
+	if after[2][0] != importPhash(t, imgs[3]) {
+		t.Errorf("row 2: want D's phash, got %v", after[2])
+	}
+}
+
+// TestHashImportedFanart_ProfileFanartName: the active profile names fanart
+// "background.jpg" (not a default). Populate writes under that name, so the
+// pass must resolve the profile's names, as updateArtistFanartCount does.
+func TestHashImportedFanart_ProfileFanartName(t *testing.T) {
+	r := testRouterForLibraryOps(t)
+	activateFanartProfile(t, r.platformService, "background.jpg")
+	ctx := context.Background()
+	a := &artist.Artist{Name: "Profile Name", SortName: "Profile Name"}
+	if err := r.artistService.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	imgA, imgB := importJPEG(t, 0), importJPEG(t, 1)
+	if res := populate(t, r, a.ID, [][]byte{imgA, imgB}); res.Images != 2 {
+		t.Fatalf("precondition: want 2 backdrops written, got %d", res.Images)
+	}
+	if _, err := os.Stat(filepath.Join(r.imageCacheDir, a.ID, "background.jpg")); err != nil {
+		t.Fatalf("precondition: populate should write background.jpg: %v", err)
+	}
+	got := fanartHashes(t, r, a.ID)
+	if got[1][0] != importPhash(t, imgB) {
+		t.Errorf("slot 1 under the profile's fanart name not hashed: %v", got)
+	}
+}
+
+// TestStoreImportedFanartHash_SkipsClearedRow: a row whose exists_flag flipped
+// to 0 between the read and the write is not written.
+func TestStoreImportedFanartHash_SkipsClearedRow(t *testing.T) {
+	r, a, _, _, _ := importFanart(t, "")
+	ctx := context.Background()
+	if _, err := r.db.ExecContext(ctx,
+		`UPDATE artist_images SET exists_flag = 0, phash = '', content_hash = '' WHERE artist_id = ? AND slot_index = 1`, a.ID); err != nil {
+		t.Fatalf("clearing row: %v", err)
+	}
+	if err := r.storeImportedFanartHash(ctx, a.ID, 1, "", "", "mine", "mine"); err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	if got := fanartHashes(t, r, a.ID)[1]; got != [2]string{"", ""} {
+		t.Errorf("hash written to an exists_flag=0 row: %v", got)
 	}
 }

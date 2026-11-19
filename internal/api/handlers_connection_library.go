@@ -1028,7 +1028,6 @@ type platformImagePipeline struct {
 	artist           *artist.Artist
 	connType         string
 	result           *populateResult
-	savedFanart      map[string]bool // lower-cased base names of backdrops written this run (#3602)
 }
 
 // newPlatformImagePipeline validates the artist's image directory and
@@ -1285,26 +1284,27 @@ func (p *platformImagePipeline) downloadBackdrops(ctx context.Context, backdropT
 		// Any run that reached here may have renumbered (RenumberFanart clears
 		// every fanart hash), not only one that downloaded, so hash on all of them.
 		if a.Path == "" {
-			r.hashImportedFanart(ctx, a.ID, p.dir, p.savedFanart)
+			r.hashImportedFanart(ctx, a.ID, p.dir)
 		}
 	}
 }
 
 // hashImportedFanart hashes a path-less artist's fanart rows from the cache
 // files (#3602), so they carry a hash before cache eviction can remove the
-// bytes. A row is hashed when it lacks a hash or when its file was written this
-// run (saved, lower-cased base names): eviction removes files without touching
-// rows, so a re-downloaded slot can still hold its predecessor's hash. slot_index is the scanner-order ordinal, so it resolves
-// the files exactly as BackfillFanartHashes does and writes nothing unless the
-// live rows are exactly slots 0..n-1. Failures are logged, never returned: the
+// bytes. A row is skipped only when it has a phash and its content hash equals
+// the bytes now at its slot: eviction removes files without touching rows, so
+// a re-downloaded or shifted slot can hold another file's hashes. slot_index is
+// the scanner-order ordinal, so files are resolved as updateArtistFanartCount
+// does (profile names UNION defaults) and nothing is written unless the live
+// rows are exactly slots 0..n-1. Failures are logged, never returned: the
 // import already succeeded and the periodic local pass is the fallback.
-func (r *Router) hashImportedFanart(ctx context.Context, artistID, dir string, saved map[string]bool) {
+func (r *Router) hashImportedFanart(ctx context.Context, artistID, dir string) {
 	log := r.logger.With(slog.String("artist_id", artistID))
 	if r.db == nil {
 		log.Error("hashing imported fanart: no database handle")
 		return
 	}
-	names, err := img.ResolveFanartNames(nil)
+	names, err := r.fanartNamesStrict(ctx)
 	if err != nil {
 		log.Warn("hashing imported fanart: resolving names", slog.String("error", err.Error()))
 		return
@@ -1329,23 +1329,31 @@ func (r *Router) hashImportedFanart(ctx context.Context, artistID, dir string, s
 		return
 	}
 	for _, s := range live {
-		fresh := saved[strings.ToLower(filepath.Base(paths[s.slot]))]
-		if !fresh && s.phash != "" && s.content != "" {
+		data, readErr := img.ReadImageFileBounded(ctx, paths[s.slot])
+		if readErr != nil {
+			if stop := img.ReadFailureDistrustsLoop(ctx, readErr); stop != nil {
+				if errors.Is(stop, img.ErrTooManyStalledReads) {
+					log.Warn("hashing imported fanart: reads stalled, pass stopped", slog.String("error", stop.Error()))
+				}
+				return // a stalled mount or a canceled context is not a fact about this file
+			}
+			log.Warn("hashing imported fanart: reading file", slog.Int("slot_index", s.slot), slog.String("error", readErr.Error()))
 			continue
 		}
-		fh, hashErr := img.HashFile(ctx, paths[s.slot], true)
-		if hashErr != nil {
-			if ctx.Err() != nil {
-				return // canceled: not a fact about the file
-			}
-			log.Warn("hashing imported fanart: hashing file", slog.Int("slot_index", s.slot), slog.String("error", hashErr.Error()))
+		content := img.ContentHash(data)
+		if s.phash != "" && s.content == content {
+			continue // the row already describes these exact bytes
+		}
+		ph, decErr := img.PerceptualHash(bytes.NewReader(data))
+		if decErr != nil {
+			log.Warn("hashing imported fanart: decoding file", slog.Int("slot_index", s.slot), slog.String("error", decErr.Error()))
 			continue
 		}
 		// Both values come from this one file, so a row never pairs one file's
 		// phash with another's content hash. 0 is the "unknown" sentinel, stored as "".
-		phash, content := "", fh.Content
-		if fh.Perceptual != 0 {
-			phash = img.HashHex(fh.Perceptual)
+		phash := ""
+		if ph != 0 {
+			phash = img.HashHex(ph)
 		}
 		if storeErr := r.storeImportedFanartHash(ctx, artistID, s.slot, s.phash, s.content, phash, content); storeErr != nil {
 			log.Warn("hashing imported fanart: storing hashes", slog.Int("slot_index", s.slot), slog.String("error", storeErr.Error()))
@@ -1387,7 +1395,8 @@ func (r *Router) liveFanartHashRows(ctx context.Context, artistID string) ([]fan
 // NARROWS the window; it does not close it").
 func (r *Router) storeImportedFanartHash(ctx context.Context, artistID string, slot int, oldPhash, oldContent, phash, content string) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE artist_images SET phash = ?, content_hash = ?
-		WHERE artist_id = ? AND image_type = 'fanart' AND slot_index = ? AND phash = ? AND content_hash = ?`,
+		WHERE artist_id = ? AND image_type = 'fanart' AND slot_index = ? AND exists_flag = 1
+		  AND phash = ? AND content_hash = ?`,
 		phash, content, artistID, slot, oldPhash, oldContent)
 	return err
 }
@@ -1516,12 +1525,6 @@ func (p *platformImagePipeline) downloadBackdrop(ctx context.Context, i int, pri
 	// Record the just-saved image so a later index carrying the same picture is
 	// deduped against it within this same run.
 	dedup.add(content, phash)
-	if p.savedFanart == nil {
-		p.savedFanart = map[string]bool{}
-	}
-	for _, name := range saved {
-		p.savedFanart[strings.ToLower(filepath.Base(name))] = true
-	}
 	p.result.Images++
 	return backdropDownloaded
 }
