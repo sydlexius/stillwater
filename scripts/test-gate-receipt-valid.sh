@@ -254,6 +254,23 @@ for _sv in SPEC PROJECT; do
   lib "$_sv=x gate_stamp_begin; gate_stamp_write \"\$(git rev-parse HEAD~1)\" default default default default"
   expect_nostamp "$_sv set at gate start writes no stamp" "$_sv is set"
 done
+echo "--- scoped a11y (RUN_A11Y=changed, #3608)"
+reset; stamp_edit '.modes.a11y="changed"'; hook "$PUSH_B" RUN_A11Y=1
+expect_run "a scoped a11y stamp never satisfies RUN_A11Y=1" "this push needs a11y=on"
+reset; stamp_edit '.modes.a11y="changed"'; hook "$PUSH_B" RUN_A11Y=changed
+expect_skip "a scoped a11y stamp satisfies RUN_A11Y=changed"
+reset; stamp_edit '.modes.a11y="changed"'; hook "$PUSH_B"
+expect_skip "a scoped a11y stamp satisfies a default push"
+reset; stamp_edit '.modes.a11y="on"'; hook "$PUSH_B" RUN_A11Y=changed
+expect_skip "a full a11y stamp satisfies RUN_A11Y=changed"
+reset; hook "$PUSH_B" RUN_A11Y=changed
+expect_run "a skipped (default) a11y stamp does not satisfy RUN_A11Y=changed" "this push needs a11y=changed"
+reset; stamp_edit '.modes.a11y="off"'; hook "$PUSH_B" RUN_A11Y=changed
+expect_run "an opted-out (off) a11y stamp does not satisfy RUN_A11Y=changed" "this push needs a11y=changed"
+reset; stamp_edit '.modes.vuln="changed"'; hook "$PUSH_B"
+expect_run "changed is not a valid stamp mode for any other tier" "unknown mode 'changed' for vuln"
+reset; hook "$PUSH_B" RUN_VULN=changed
+expect_refused "RUN_VULN=changed is refused, not accepted" "RUN_VULN='changed'"
 echo "--- stamp"
 reset; stamp_edit 'del(.patch_base)'; hook "$PUSH_B"
 expect_run "a stamp with no patch_base field runs the gate" "no patch_base"

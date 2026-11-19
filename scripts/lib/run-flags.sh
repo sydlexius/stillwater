@@ -24,7 +24,11 @@
 # any check runs. A typo is a setup error; it should cost a second, not a full
 # gate run followed by a puzzling result.
 
-# resolve_run_flag <VAR_NAME> <raw value>
+# resolve_run_flag <VAR_NAME> <raw value> [extra-token...]
+#
+# Optional extra tokens are ADDITIONAL accepted values for this one tier
+# (RUN_A11Y passes `changed`, #3608); each resolves to itself. A tier that
+# passes none still exits 2 on `changed`.
 #
 # Writes its answer to the global RESOLVED_RUN_FLAG rather than stdout. A
 # command substitution would run the `exit` below inside a SUBSHELL, so the
@@ -39,16 +43,21 @@
 # shellcheck disable=SC2034  # read by the sourcing script, not by this file.
 RESOLVED_RUN_FLAG=""
 resolve_run_flag() {
-  local name="$1" raw="$2" normalized
+  local name="$1" raw="$2" normalized extra extras=""
+  shift 2
+  for extra in "$@"; do extras="${extras}, ${extra}"; done
   normalized="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
   case "$normalized" in
     1 | true | yes | on) RESOLVED_RUN_FLAG="on" ;;
     0 | false | no | off) RESOLVED_RUN_FLAG="off" ;;
     "") RESOLVED_RUN_FLAG="default" ;;
     *)
+      for extra in "$@"; do
+        if [ "$normalized" = "$extra" ]; then RESOLVED_RUN_FLAG="$extra"; return 0; fi
+      done
       echo "FAIL: ${name}='${raw}' is not a recognized value -- refusing to continue," >&2
       echo "      because treating it as 'unset' would silently skip a tier you asked to run." >&2
-      echo "      Use 1/true/yes/on (blocking run) or 0/false/no/off (explicit skip)," >&2
+      echo "      Use 1/true/yes/on (blocking run) or 0/false/no/off (explicit skip)${extras}," >&2
       echo "      case-insensitive; leave ${name} unset for the default." >&2
       exit 2
       ;;

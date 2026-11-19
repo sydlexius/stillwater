@@ -165,6 +165,7 @@ HELPERS=(
     test-check-plain-git-diff.sh
     test-pre-commit-plain-diff.sh
     test-prefs-coverage.sh
+    test-a11y-select.sh
 )
 
 # Helpers whose own pass/fail verdict this suite enforces (see the loop below).

@@ -77,20 +77,20 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # other failure (function undefined: 127, a crash) exits 1 and runs the gate.
 resolve_flag() {
   local probe=0
-  (resolve_run_flag "$1" "$2") >/dev/null || probe=$?
+  (resolve_run_flag "$@") >/dev/null || probe=$?
   case "$probe" in
     0) ;;
     2) exit 64 ;;
     *) exit 1 ;;
   esac
-  resolve_run_flag "$1" "$2"
+  resolve_run_flag "$@"
 }
 
 resolve_flag PRE_PUSH_FORCE_GATE "${PRE_PUSH_FORCE_GATE:-}"; FORCE="$RESOLVED_RUN_FLAG"
 resolve_flag RUN_RACE "${RUN_RACE:-}"; RACE_MODE="$RESOLVED_RUN_FLAG"
 resolve_flag RUN_VULN "${RUN_VULN:-}"; VULN_MODE="$RESOLVED_RUN_FLAG"
 resolve_flag RUN_PROVIDER_SMOKE "${RUN_PROVIDER_SMOKE:-}"; PROVIDER_MODE="$RESOLVED_RUN_FLAG"
-resolve_flag RUN_A11Y "${RUN_A11Y:-}"; A11Y_MODE="$RESOLVED_RUN_FLAG"
+resolve_flag RUN_A11Y "${RUN_A11Y:-}" changed; A11Y_MODE="$RESOLVED_RUN_FLAG"
 
 GIT_DIR_ABS=$(git rev-parse --absolute-git-dir 2>/dev/null) || exit 1
 RECEIPT="$GIT_DIR_ABS/prep-pr-receipt.json"
@@ -195,6 +195,9 @@ done
 rank() {
   case "$2" in
     on) echo 2 ;;
+    # A scoped (diff-selected) a11y run is weaker than a full one: it satisfies
+    # a default/off/changed push but never RUN_A11Y=1 (#3608).
+    changed) if [ "$1" = a11y ]; then echo 1; else echo bad; fi ;;
     default) if [ "$1" = race ]; then echo 1; else echo 0; fi ;;
     off) echo 0 ;;
     *) echo bad ;;
