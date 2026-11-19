@@ -38,8 +38,9 @@
 # SKIP, each with a blocking opt-in:
 #
 #   RUN_A11Y=1            accessibility (axe-core)   CI: "A11y Smoke Tests (Playwright + axe-core)" (ci.yml)
-#                         (RUN_A11Y=changed: the full suite, or a SKIP when
-#                         only allow-listed non-UI files changed, #3608)
+#                         (RUN_A11Y=changed: the full suite, the specs the
+#                         diff selects, or a SKIP when only allow-listed
+#                         non-UI files changed, #3608)
 #   RUN_PROVIDER_SMOKE=1  provider failure smoke     CI: "Provider Failure Smoke" (gate.yml)
 #   RUN_VULN=1            govulncheck                CI: "Go Vulnerability Check" (security.yml)
 #   RUN_RACE=1            full -race suite           CI: "Test" (ci.yml)
@@ -1037,9 +1038,10 @@ gate_step "Accessibility (axe-core)"
 #     the push.
 #   - RUN_A11Y falsy  (0/false/no/off): explicit SKIP.
 #   - RUN_A11Y unset (the DEFAULT since #2983): SKIP.
-#   - RUN_A11Y=changed (#3608): the FULL suite, blocking, unless every file
-#     changed since BASE is on the non-UI allow-list in tests/a11y/spec-map.toml
-#     (then a SKIP with the reason, never a pass). See the arm below.
+#   - RUN_A11Y=changed (#3608): blocking; the FULL suite, or only the specs
+#     tests/a11y/spec-map.toml selects for the diff since BASE, or a SKIP with
+#     the reason (never a pass) when every changed file is on its non-UI
+#     allow-list. See the arm below.
 #   - RUN_A11Y set to anything else: the gate already aborted with exit 2 at
 #     the top of this file. See resolve_run_flag.
 #
@@ -1065,10 +1067,11 @@ case "$A11Y_MODE" in
     ;;
   changed)
     # Diff-scoped (#3608). scripts/a11y-select.sh reads the diff since BASE:
-    # FULL = any changed file is in [shared] or is not on the [allow] list;
-    # EMPTY = every changed file is allow-listed (a SKIP with the reason, never
-    # a pass). There is no partial selection: anything that might render runs
-    # everything. A selector or map error blocks (exit 2).
+    # FULL = any changed file is in [shared], or in no rule and not on the
+    # [allow] list; SELECT = every changed file is allow-listed or selects
+    # specs (a rule, or a changed spec or seed), so only those run, all
+    # browsers; EMPTY = every changed file is allow-listed (a SKIP with the
+    # reason, never a pass). A selector or map error blocks (exit 2).
     # BASE falls back to HEAD~1 when local main is missing (see BASE= above);
     # that would diff only the last commit and could SKIP a branch that changed
     # a UI file earlier, so the merge base must exist; a main sharing no history
@@ -1091,6 +1094,15 @@ case "$A11Y_MODE" in
         echo "a11y: running the FULL suite (reasons above)"
         run_a11y=1
         ;;
+      SELECT)
+        # The selector validated each path against the SPEC charset, so the
+        # space-joined list is safe to hand to make.
+        a11y_specs=$(printf '%s\n' "$a11y_sel" | sed -n '2,$p' | cut -f1 | tr '\n' ' ')
+        a11y_specs="${a11y_specs% }"
+        [ -n "$a11y_specs" ] || { echo "FAIL: a11y-select.sh printed SELECT with no specs." >&2; exit 1; }
+        echo "a11y: running the selected specs only (both browsers): make test-a11y SPEC='${a11y_specs}'"
+        run_a11y=2
+        ;;
       EMPTY)
         gate_skip deterministic "a11y: skipped -- RUN_A11Y=changed found only allow-listed non-UI files in the diff; CI's a11y check runs on its own path filter (ci.yml)"
         ;;
@@ -1105,10 +1117,14 @@ case "$A11Y_MODE" in
     ;;
 esac
 
-if [ "$run_a11y" -eq 1 ]; then
-  # Explicitly empty SPEC/PROJECT: an operator's exported values must not
-  # silently narrow a run this log calls the FULL suite.
-  if ! make test-a11y SPEC= PROJECT=; then
+# A SELECT run keeps A11Y_MODE=changed, so its stamp ranks exactly like a FULL
+# changed run: it never satisfies a RUN_A11Y=1 push (gate-receipt-valid.sh).
+a11y_spec_arg=""
+[ "$run_a11y" -eq 2 ] && a11y_spec_arg="$a11y_specs"
+if [ "$run_a11y" -ge 1 ]; then
+  # Explicit SPEC/PROJECT: an operator's exported values must not silently
+  # narrow (or widen) the run this log announced.
+  if ! make test-a11y SPEC="$a11y_spec_arg" PROJECT=; then
     echo ""
     echo "FAIL: accessibility (axe-core) smoke tests reported failures (see output above)."
     exit 1
