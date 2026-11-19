@@ -162,7 +162,9 @@ expect "a well-formed [[rule]] map is accepted (SELECT)" 0 '^MODE=SELECT$'
 # --- C. map checker -----------------------------------------------------------
 chk() { ST=0; OUT=$(cd "$R" && bash scripts/a11y-select.sh --check 2>&1) || ST=$?; }
 chk; expect "checker passes a consistent tree" 0 '^OK'
-expect "checker reports the UI files in no rule (FULL by design)" 0 '1 of 5 UI files are in no rule.*: web/templates/unmapped.templ$'
+expect "checker reports the COUNT of UI files in no rule (FULL by design)" 0 '1 of 5 UI files are in no rule.*(list them: --check --verbose)$'
+if grep -q 'unmapped.templ' <<<"$OUT"; then bad "checker lists unmapped files only with --verbose" "$OUT"; else ok "checker lists unmapped files only with --verbose"; fi
+ST=0; OUT=$(cd "$R" && bash scripts/a11y-select.sh --check --verbose 2>&1) || ST=$?; expect "--check --verbose lists them one per line" 0 '^    web/templates/unmapped.templ$'
 git -C "$R" rm -qf web/templates/other.templ internal/api/handlers_x.go; chk; expect "a rule path glob matching no file (stale) FAILS" 1 "stale rule glob 'internal/api/handlers_x.go'"
 git -C "$R" reset -q --hard HEAD
 git -C "$R" rm -qf tests/a11y/b.spec.js; chk; expect "a rule spec glob matching no spec (stale) FAILS" 1 "stale rule spec glob 'b.spec.js'"
@@ -194,6 +196,23 @@ for p in web/templates/platform_state.templ web/templates/platform_state_templ.g
   rsel "$p"; if [ "$ST" -eq 0 ] && { grep -qx 'MODE=FULL' <<<"$OUT" || grep -q '^tests/a11y/muted-text-contrast.spec.js' <<<"$OUT"; }; then ok "real map: $p runs muted-text-contrast (R1)"; else bad "real map R1 $p" "$OUT"; fi
 done
 rsel web/templates/logs.templ; expect "real map: logs.templ selects the spec that scans /logs" 0 '^tests/a11y/filter-flyout-open-scan.spec.js'
+# Rule completeness (F1): each path must select AT LEAST the specs its derivation
+# (spec-map.toml header) found. A spec dropped from a rule fails here even when
+# another rule still lists it, which the checker's `# unruled:` test cannot see.
+rhas() {
+  local p="$1" s miss=""; shift; rsel "$p"
+  for s in "$@"; do grep -q "^tests/a11y/$s.spec.js$TAB" <<<"$OUT" || miss="$miss $s"; done
+  if [ "$ST" -eq 0 ] && grep -qx 'MODE=SELECT' <<<"$OUT" && [ -z "$miss" ]; then ok "real map: $p selects $*"; else bad "real map: $p misses:$miss" "$OUT"; fi
+}
+for p in web/templates/settings_users.templ internal/api/handlers_user.go; do
+  rhas "$p" users-panel-reveal muted-text-contrast registry-repair-banner
+done
+rhas web/templates/settings_page.templ ai-blocklist-settings contrast muted-text-contrast \
+  rule-platform-prune-option settings-import-dropped-rows settings-sortable-single-load users-panel-reveal
+rhas web/templates/register.templ muted-text-contrast
+rhas web/templates/backdrop_duplicates.templ backdrop-perceptual
+rhas web/templates/platform_backdrop_duplicates.templ platform-backdrop-perceptual platform-backdrop-fixture-hygiene
+rhas web/templates/extrafanart_migration.templ extrafanart-migration extrafanart-migration-run merge-extrafanart-report
 rsel tests/a11y/helpers/seed-muted-text.js; expect "real map: a spec-only seed selects its importer" 0 '^tests/a11y/muted-text-contrast.spec.js'
 rsel tests/a11y/helpers/seed-extrafanart-migration.js; expect "real map: a seed another seed imports reaches that seed's spec" 0 '^tests/a11y/merge-extrafanart-report.spec.js'
 

@@ -4,6 +4,7 @@
 #
 #   a11y-select.sh <BASE>     classify `git diff BASE` (BASE must resolve)
 #   a11y-select.sh --check    verify tests/a11y/spec-map.toml against the tree
+#                             (add --verbose to list the UI files in no rule)
 # Test hooks: --files-from <file> (lines "<status><TAB><path>") replaces the
 # git diff; --map <file> replaces the map.
 #
@@ -33,10 +34,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 MAP="tests/a11y/spec-map.toml"
-MODE=select; FILES_FROM=""; BASE=""
+MODE=select; FILES_FROM=""; BASE=""; VERBOSE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --check) MODE=check ;;
+    --verbose) VERBOSE=1 ;;
     --files-from) FILES_FROM="${2:?--files-from needs a file}"; shift ;;
     --map) MAP="${2:?--map needs a file}"; shift ;;
     -*) echo "a11y-select: unknown option '$1'" >&2; exit 2 ;;
@@ -73,9 +75,9 @@ else
   git ls-files >"$TMP"
 fi
 
-python3 -I - "$MODE" "$MAP" "$TMP" <<'PY'
+python3 -I - "$MODE" "$MAP" "$TMP" "$VERBOSE" <<'PY'
 import os, re, sys
-mode, mapfile, listfile = sys.argv[1:4]
+mode, mapfile, listfile, verbose = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == "1"
 
 def die(msg):
     print("a11y-select: " + msg, file=sys.stderr); sys.exit(2)
@@ -183,7 +185,10 @@ if mode == "check":
     unmapped = [t for t in ui if not any(r.match(t) for _, r in shared_rx) and not any(r.match(t) for gl, _ in rule_rx for _, r in gl)]
     print("OK: spec map globs all match tracked files (%d shared, %d allow, %d rules; %d specs in a rule, %d unruled)"
           % (len(shared_rx), len(allow_rx), len(rule_rx), len(ruled), len(unruled)))
-    print("  %d of %d UI files are in no rule, so a change to one runs the FULL suite: %s" % (len(unmapped), len(ui), " ".join(unmapped)))
+    print("  %d of %d UI files are in no rule, so a change to one runs the FULL suite%s"
+          % (len(unmapped), len(ui), ":" if verbose else " (list them: --check --verbose)"))
+    if verbose:
+        for t in unmapped: print("    " + t)
     sys.exit(0)
 
 full, picked = [], {}

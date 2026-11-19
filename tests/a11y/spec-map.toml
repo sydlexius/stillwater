@@ -22,9 +22,11 @@
 # transitively, up to the router.go handlers that render it; the routes of
 # those handlers; then every page that loads one of those routes as a fragment
 # (an hx-get/post, fetch or src in a template, a URL in a handler, a fetch in
-# web/static/js on a page that includes that script), lifted the same way;
-# finally every spec whose URL literals (its own and its helpers') hit one of
-# those routes, with /next/X counted as /X (nextFallback). Only files whose
+# web/static/js on a page that includes that script, or an hx URL built from a
+# struct field), lifted the same way; finally every spec whose URL literals (its
+# own and its helpers') hit one of those routes, or that navigates to one by a
+# link it clicks or a keyboard shortcut it presses, with /next/X counted as /X
+# (nextFallback). Only files whose
 # result was a small, page-local set got a rule. The artist-detail, artwork,
 # dashboard, artists, reports and duplicates templates and handlers all reach
 # 32 of 34 specs through shared helpers and lazily loaded fragments (the
@@ -63,8 +65,7 @@ specs = ["ai-blocklist-settings.spec.js", "contrast.spec.js", "muted-text-contra
 
 [[rule]]  # /reports/backdrop-duplicates and /reports/platform-backdrop-duplicates (shared components)
 paths = ["web/templates/backdrop_duplicates.templ", "web/templates/platform_backdrop_duplicates.templ"]
-specs = ["backdrop-perceptual.spec.js", "platform-backdrop-*.spec.js", "history-producer.spec.js",
-  "users-panel-reveal.spec.js"]
+specs = ["backdrop-perceptual.spec.js", "platform-backdrop-*.spec.js"]
 
 [[rule]]  # /reports/extrafanart-migration and its run endpoint
 paths = ["web/templates/extrafanart_migration.templ", "internal/api/handlers_extrafanart_page.go"]
@@ -80,7 +81,7 @@ specs = ["muted-text-contrast.spec.js"]
 
 # Specs in no rule: every page they load is in the FULL-only cluster above, so
 # only a change to the spec itself or one of its seeds selects them alone.
-# unruled: base-path-filter-idiom.spec.js blast-radius.spec.js cheat-sheet.spec.js -- pages only in the FULL-only cluster
+# unruled: base-path-filter-idiom.spec.js blast-radius.spec.js cheat-sheet.spec.js history-producer.spec.js -- pages only in the FULL-only cluster
 # unruled: compliance-filter-flyout-resync.spec.js dialog-input-focus.spec.js filter-flyout-contrast.spec.js -- pages only in the FULL-only cluster
 # unruled: fix-unavailable-badge.spec.js google-images-link.spec.js mobile-nav.spec.js modal-escape.spec.js -- pages only in the FULL-only cluster
 # unruled: nfo-mbid.spec.js registry-repair-locale.spec.js registry-repair-run.spec.js reports-contrast.spec.js -- pages only in the FULL-only cluster

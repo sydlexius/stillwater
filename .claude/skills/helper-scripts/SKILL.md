@@ -61,7 +61,8 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
   changed file allow-listed. The gate's `changed)` arm, not this script, blocks (exit 2) when local
   `main` is missing or has no merge base, and runs a SELECT as `make test-a11y SPEC='<list>' PROJECT=`.
   `a11y-select.sh --check` fails on a stale glob, a stale rule spec glob, or a spec in no rule and on
-  no `# unruled:` line, and prints the UI files in no rule; run by the gate and `Gate Invariant`.
+  no `# unruled:` line, and prints the count of UI files in no rule (`--verbose` lists them); run by
+  the gate and `Gate Invariant`.
   `scripts/test-a11y-select.sh` is the test. A `changed` stamp (FULL or SELECT) never satisfies
   `RUN_A11Y=1` (`gate-receipt-valid.sh` rank).
 - `scripts/lib/git-plain.sh` -- `git_plain_diff`, a `git diff` that ignores the
