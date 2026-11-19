@@ -84,6 +84,18 @@ git -C "$R" show HEAD~1:web/templates/page.templ >"$R/web/templates/page.templ"
 ST=0; OUT=$(cd "$R" && bash scripts/a11y-select.sh HEAD~1 2>&1) || ST=$?
 expect "a committed template change reverted in the working tree still forces FULL" 0 "web/templates/page.templ: not on the non-UI allow-list"
 git -C "$R" reset -q --hard HEAD~1
+# A staged template change reverted only in the working tree is still a change.
+cp "$R/web/templates/page.templ" "$T/page.orig"; echo staged >>"$R/web/templates/page.templ"; git -C "$R" add web/templates/page.templ
+cp "$T/page.orig" "$R/web/templates/page.templ"
+ST=0; OUT=$(cd "$R" && bash scripts/a11y-select.sh HEAD 2>&1) || ST=$?
+expect "a staged template change reverted in the working tree still forces FULL" 0 "web/templates/page.templ: not on the non-UI allow-list"
+git -C "$R" reset -q --hard HEAD
+# Untracked, non-ignored files count; ignored files do not.
+printf 'ignored.templ\n' >"$R/.git/info/exclude"
+for c in "web/templates/new.templ:FULL" "tests/a11y/new.spec.js:FULL" "docs/new.md:EMPTY" "ignored.templ:EMPTY"; do
+  f="${c%%:*}"; : >"$R/$f"; ST=0; OUT=$(cd "$R" && bash scripts/a11y-select.sh HEAD 2>&1) || ST=$?; rm -f "$R/$f"
+  expect "untracked $f is ${c##*:}" 0 "^MODE=${c##*:}$"
+done
 # `*` does not cross `/`: a docs/*.md allow glob does not cover docs/sub/x.md.
 printf '[allow]\npaths = ["docs/*.md"]\n' >"$T/star.toml"
 for c in "docs/x.md:EMPTY" "docs/sub/x.md:FULL"; do
@@ -162,9 +174,15 @@ fi
 } >"$H"
 mk "$T/g"; G="$T/g"; n=0
 # run_h [make-rc]: run the harness on G's current branch with RUN_A11Y=changed.
+# The child must not inherit a variable that withholds the stamp (GATE_ENV_DENY
+# in gate-stamp.sh, globs like SKIP_* included): the list is derived from it.
+# shellcheck source=scripts/lib/gate-stamp.sh
+. "$REAL/scripts/lib/gate-stamp.sh"
 run_h() {
+  local deny=(-u SPEC -u PROJECT) name
+  while IFS='|' read -r name _; do deny+=(-u "$name"); done < <(gate_env_hits)
   : >"$T/make.log"; rm -f "$T/stamp/pre-push-gate-stamp.json"
-  RC=0; OUT=$(env -u SPEC -u PROJECT PATH="$STUB:$PATH" REPO="$G" STAMPDIR="$T/stamp" STUB_LOG="$T/make.log" STUB_MAKE_RC="${1:-0}" RUN_A11Y=changed bash "$H" 2>&1) || RC=$?
+  RC=0; OUT=$(env "${deny[@]}" PATH="$STUB:$PATH" REPO="$G" STAMPDIR="$T/stamp" STUB_LOG="$T/make.log" STUB_MAKE_RC="${1:-0}" RUN_A11Y=changed bash "$H" 2>&1) || RC=$?
   MAKE=$(cat "$T/make.log"); STAMPMODE=$(jq -r '.modes.a11y // "none"' "$T/stamp/pre-push-gate-stamp.json" 2>/dev/null || echo none)
 }
 # gate <file> <content> [make-rc]: a committed change on a fresh branch off main, then the block.

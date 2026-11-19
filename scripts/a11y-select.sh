@@ -43,11 +43,20 @@ if [ "$MODE" = select ]; then
     git rev-parse --verify -q "$BASE^{commit}" >/dev/null || { echo "a11y-select: cannot resolve BASE '$BASE'" >&2; exit 2; }
     . "$ROOT/scripts/lib/git-plain.sh"
     # Added, modified AND deleted files: a deleted file is a change too. Classify
-    # the union of the committed range (BASE..HEAD, what gets pushed) and the
-    # working tree: a committed UI change reverted but not yet committed back
-    # would otherwise vanish from a working-tree-only diff.
+    # the union of every place a change can sit: the committed range (BASE..HEAD,
+    # what gets pushed), the index, the working tree, and untracked files that
+    # are not ignored (git diff never lists those). Any one of them alone can
+    # hide a UI change the others show, e.g. a committed change reverted in the
+    # working tree, or a staged change reverted only in the working tree.
+    # Untracked paths go through the same plain environment as git_plain_diff;
+    # a path git must quote (control characters) starts with `"` and contains
+    # `\`, which the classifier refuses (exit 2).
     { git_plain_diff --name-status --no-renames "$BASE" HEAD
-      git_plain_diff --name-status --no-renames "$BASE"; } | sort -u >"$TMP"
+      git_plain_diff --name-status --no-renames --cached "$BASE"
+      git_plain_diff --name-status --no-renames "$BASE"
+      GIT_LITERAL_PATHSPECS=0 GIT_GLOB_PATHSPECS=0 GIT_NOGLOB_PATHSPECS=0 GIT_ICASE_PATHSPECS=0 \
+        command git -c core.quotePath=false ls-files --others --exclude-standard | awk '{ print "A\t" $0 }'
+    } | sort -u >"$TMP"
   fi
 else
   git ls-files >"$TMP"
