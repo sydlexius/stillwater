@@ -84,6 +84,9 @@ selx "M${TAB}web/templates/page.templ"; want "one ruled template selects its rul
 selx "M${TAB}web/templates/page_templ.go"; want "a generated x_templ.go selects as its x.templ" "SELECT:tests/a11y/a.spec.js "
 selx "M${TAB}web/templates/page.templ" "M${TAB}internal/api/handlers_x.go" "M${TAB}docs/x.md"; want "two rules SELECT the union; an allow-listed file adds nothing" "SELECT:tests/a11y/a.spec.js tests/a11y/b.spec.js "
 sel "M${TAB}web/templates/page.templ" "M${TAB}web/templates/layout.templ"; expect "[shared] wins over a rule: FULL" 0 '^MODE=FULL$'
+printf '[shared]\npaths = ["web/templates/page.templ"]\n[[rule]]\npaths = ["web/templates/page.templ"]\nspecs = ["a.spec.js"]\n' >"$T/both.toml"; printf 'M\tweb/templates/page.templ\n' >"$T/files"
+ST=0; OUT=$(cd "$R" && bash scripts/a11y-select.sh --map "$T/both.toml" --files-from "$T/files" 2>&1) || ST=$?
+expect "a file in both [shared] and a rule is FULL ([shared] wins)" 0 "page.templ: shared surface"
 sel "M${TAB}web/templates/page.templ" "M${TAB}web/templates/unmapped.templ"; expect "one uncovered file among ruled ones forces FULL" 0 "^\*${TAB}web/templates/unmapped.templ: not on"
 selx "M${TAB}tests/a11y/c.spec.js"; want "a changed spec selects itself" "SELECT:tests/a11y/c.spec.js "
 selx "M${TAB}tests/a11y/helpers/seed-x.js"; want "a changed seed selects the specs that import it" "SELECT:tests/a11y/b.spec.js "
