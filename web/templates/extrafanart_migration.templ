@@ -414,6 +414,8 @@ templ extraFanartReceipt(view ExtraFanartMigrationView) {
 //   - busy: hx-disabled-elt disables the button; this adds aria-busy and the
 //     running label, and hands focus back to the button when the run did not
 //     replace it (the confirm dialog cannot return focus to a disabled button).
+//     After a lost run it keeps Run disabled when ANY request (a failed Refresh
+//     too) swapped nothing in; only a swapped-in body clears that lock.
 //
 // htmx itself focuses the [autofocus] heading of a swapped-in body.
 templ extraFanartRunScript() {
@@ -431,6 +433,9 @@ templ extraFanartRunScript() {
 					var ours = type.indexOf('text/html') === 0 && xhr.responseText.indexOf('id="' + BODY + '"') !== -1;
 					evt.detail.shouldSwap = ours;
 					evt.detail.isError = !ours;
+					// A swapped-in body is the server's current answer (the running notice
+					// while a run is still going), so the lost-run lock ends with it.
+					if (ours) lostRun = false;
 				}
 			};
 			if (!page) {
@@ -482,7 +487,10 @@ templ extraFanartRunScript() {
 				if (!btn || (btn.id !== RUN && btn.id !== REFRESH)) return;
 				if (on) btn.setAttribute('aria-busy', 'true'); else btn.removeAttribute('aria-busy');
 				btn.textContent = on ? btn.dataset.runningLabel : btn.dataset.label;
-				if (!on && lostRun && btn.id === RUN) btn.disabled = true;
+				// htmx re-enables BOTH buttons when either request ends, so any request
+				// that swapped nothing in (a failed Refresh too) re-locks Run here.
+				var run = document.getElementById(RUN);
+				if (!on && lostRun && run) run.disabled = true;
 				if (!on && btn.isConnected && document.activeElement === document.body) btn.focus();
 			}
 			page.addEventListener('htmx:responseError', lost);

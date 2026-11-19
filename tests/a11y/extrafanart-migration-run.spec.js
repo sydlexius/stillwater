@@ -255,6 +255,52 @@ test('lost connection on Refresh: its own toast, Run stays enabled, Refresh is r
   await context.close();
 });
 
+// After a LOST run the server may still be moving files, so Run stays locked. Both
+// buttons name each other in hx-disabled-elt, and htmx re-enables every listed
+// element when ANY request ends, so a Refresh that brings no new preview must not
+// hand Run back. A Refresh that DOES swap in a preview is the server's own answer
+// (the running notice if a run is still going), so that preview's Run is offered
+// and the lock is cleared: a later failed Refresh leaves it enabled.
+async function loseRun(page) {
+  await page.route(`**${API}`, (route) => route.abort('connectionreset'));
+  await confirmRun(page);
+  await expect(page.locator(`${TOASTS} > div`, { hasText: LOST })).toHaveCount(1);
+  await expect(page.locator(RUN), 'precondition: the lost run locked Run').toBeDisabled();
+  await expect(page.locator(REFRESH), 'precondition: Refresh is offered after a lost run').toBeEnabled();
+  await page.unroute(`**${API}`);
+}
+const REFRESH_LOST = 'The preview could not be refreshed. Try again.';
+const FAILED_REFRESHES = [
+  { name: '500 answer', fail: (route) => route.fulfill({ status: 500, contentType: 'text/html', body: '<h1>500</h1>' }) },
+  { name: 'lost connection', fail: (route) => route.abort('connectionreset') },
+];
+for (const failed of FAILED_REFRESHES) {
+  test(`a failed Refresh (${failed.name}) after a lost run keeps Run locked`, async ({ browser }) => {
+    const { context, page } = await openPlan(browser);
+    await loseRun(page);
+    await page.route(`**${API}`, failed.fail);
+    await page.locator(REFRESH).click();
+    await expect(page.locator(`${TOASTS} > div`, { hasText: REFRESH_LOST })).toHaveCount(1);
+    await expect(page.locator(REFRESH)).toBeEnabled();
+    await expect(page.locator(RUN), 'a failed Refresh must not re-offer a blind second run').toBeDisabled();
+    expectNothingMoved();
+    await context.close();
+  });
+}
+
+test('a Refresh that swaps in a preview after a lost run offers Run and clears the lock', async ({ browser }) => {
+  const { context, page } = await openPlan(browser);
+  await loseRun(page);
+  await page.locator(REFRESH).click();
+  await expect(page.locator('#extrafanart-migration-as-of')).toBeFocused();
+  await expect(page.locator(RUN), 'the fresh preview offers Run').toBeEnabled();
+  await page.route(`**${API}`, (route) => route.abort('connectionreset'));
+  await page.locator(REFRESH).click();
+  await expect(page.locator(`${TOASTS} > div`, { hasText: REFRESH_LOST })).toHaveCount(1);
+  await expect(page.locator(RUN), 'the fresh preview cleared the lock').toBeEnabled();
+  await context.close();
+});
+
 test('lost connection does not steal focus the user moved to a link while the request was in flight', async ({ browser }) => {
   const { context, page } = await openPlan(browser);
   let release;
