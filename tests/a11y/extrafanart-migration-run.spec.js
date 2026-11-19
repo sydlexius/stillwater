@@ -40,6 +40,7 @@ import {
 const BASE_PATH = '/sw-extrafanart-run-test';
 const API = '/api/v1/reports/extrafanart-migration';
 const RUN = '#extrafanart-migration-run-button';
+const REFRESH = '#extrafanart-migration-refresh-button';
 const RECEIPT = '#extrafanart-migration-receipt';
 const TITLE = '#extrafanart-migration-receipt-title';
 const BODY = '#extrafanart-migration-body';
@@ -199,6 +200,58 @@ test('lost connection: warning toast says the run may still be going; no second 
   expect(posts.n).toBe(1);
   expectNothingMoved();
   expect(inventory(libDir)).toEqual(before);
+  await context.close();
+});
+
+// Run and Refresh swap the same body. A Refresh answered (409) while a live run is
+// out would remove the body the run's receipt is aimed at, and htmx would drop the
+// receipt silently. So the in-flight Run disables Refresh: its click sends nothing,
+// and the receipt still lands.
+test('Refresh is disabled while a live run is in flight: it sends nothing and the run receipt still renders', async ({ browser }) => {
+  const { context, page, errors } = await openPlan(browser);
+  const posts = countPosts(page);
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  await page.route(`**${API}`, async (route) => { await gate; await route.continue(); });
+  await confirmRun(page);
+  await expect(page.locator(RUN)).toBeDisabled();
+  await expect(page.locator(REFRESH), 'Refresh must be disabled while the run is out').toBeDisabled();
+  await page.locator(REFRESH).click({ force: true }); // a disabled button must send nothing
+  expect(posts.n, 'only the run may have been sent').toBe(1);
+  release();
+  await expect(page.locator(RECEIPT)).toHaveCount(1);
+  await expect(page.locator(TITLE)).toBeFocused();
+  await expect(page.locator('#extrafanart-migration-running')).toHaveCount(0);
+  expect(posts.n).toBe(1);
+  expect(errors, 'no console errors').toEqual([]);
+  await context.close();
+});
+
+// A lost Refresh is a read that failed: it says so with its own toast, never the
+// run's "may still be running" one, leaves Run enabled (no run was started), and
+// gives the Refresh button back with its label.
+test('lost connection on Refresh: its own toast, Run stays enabled, Refresh is re-enabled and relabelled', async ({ browser }) => {
+  const { context, page } = await openPlan(browser);
+  const posts = countPosts(page);
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  await page.route(`**${API}`, async (route) => { await gate; await route.abort('connectionreset'); });
+  await page.locator(REFRESH).click();
+  await expect(page.locator(REFRESH)).toBeDisabled();
+  await expect(page.locator(REFRESH)).toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator(REFRESH)).toHaveText('Refreshing...');
+  await expect(page.locator(RUN), 'Run is disabled while the refresh is out').toBeDisabled();
+  release();
+  const toast = page.locator(`${TOASTS} > div`, { hasText: 'The preview could not be refreshed. Try again.' });
+  await expect(toast).toHaveCount(1);
+  await expect(page.locator(`${TOASTS} > div`, { hasText: LOST })).toHaveCount(0);
+  await expect(page.locator(REFRESH)).toBeEnabled();
+  await expect(page.locator(REFRESH)).not.toHaveAttribute('aria-busy', /.*/);
+  await expect(page.locator(REFRESH)).toHaveText('Refresh preview');
+  await expect(page.locator(RUN), 'a lost refresh started no run, so Run stays available').toBeEnabled();
+  await expect(page.locator('#extrafanart-migration-table tbody tr')).toHaveCount(2 * FILES_PER_ARTIST);
+  expect(posts.n).toBe(1);
+  expectNothingMoved();
   await context.close();
 });
 

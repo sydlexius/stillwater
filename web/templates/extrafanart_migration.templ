@@ -3,6 +3,7 @@ package templates
 import (
 	"context"
 	"strconv"
+	"time"
 )
 
 // ExtraFanartMaxRows is how many table rows the preview renders. A library-wide
@@ -95,11 +96,19 @@ type ExtraFanartMigrationView struct {
 	SkippedIdentical int
 	Problems         int
 	Rows             []ExtraFanartMigrationRow
-	RowCap           int  // 0 means ExtraFanartMaxRows; only tests set it
-	Receipt          bool // the result of a live run, not a preview
-	Fragment         bool // swapped into an open page: its first heading takes focus
-	Moved            int  // files a run moved
-	Failed           int  // files a run was due to move and did not
+	RowCap           int       // 0 means ExtraFanartMaxRows; only tests set it
+	Receipt          bool      // the result of a live run, not a preview
+	Fragment         bool      // swapped into an open page: its first heading takes focus
+	Moved            int       // files a run moved
+	Failed           int       // files a run was due to move and did not
+	AsOf             time.Time // when the preview began reading the disk (a cached one keeps its original stamp)
+}
+
+// showAsOf reports whether the "Preview as of" line renders: only a finished
+// preview carries one. A receipt is not a preview, and a stopped preview is not a
+// result worth dating.
+func (v ExtraFanartMigrationView) showAsOf() bool {
+	return !v.Receipt && !v.Aborted && !v.AsOf.IsZero()
 }
 
 // ExtraFanartMigrationPage renders the admin-gated extrafanart/ migration
@@ -133,6 +142,7 @@ templ ExtraFanartMigrationBody(view ExtraFanartMigrationView) {
 		id="extrafanart-migration-body"
 		class="space-y-6"
 		data-lost-toast={ t(ctx, "extrafanart_migration.run_lost") }
+		data-refresh-lost-toast={ t(ctx, "extrafanart_migration.refresh_lost") }
 		hx-on::before-swap="swExtraFanartRun.beforeSwap(event)"
 	>
 		if view.Running {
@@ -152,7 +162,8 @@ templ ExtraFanartMigrationBody(view ExtraFanartMigrationView) {
 			if view.Receipt {
 				@extraFanartReceipt(view)
 			} else {
-				@extraFanartErrorCard()
+				@extraFanartErrorCard(view)
+				@extraFanartPreviewBar(view)
 			}
 		} else {
 			if view.Receipt {
@@ -160,7 +171,10 @@ templ ExtraFanartMigrationBody(view ExtraFanartMigrationView) {
 			} else if view.Aborted {
 				// Whatever rows follow are only what the preview reached before it
 				// stopped, so they are NOT a complete plan: the card says so.
-				@extraFanartErrorCard()
+				@extraFanartErrorCard(view)
+			}
+			if !view.Receipt {
+				@extraFanartPreviewBar(view)
 			}
 			if view.SkippedMissing > 0 {
 				<div id="extrafanart-migration-skipped" class="sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber" role="alert">
@@ -228,7 +242,7 @@ templ ExtraFanartMigrationBody(view ExtraFanartMigrationView) {
 							hx-target="#extrafanart-migration-body"
 							hx-swap="outerHTML"
 							hx-confirm={ t(ctx, "extrafanart_migration.run_confirm") }
-							hx-disabled-elt="this"
+							hx-disabled-elt="#extrafanart-migration-run-button, #extrafanart-migration-refresh-button"
 							data-label={ t(ctx, "extrafanart_migration.run_button") }
 							data-running-label={ t(ctx, "extrafanart_migration.run_running") }
 						>{ t(ctx, "extrafanart_migration.run_button") }</button>
@@ -277,11 +291,62 @@ templ ExtraFanartMigrationBody(view ExtraFanartMigrationView) {
 	</div>
 }
 
+// Run and Refresh swap the SAME body, so while either request is out BOTH buttons
+// are disabled (hx-disabled-elt names both by id; htmx does not expand "this" inside a list). Without that, a Refresh clicked during
+// a live run is answered 409 and swapped in, which removes the body the run's
+// receipt is aimed at; htmx then drops the receipt silently. Disabling was chosen
+// over hx-sync="...:drop" because a visibly disabled control tells the operator why
+// nothing happens, where a dropped click looks like a dead button. After a LOST run
+// htmx re-enables both and lost() disables Run again; Refresh is deliberately left
+// enabled (it reads only, and shows the running notice or the result).
+//
+// extraFanartPreviewBar dates the preview and offers the Refresh control. Refresh
+// is offered in every preview state (an empty or stopped preview too: that is how
+// an operator re-checks after fixing the cause) and reads the disk, never the
+// cache. When this is the swapped-in fragment, the as-of line takes focus (the
+// clicked button was replaced, so focus would otherwise drop to <body>). It has
+// no live-region role: a focused element inside one is announced twice. A stopped
+// preview has no as-of line, so its error card takes focus instead.
+templ extraFanartPreviewBar(view ExtraFanartMigrationView) {
+	<div class="sw-card rounded-lg px-3 py-2 flex items-center justify-between gap-3 flex-wrap">
+		if view.showAsOf() {
+			<p
+				id="extrafanart-migration-as-of"
+				class="text-xs text-gray-600 dark:text-gray-400 leading-snug"
+				if view.Fragment {
+					tabindex="-1"
+					autofocus
+				}
+			>{ tf(ctx, "extrafanart_migration.as_of", activityRelTime(ctx, view.AsOf)) }</p>
+		} else {
+			<span></span>
+		}
+		<button
+			type="button"
+			id="extrafanart-migration-refresh-button"
+			class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-70 disabled:cursor-not-allowed shrink-0"
+			hx-post="/api/v1/reports/extrafanart-migration"
+			hx-vals='{"dry_run": true}'
+			hx-target="#extrafanart-migration-body"
+			hx-swap="outerHTML"
+			hx-disabled-elt="#extrafanart-migration-run-button, #extrafanart-migration-refresh-button"
+			data-label={ t(ctx, "extrafanart_migration.refresh_button") }
+			data-running-label={ t(ctx, "extrafanart_migration.refresh_running") }
+		>{ t(ctx, "extrafanart_migration.refresh_button") }</button>
+	</div>
+}
+
 // extraFanartErrorCard is the notice shown when the preview stopped before finishing.
-templ extraFanartErrorCard() {
-	<div id="extrafanart-migration-error" class="sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber" role="alert">
-		<p class="text-xs font-semibold leading-tight text-amber-800 dark:text-amber-400">{ t(ctx, "extrafanart_migration.error_title") }</p>
-		<p class="mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug">{ t(ctx, "extrafanart_migration.error_body") }</p>
+templ extraFanartErrorCard(view ExtraFanartMigrationView) {
+	<div id="extrafanart-migration-error" class="sw-card rounded-lg px-3 py-2 border-l-4 sw-card-accent-amber">
+		<p
+			class="text-xs font-semibold leading-tight text-amber-800 dark:text-amber-400"
+			if view.Fragment {
+				tabindex="-1"
+				autofocus
+			}
+		>{ t(ctx, "extrafanart_migration.error_title") }</p>
+		<p class="mt-0.5 text-xs text-gray-600 dark:text-gray-400 leading-snug" role="alert">{ t(ctx, "extrafanart_migration.error_body") }</p>
 	</div>
 }
 
@@ -357,6 +422,7 @@ templ extraFanartRunScript() {
 			var page = document.getElementById('extrafanart-migration-page');
 			var BODY = 'extrafanart-migration-body';
 			var RUN = 'extrafanart-migration-run-button';
+			var REFRESH = 'extrafanart-migration-refresh-button';
 			var lostRun = false;
 			window.swExtraFanartRun = {
 				beforeSwap: function (evt) {
@@ -371,7 +437,21 @@ templ extraFanartRunScript() {
 				console.error('extrafanart migration: page wrapper missing; the Run button cannot report a lost connection');
 				return;
 			}
+			// A refresh is read-only: a lost answer changes nothing on the server, so it
+			// gets its own short toast, never the Run button's "may still be running".
+			function refreshLost(evt) {
+				if (!evt.detail.elt || evt.detail.elt.id !== REFRESH) return;
+				var status = evt.detail.xhr ? evt.detail.xhr.status : 0;
+				if (status >= 400 && status < 500) return;
+				evt.stopPropagation();
+				if (typeof window.showWarningToast !== 'function') {
+					console.error('extrafanart migration: showWarningToast unavailable; the preview could not be refreshed');
+					return;
+				}
+				window.showWarningToast(document.getElementById(BODY).dataset.refreshLostToast);
+			}
 			function lost(evt) {
+				if (evt.detail.elt && evt.detail.elt.id === REFRESH) { refreshLost(evt); return; }
 				var status = evt.detail.xhr ? evt.detail.xhr.status : 0;
 				if (status >= 400 && status < 500) return;
 				evt.stopPropagation();
@@ -399,10 +479,10 @@ templ extraFanartRunScript() {
 			}
 			function busy(evt, on) {
 				var btn = evt.detail.elt;
-				if (!btn || btn.id !== RUN) return;
+				if (!btn || (btn.id !== RUN && btn.id !== REFRESH)) return;
 				if (on) btn.setAttribute('aria-busy', 'true'); else btn.removeAttribute('aria-busy');
 				btn.textContent = on ? btn.dataset.runningLabel : btn.dataset.label;
-				if (!on && lostRun) btn.disabled = true;
+				if (!on && lostRun && btn.id === RUN) btn.disabled = true;
 				if (!on && btn.isConnected && document.activeElement === document.body) btn.focus();
 			}
 			page.addEventListener('htmx:responseError', lost);
