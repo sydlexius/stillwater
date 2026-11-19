@@ -46,6 +46,11 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
   matrix lists shards exactly 1..N with a constant `shards` (#3442), so a dropped
   or duplicated shard cannot silently skip specs; `scripts/test-check-a11y-shards.sh`
   is its mutation test. Run by the gate and the `Gate Invariant` job.
+- `scripts/a11y-scope.sh` -- turns `make test-a11y`'s `SPEC` (space/comma-separated
+  `tests/a11y/*.spec.js` globs) and `PROJECT` (firefox|chromium) into anchored Playwright
+  args (#3608). Refuses any other token and any glob matching nothing (exit 2), so an
+  empty scope never becomes a full run; unset = the default full suite.
+  `scripts/test-a11y-scope.sh` is its test.
 - `scripts/lib/git-plain.sh` -- `git_plain_diff`, a `git diff` that ignores the
   developer's `GIT_EXTERNAL_DIFF`/`diff.external`, textconv, color, prefix,
   `core.quotePath`, binary attributes, inter-hunk context, pathspec modes and

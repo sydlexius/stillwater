@@ -70,6 +70,13 @@ test-js:
 #   SW_PORT                  Port the ephemeral server binds to (default: random free port)
 #   STILLWATER_ADMIN_USER    Admin username (default: ci-a11y-admin)
 #   STILLWATER_ADMIN_PASSWORD Admin password (default: ci-a11y-ephemeral-pw)
+#   SPEC                     Run only these specs: space/comma-separated globs, e.g.
+#                            make test-a11y SPEC='tests/a11y/extrafanart-*.spec.js' (#3608).
+#                            Unset = the full suite. Parsed by scripts/a11y-scope.sh, which
+#                            refuses anything but tests/a11y/*.spec.js globs (exit 2).
+#   PROJECT                  Run one browser leg: firefox or chromium (or the *-a11y names).
+#                            Unset = both. Same fresh empty-database server either way, so
+#                            a scoped spec still has to seed its own fixture.
 # SW_FORCE_PROVIDER_ERROR=duckduckgo below is load-bearing for
 # websearch-unavailable.spec.js (#3229): it forces a deterministic, offline
 # DuckDuckGo web-search failure instead of depending on the live DuckDuckGo
@@ -87,6 +94,7 @@ test-js:
 # TOML instead is NOT detected, so set the variable there by hand.
 test-a11y: build
 	@set -euo pipefail; \
+	SCOPE_OUT=$$(bash scripts/a11y-scope.sh); \
 	SW_DB="$${TMPDIR:-/tmp}/stillwater-a11y-$$$$.db"; \
 	SW_EMPTY_LIB="$${TMPDIR:-/tmp}/stillwater-a11y-emptylib-$$$$"; \
 	mkdir -p "$$SW_EMPTY_LIB"; \
@@ -136,7 +144,10 @@ test-a11y: build
 	\
 	echo "[test-a11y] running Playwright a11y smoke tests..."; \
 	npm ci --silent; \
-	SW_PORT="$$SW_PORT" npx playwright test --config=playwright.config.js; \
+	if [ -n "$$SCOPE_OUT" ]; then echo "[test-a11y] scope: $$(printf '%s' "$$SCOPE_OUT" | tr '\n' ' ')"; fi; \
+	SCOPE_ARGS=(); \
+	while IFS= read -r scope_arg; do [ -n "$$scope_arg" ] && SCOPE_ARGS+=("$$scope_arg"); done <<< "$$SCOPE_OUT"; \
+	SW_PORT="$$SW_PORT" npx playwright test --config=playwright.config.js $${SCOPE_ARGS[@]+"$${SCOPE_ARGS[@]}"}; \
 	echo "[test-a11y] done."
 
 ## lint: Run golangci-lint
