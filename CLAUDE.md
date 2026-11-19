@@ -119,7 +119,10 @@ says. The a11y tier, the provider-failure smoke, and govulncheck default to
 SKIP and are covered by required CI checks; run them locally and BLOCKING with
 `RUN_A11Y=1`, `RUN_PROVIDER_SMOKE=1`, `RUN_VULN=1`. A UI change should still be
 verified with `RUN_A11Y=1` before the push -- CI catching it costs a red check
-and a re-push. `scripts/check-gate-invariant.sh` enforces the no-advisory rule
+and a re-push. To iterate on one page, run a subset in about a minute:
+`make test-a11y SPEC='tests/a11y/<name>.spec.js' PROJECT=firefox` (globs or a
+list; same fresh empty-database server, so the spec must still seed its own
+fixture; unset = full suite). `scripts/check-gate-invariant.sh` enforces the no-advisory rule
 mechanically, in the gate and in CI's `Gate Invariant` job.
 
 Still true regardless of the banner: a push that "passed" the gate but whose

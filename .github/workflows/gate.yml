@@ -747,6 +747,9 @@ jobs:
       - name: a11y shard matrix guard self-test
         run: bash scripts/test-check-a11y-shards.sh
 
+      - name: a11y scope (SPEC/PROJECT) self-test
+        run: bash scripts/test-a11y-scope.sh
+
       - name: Check parsed git diffs use plain output
         run: bash scripts/check-plain-git-diff.sh
 

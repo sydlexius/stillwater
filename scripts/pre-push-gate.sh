@@ -225,6 +225,7 @@ gate_step "a11y shard matrix is complete (#3442)"
 # "Gate Invariant" job (gate.yml).
 bash "$SCRIPT_DIR/check-a11y-shards.sh"
 bash "$SCRIPT_DIR/test-check-a11y-shards.sh"
+bash "$SCRIPT_DIR/test-a11y-scope.sh"
 
 echo ""
 gate_step "parsed git diffs use plain output (#3446)"
