@@ -35,10 +35,22 @@ if [ -n "$PROJECT" ]; then
   esac
 fi
 
-[ -n "${SPEC//[[:space:],]/}" ] || exit 0
+# Unset/empty SPEC = the full suite. A SPEC that is set but holds no token
+# (" , ") is a mistake, not a request for everything: refuse it.
+[ -n "$SPEC" ] || exit 0
+if [ -z "${SPEC//[[:space:],]/}" ]; then
+  echo "a11y-scope: SPEC='$SPEC' contains no spec token (unset SPEC for the full suite)" >&2
+  exit 2
+fi
 
 seen=" "
 for tok in $(printf '%s' "$SPEC" | tr ',' ' '); do
+  # Non-canonical spellings of the same file would defeat the de-dupe below and
+  # print a different regex than the canonical path does.
+  if [[ "$tok" == */./* || "$tok" == *//* || "$tok" == */. ]]; then
+    echo "a11y-scope: non-canonical SPEC token '$tok' (no '/./', '//' or trailing '/.')" >&2
+    exit 2
+  fi
   if ! [[ "$tok" =~ ^tests/a11y/[A-Za-z0-9._*?/-]+\.spec\.js$ ]] || [[ "$tok" == *..* ]]; then
     echo "a11y-scope: bad SPEC token '$tok' (want repo-relative tests/a11y/<glob>.spec.js)" >&2
     exit 2

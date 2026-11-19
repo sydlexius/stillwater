@@ -43,6 +43,14 @@ for tok in 'tests/a11y/x.spec.js;touch CANARY' 'tests/a11y/$(touch CANARY).spec.
   if [ "$ST" -eq 2 ] && [ ! -e "$T/CANARY" ]; then ok "refuses token #$n"; else bad "token #$n '$tok' (st=$ST)" "$OUT"; fi
 done
 
+for sep in " , " "," "  "; do
+  run "$sep" ""
+  if [ "$ST" -eq 2 ]; then ok "separator-only SPEC '$sep' exits 2"; else bad "separator-only '$sep' (st=$ST)" "$OUT"; fi
+done
+for tok in "tests/a11y/./contrast.spec.js" "tests/a11y//contrast.spec.js" "tests/a11y/contrast.spec.js/." "tests/a11y/*/./x.spec.js"; do
+  run "$tok" ""
+  if [ "$ST" -eq 2 ] && grep -q "non-canonical" <<<"$OUT"; then ok "non-canonical token '$tok' exits 2"; else bad "non-canonical '$tok' (st=$ST)" "$OUT"; fi
+done
 run "tests/a11y/no-such-spec-*.spec.js" ""
 if [ "$ST" -eq 2 ]; then ok "token matching nothing exits 2 (never an unfiltered run)"; else bad "zero-match (st=$ST)" "$OUT"; fi
 run "tests/a11y/cheat-sheet.spec.js tests/a11y/nope.spec.js" ""

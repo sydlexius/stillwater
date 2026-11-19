@@ -84,6 +84,8 @@ SW_TEST_URL|points the a11y specs at another server
 SW_BINARY|points the provider smoke at another binary
 SW_BASE|points the provider smoke at another server
 SW_PORT|the provider smoke and the a11y target health-check this port; another server may hold it
+SPEC|scopes `make test-a11y` to a subset of specs, so the a11y tier is not a full run (#3608)
+PROJECT|scopes `make test-a11y` to one browser, so the a11y tier is not a full run (#3608)
 '
 # gate_env_hits -- print "NAME|reason" once per listed variable that is set and
 # non-empty. Shared by the stamp writer and the receipt validator.

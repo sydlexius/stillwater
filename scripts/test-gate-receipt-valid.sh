@@ -246,6 +246,14 @@ expect_run "a hook whose stdin cannot be read runs the gate" "could not read the
 reset; precond "valid receipt and stamp (SW_PORT at gate start)"
 lib 'SW_PORT=1975 gate_stamp_begin; gate_stamp_write "$(git rev-parse HEAD~1)" default default default default'
 expect_nostamp "SW_PORT set at gate start writes no stamp" "SW_PORT is set"
+for _sv in SPEC PROJECT; do
+  reset; precond "valid receipt and stamp ($_sv set)"
+  hook "$PUSH_B" "$_sv=x"
+  expect_run "a push made with $_sv set runs the gate" "$_sv is set"
+  reset; precond "valid receipt and stamp ($_sv at gate start)"
+  lib "$_sv=x gate_stamp_begin; gate_stamp_write \"\$(git rev-parse HEAD~1)\" default default default default"
+  expect_nostamp "$_sv set at gate start writes no stamp" "$_sv is set"
+done
 echo "--- stamp"
 reset; stamp_edit 'del(.patch_base)'; hook "$PUSH_B"
 expect_run "a stamp with no patch_base field runs the gate" "no patch_base"
