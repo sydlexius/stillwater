@@ -67,7 +67,7 @@ specs = ["ai-blocklist-settings.spec.js", "contrast.spec.js", "muted-text-contra
 paths = ["web/templates/backdrop_duplicates.templ", "web/templates/platform_backdrop_duplicates.templ"]
 specs = ["backdrop-perceptual.spec.js", "platform-backdrop-*.spec.js"]
 
-[[rule]]  # /reports/extrafanart-migration and its run endpoint
+[[rule]]  # /reports/extrafanart-migration (the page; the run handler handlers_extrafanart_migration.go stays FULL)
 paths = ["web/templates/extrafanart_migration.templ", "internal/api/handlers_extrafanart_page.go"]
 specs = ["extrafanart-migration*.spec.js", "merge-extrafanart-report.spec.js"]
 

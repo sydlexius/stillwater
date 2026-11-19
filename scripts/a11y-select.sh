@@ -143,11 +143,11 @@ def importers(p):
     seen, todo, glob_users = {p}, [p], []
     while todo:
         b = os.path.basename(todo.pop())
-        pat = re.compile(r"[/'\"]%s(?:\.js)?['\"]" % re.escape(b[:-3]))
+        pat = re.compile(r"[/'\"`]%s(?:\.js)?['\"`]" % re.escape(b[:-3]))
         for f in HARNESS_JS:
             if f in seen: continue
             try: src = open(f, encoding="utf-8", errors="replace").read()
-            except OSError: continue
+            except OSError as e: die("cannot read %s: %s" % (f, e))  # fail closed: a skipped file could hide an importer
             if not pat.search(src): continue
             seen.add(f)
             if f.endswith(".spec.js") or SEED.match(f): todo.append(f)

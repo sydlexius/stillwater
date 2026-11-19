@@ -94,6 +94,16 @@ selx "M${TAB}tests/a11y/helpers/seed-t.js"; want "a seed imported only by anothe
 sel "M${TAB}tests/a11y/helpers/seed-g.js"; expect "a seed global-setup.js imports forces FULL" 0 "seed-g.js: imported by the shared harness (tests/a11y/global-setup.js)"
 sel "M${TAB}tests/a11y/helpers/seed-h.js"; expect "a seed a non-seed helper imports as './seed-h.js' forces FULL (R2)" 0 "seed-h.js: imported by the shared harness (tests/a11y/helpers/bootstrap.js)"
 sel "M${TAB}tests/a11y/helpers/seed-orphan.js"; expect "a seed no spec imports forces FULL" 0 "seed-orphan.js: imported by no spec"
+# A backtick template-literal specifier is an import too (untracked files: --files-from ignores git).
+echo "await import('./helpers/seed-bt.js');" >"$R/tests/a11y/q1.spec.js"; echo "await import(\`./helpers/seed-bt.js\`);" >"$R/tests/a11y/q2.spec.js"; : >"$R/tests/a11y/helpers/seed-bt.js"
+selx "M${TAB}tests/a11y/helpers/seed-bt.js"; want "a seed imported via quotes AND a backtick literal selects both specs" "SELECT:tests/a11y/q1.spec.js tests/a11y/q2.spec.js "
+rm -f "$R/tests/a11y/q1.spec.js" "$R/tests/a11y/q2.spec.js" "$R/tests/a11y/helpers/seed-bt.js"
+# An unreadable harness file fails closed (exit 2), never a silently incomplete SELECT.
+if [ "$(id -u)" -eq 0 ]; then ok "unreadable harness file: SKIPPED as root (chmod 000 does not deny root)"; else
+  : >"$R/tests/a11y/helpers/locked.js"; chmod 000 "$R/tests/a11y/helpers/locked.js"
+  sel "M${TAB}tests/a11y/helpers/seed-x.js"; rm -f "$R/tests/a11y/helpers/locked.js"
+  expect "an unreadable harness .js exits 2 and names it" 2 "cannot read tests/a11y/helpers/locked.js"
+fi
 printf '[[rule]]\npaths = ["web/templates/page.templ"]\nspecs = ["gone-*.spec.js"]\n' >"$T/ghost.toml"; printf 'M\tweb/templates/page.templ\n' >"$T/files"
 ST=0; OUT=$(cd "$R" && bash scripts/a11y-select.sh --map "$T/ghost.toml" --files-from "$T/files" 2>&1) || ST=$?
 expect "a rule hit whose specs match nothing forces FULL, never EMPTY" 0 "page.templ: its rule selects no existing spec"
