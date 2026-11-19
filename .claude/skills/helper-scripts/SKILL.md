@@ -51,6 +51,14 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
   args (#3608). Refuses any other token and any glob matching nothing (exit 2), so an
   empty scope never becomes a full run; unset = the default full suite.
   `scripts/test-a11y-scope.sh` is its test.
+- `scripts/a11y-select.sh` + `tests/a11y/spec-map.toml` -- the `RUN_A11Y=changed` classifier (#3608):
+  `a11y-select.sh <BASE>` prints `MODE=FULL` or `MODE=EMPTY` for the diff since BASE. EMPTY needs every
+  changed file on the map's `[allow]` list and on no `[shared]` glob (`[shared]` wins over `[allow]`), and the gate reports it as a SKIP,
+  never a pass; any other file (including everything under `tests/a11y/`) is FULL. It never selects a
+  subset of specs. The gate's `changed)` arm, not this script, blocks (exit 2) when local `main` is
+  missing or has no merge base. `a11y-select.sh --check` fails on a stale `[shared]` or `[allow]` glob;
+  run by the gate and `Gate Invariant`. `scripts/test-a11y-select.sh` is the test. A `changed` stamp
+  never satisfies `RUN_A11Y=1` (`gate-receipt-valid.sh` rank).
 - `scripts/lib/git-plain.sh` -- `git_plain_diff`, a `git diff` that ignores the
   developer's `GIT_EXTERNAL_DIFF`/`diff.external`, textconv, color, prefix,
   `core.quotePath`, binary attributes, inter-hunk context, pathspec modes and

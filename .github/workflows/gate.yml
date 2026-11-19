@@ -750,6 +750,12 @@ jobs:
       - name: a11y scope (SPEC/PROJECT) self-test
         run: bash scripts/test-a11y-scope.sh
 
+      - name: a11y spec map globs are not stale
+        run: bash scripts/a11y-select.sh --check
+
+      - name: a11y selector (RUN_A11Y=changed) self-test
+        run: bash scripts/test-a11y-select.sh
+
       - name: Check parsed git diffs use plain output
         run: bash scripts/check-plain-git-diff.sh
 

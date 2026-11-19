@@ -38,6 +38,8 @@
 # SKIP, each with a blocking opt-in:
 #
 #   RUN_A11Y=1            accessibility (axe-core)   CI: "A11y Smoke Tests (Playwright + axe-core)" (ci.yml)
+#                         (RUN_A11Y=changed: the full suite, or a SKIP when
+#                         only allow-listed non-UI files changed, #3608)
 #   RUN_PROVIDER_SMOKE=1  provider failure smoke     CI: "Provider Failure Smoke" (gate.yml)
 #   RUN_VULN=1            govulncheck                CI: "Go Vulnerability Check" (security.yml)
 #   RUN_RACE=1            full -race suite           CI: "Test" (ci.yml)
@@ -83,7 +85,7 @@ trap 'rm -f "${GATE_STAMP_BLOCK_FILE:-}"' EXIT
 resolve_run_flag RUN_RACE "${RUN_RACE:-}"; RACE_MODE="$RESOLVED_RUN_FLAG"
 resolve_run_flag RUN_VULN "${RUN_VULN:-}"; VULN_MODE="$RESOLVED_RUN_FLAG"
 resolve_run_flag RUN_PROVIDER_SMOKE "${RUN_PROVIDER_SMOKE:-}"; PROVIDER_SMOKE_MODE="$RESOLVED_RUN_FLAG"
-resolve_run_flag RUN_A11Y "${RUN_A11Y:-}"; A11Y_MODE="$RESOLVED_RUN_FLAG"
+resolve_run_flag RUN_A11Y "${RUN_A11Y:-}" changed; A11Y_MODE="$RESOLVED_RUN_FLAG"
 
 BASE=$(git merge-base main HEAD 2>/dev/null || echo "HEAD~1")
 
@@ -226,6 +228,8 @@ gate_step "a11y shard matrix is complete (#3442)"
 bash "$SCRIPT_DIR/check-a11y-shards.sh"
 bash "$SCRIPT_DIR/test-check-a11y-shards.sh"
 bash "$SCRIPT_DIR/test-a11y-scope.sh"
+bash "$SCRIPT_DIR/a11y-select.sh" --check
+bash "$SCRIPT_DIR/test-a11y-select.sh"
 
 echo ""
 gate_step "parsed git diffs use plain output (#3446)"
@@ -1033,6 +1037,9 @@ gate_step "Accessibility (axe-core)"
 #     the push.
 #   - RUN_A11Y falsy  (0/false/no/off): explicit SKIP.
 #   - RUN_A11Y unset (the DEFAULT since #2983): SKIP.
+#   - RUN_A11Y=changed (#3608): the FULL suite, blocking, unless every file
+#     changed since BASE is on the non-UI allow-list in tests/a11y/spec-map.toml
+#     (then a SKIP with the reason, never a pass). See the arm below.
 #   - RUN_A11Y set to anything else: the gate already aborted with exit 2 at
 #     the top of this file. See resolve_run_flag.
 #
@@ -1056,13 +1063,52 @@ case "$A11Y_MODE" in
   on)
     run_a11y=1
     ;;
+  changed)
+    # Diff-scoped (#3608). scripts/a11y-select.sh reads the diff since BASE:
+    # FULL = any changed file is in [shared] or is not on the [allow] list;
+    # EMPTY = every changed file is allow-listed (a SKIP with the reason, never
+    # a pass). There is no partial selection: anything that might render runs
+    # everything. A selector or map error blocks (exit 2).
+    # BASE falls back to HEAD~1 when local main is missing (see BASE= above);
+    # that would diff only the last commit and could SKIP a branch that changed
+    # a UI file earlier, so the merge base must exist; a main sharing no history
+    # with HEAD (a shallow clone) fails that first test too. The second test,
+    # merge base == BASE, guards local main moving between the BASE= line above
+    # and this arm, so the diff is always taken from the current merge base.
+    if ! a11y_mb=$(git merge-base main HEAD 2>/dev/null) || [ "$a11y_mb" != "$(git rev-parse --verify -q "$BASE^{commit}")" ]; then
+      echo "FAIL: RUN_A11Y=changed needs a local 'main' with a merge base to diff against (BASE is '$BASE'); fetch it or use RUN_A11Y=1." >&2
+      exit 2
+    fi
+    a11y_sel=$(bash "$SCRIPT_DIR/a11y-select.sh" "$BASE") || {
+      echo "FAIL: a11y-select.sh could not classify the diff for RUN_A11Y=changed (see above)." >&2
+      exit 2
+    }
+    a11y_sel_mode=$(printf '%s\n' "$a11y_sel" | sed -n '1s/^MODE=//p')
+    echo "a11y (RUN_A11Y=changed): mode=${a11y_sel_mode}"
+    printf '%s\n' "$a11y_sel" | sed -n '2,$p' | sed 's/^/  /'
+    case "$a11y_sel_mode" in
+      FULL)
+        echo "a11y: running the FULL suite (reasons above)"
+        run_a11y=1
+        ;;
+      EMPTY)
+        gate_skip deterministic "a11y: skipped -- RUN_A11Y=changed found only allow-listed non-UI files in the diff; CI's a11y check runs on its own path filter (ci.yml)"
+        ;;
+      *)
+        echo "FAIL: a11y-select.sh printed an unknown mode '${a11y_sel_mode}'." >&2
+        exit 1
+        ;;
+    esac
+    ;;
   *)
     gate_skip deterministic "a11y: skipped by default -- CI's required 'A11y Smoke Tests (Playwright + axe-core)' check (ci.yml) is authoritative; set RUN_A11Y=1 for a blocking local run (needs 'npx playwright install chromium firefox')"
     ;;
 esac
 
 if [ "$run_a11y" -eq 1 ]; then
-  if ! make test-a11y; then
+  # Explicitly empty SPEC/PROJECT: an operator's exported values must not
+  # silently narrow a run this log calls the FULL suite.
+  if ! make test-a11y SPEC= PROJECT=; then
     echo ""
     echo "FAIL: accessibility (axe-core) smoke tests reported failures (see output above)."
     exit 1

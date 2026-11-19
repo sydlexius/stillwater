@@ -1,0 +1,30 @@
+# spec-map.toml -- which changed files may skip the a11y suite under
+# RUN_A11Y=changed (#3608). Read by scripts/a11y-select.sh.
+#
+# The rule is all-or-nothing: if every file changed since the merge base with
+# main matches an [allow] glob (and no [shared] glob), the gate SKIPs the a11y
+# tier and says why. ANY other changed file, including everything under
+# tests/a11y/, runs the FULL suite. Nothing here selects a subset of specs.
+#
+# Globs: `**` crosses `/`, `*` and `?` do not; paths are repo-relative.
+# `scripts/a11y-select.sh --check` (run by the gate and CI's Gate Invariant job)
+# fails when a glob below matches no tracked file. Only [shared] and [allow]
+# are accepted; any other section is refused (exit 2).
+
+[shared]
+# Files that an [allow] glob would otherwise cover but that the a11y run itself
+# depends on: a change here always runs the FULL suite.
+paths = [
+  "scripts/a11y-select.sh", "scripts/a11y-scope.sh",
+  "scripts/lib/git-plain.sh",  # sourced by the selector
+  "scripts/lib/run-flags.sh", "scripts/pre-push-gate.sh",  # parse RUN_A11Y and run the tier
+  # Belt and braces for `**/*.md` and `**/*_test.go`: the a11y harness, and
+  # everything the server embeds and serves, never skip.
+  "tests/a11y/**", "web/static/**",
+]
+
+[allow]
+# The ONLY files that may skip the suite. Keep conservative: anything that can
+# change what a browser renders or loads does not belong here.
+paths = ["docs/**", "**/*.md", "scripts/**", ".github/**", ".githooks/**", ".claude/**", "tests/unit/**",
+  "**/*_test.go", ".gitignore", "LICENSE"]
