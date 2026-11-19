@@ -1,15 +1,37 @@
-# spec-map.toml -- which changed files may skip the a11y suite under
-# RUN_A11Y=changed (#3608). Read by scripts/a11y-select.sh.
+# spec-map.toml -- what a changed file means for the a11y suite under
+# RUN_A11Y=changed (#3608). Read by scripts/a11y-select.sh, whose header gives
+# the exact classification order.
 #
-# The rule is all-or-nothing: if every file changed since the merge base with
-# main matches an [allow] glob (and no [shared] glob), the gate SKIPs the a11y
-# tier and says why. ANY other changed file, including everything under
-# tests/a11y/, runs the FULL suite. Nothing here selects a subset of specs.
+# - [shared]: a change runs the FULL suite.
+# - [allow]: explicitly non-UI; a change contributes nothing. EMPTY (a SKIP)
+#   needs every changed file here.
+# - [[rule]]: a change runs only the rule's `specs` (file-name globs under
+#   tests/a11y/); a file in several rules runs the union.
+# - Anything else runs the FULL suite. So does every UI file with no rule
+#   below: no rule means "not proven narrow", never "safe to skip".
+# - Specs and seed helpers (tests/a11y/*.spec.js, tests/a11y/helpers/seed-*.js)
+#   are classified by their import graph before [shared] is consulted.
 #
 # Globs: `**` crosses `/`, `*` and `?` do not; paths are repo-relative.
 # `scripts/a11y-select.sh --check` (run by the gate and CI's Gate Invariant job)
-# fails when a glob below matches no tracked file. Only [shared] and [allow]
-# are accepted; any other section is refused (exit 2).
+# fails on a glob that matches nothing, and on a spec that is in no rule and not
+# on an `# unruled:` line. Any section other than these three is refused (exit 2).
+#
+# HOW THE RULES WERE DERIVED (re-derive, do not guess, when adding one). For
+# each UI file: every templ/Go declaration that uses one of its names,
+# transitively, up to the router.go handlers that render it; the routes of
+# those handlers; then every page that loads one of those routes as a fragment
+# (an hx-get/post, fetch or src in a template, a URL in a handler, a fetch in
+# web/static/js on a page that includes that script), lifted the same way;
+# finally every spec whose URL literals (its own and its helpers') hit one of
+# those routes, with /next/X counted as /X (nextFallback). Only files whose
+# result was a small, page-local set got a rule. The artist-detail, artwork,
+# dashboard, artists, reports and duplicates templates and handlers all reach
+# 32 of 34 specs through shared helpers and lazily loaded fragments (the
+# platform-state card on artist detail is one), so they have no rule and run
+# the FULL suite. A spec that reads a source file directly (muted-text-contrast
+# reads settings.templ; registry-repair-* read internal/i18n/locales/) needs
+# that file left in no rule, or in a rule that lists the spec.
 
 [shared]
 # Files that an [allow] glob would otherwise cover but that the a11y run itself
@@ -18,8 +40,9 @@ paths = [
   "scripts/a11y-select.sh", "scripts/a11y-scope.sh",
   "scripts/lib/git-plain.sh",  # sourced by the selector
   "scripts/lib/run-flags.sh", "scripts/pre-push-gate.sh",  # parse RUN_A11Y and run the tier
-  # Belt and braces for `**/*.md` and `**/*_test.go`: the a11y harness, and
-  # everything the server embeds and serves, never skip.
+  # Belt and braces for `**/*.md` and `**/*_test.go`: the a11y harness
+  # (global-setup, non-seed helpers, fixtures, this map), and everything the
+  # server embeds and serves, never skip.
   "tests/a11y/**", "web/static/**",
 ]
 
@@ -28,3 +51,37 @@ paths = [
 # change what a browser renders or loads does not belong here.
 paths = ["docs/**", "**/*.md", "scripts/**", ".github/**", ".githooks/**", ".claude/**", "tests/unit/**",
   "**/*_test.go", ".gitignore", "LICENSE"]
+
+[[rule]]  # /settings and /next/settings, plus the fragments and settings JS endpoints that page loads
+paths = ["web/templates/settings_page.templ", "web/templates/settings_sections.templ",
+  "web/templates/settings_auth_providers.templ", "web/templates/settings_users.templ",
+  "internal/api/handlers_aiblocklist.go", "internal/api/handlers_inbound_webhook.go",
+  "internal/api/handlers_webhook.go", "internal/api/handlers_user.go"]
+specs = ["ai-blocklist-settings.spec.js", "contrast.spec.js", "muted-text-contrast.spec.js",
+  "registry-repair-banner.spec.js", "rule-platform-prune-option.spec.js", "settings-*.spec.js",
+  "users-panel-reveal.spec.js"]
+
+[[rule]]  # /reports/backdrop-duplicates and /reports/platform-backdrop-duplicates (shared components)
+paths = ["web/templates/backdrop_duplicates.templ", "web/templates/platform_backdrop_duplicates.templ"]
+specs = ["backdrop-perceptual.spec.js", "platform-backdrop-*.spec.js", "history-producer.spec.js",
+  "users-panel-reveal.spec.js"]
+
+[[rule]]  # /reports/extrafanart-migration and its run endpoint
+paths = ["web/templates/extrafanart_migration.templ", "internal/api/handlers_extrafanart_page.go"]
+specs = ["extrafanart-migration*.spec.js", "merge-extrafanart-report.spec.js"]
+
+[[rule]]  # /logs (its filter flyout)
+paths = ["web/templates/logs.templ"]
+specs = ["filter-flyout-open-scan.spec.js"]
+
+[[rule]]  # /register (the invite page)
+paths = ["web/templates/register.templ"]
+specs = ["muted-text-contrast.spec.js"]
+
+# Specs in no rule: every page they load is in the FULL-only cluster above, so
+# only a change to the spec itself or one of its seeds selects them alone.
+# unruled: base-path-filter-idiom.spec.js blast-radius.spec.js cheat-sheet.spec.js -- pages only in the FULL-only cluster
+# unruled: compliance-filter-flyout-resync.spec.js dialog-input-focus.spec.js filter-flyout-contrast.spec.js -- pages only in the FULL-only cluster
+# unruled: fix-unavailable-badge.spec.js google-images-link.spec.js mobile-nav.spec.js modal-escape.spec.js -- pages only in the FULL-only cluster
+# unruled: nfo-mbid.spec.js registry-repair-locale.spec.js registry-repair-run.spec.js reports-contrast.spec.js -- pages only in the FULL-only cluster
+# unruled: setup-restore-dropped-rows.spec.js token-pairings.spec.js websearch-ai-filter.spec.js websearch-unavailable.spec.js -- pages only in the FULL-only cluster
