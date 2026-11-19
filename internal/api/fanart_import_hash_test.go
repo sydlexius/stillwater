@@ -395,3 +395,57 @@ func TestStoreImportedFanartHash_SkipsClearedRow(t *testing.T) {
 		t.Errorf("hash written to an exists_flag=0 row: %v", got)
 	}
 }
+
+// resetFanartHashes blanks the artist's fanart hashes so a direct
+// hashImportedFanart call has work to do.
+func resetFanartHashes(t *testing.T, r *Router, artistID string) {
+	t.Helper()
+	if _, err := r.db.ExecContext(context.Background(),
+		`UPDATE artist_images SET phash = '', content_hash = '' WHERE artist_id = ?`, artistID); err != nil {
+		t.Fatalf("resetting hashes: %v", err)
+	}
+}
+
+// TestHashImportedFanart_ProfileReadFailureWritesNothing: when the active
+// profile cannot be read, the profile's fanart names are unknown, so the slot
+// mapping cannot be trusted and nothing is written (no fall back to defaults).
+func TestHashImportedFanart_ProfileReadFailureWritesNothing(t *testing.T) {
+	r, a, _, _, _ := importFanart(t, "")
+	resetFanartHashes(t, r, a.ID)
+	ctx := context.Background()
+	if _, err := r.db.ExecContext(ctx, `ALTER TABLE platform_profiles RENAME TO platform_profiles_gone`); err != nil {
+		t.Fatalf("breaking profile reads: %v", err)
+	}
+	if _, err := r.fanartNamesStrict(ctx); err == nil {
+		t.Fatal("precondition: fanartNamesStrict should fail with the profile table gone")
+	}
+	r.hashImportedFanart(ctx, a.ID, filepath.Join(r.imageCacheDir, a.ID))
+	for slot, h := range fanartHashes(t, r, a.ID) {
+		if h != [2]string{"", ""} {
+			t.Errorf("slot %d hashed although profile names were unreadable: %v", slot, h)
+		}
+	}
+}
+
+// TestHashImportedFanart_UnreadableFileSkipsOnlyThatSlot: one file that cannot
+// be read is a per-slot failure; the other slot is still hashed.
+func TestHashImportedFanart_UnreadableFileSkipsOnlyThatSlot(t *testing.T) {
+	r, a, _, imgB, _ := importFanart(t, "")
+	resetFanartHashes(t, r, a.ID)
+	first := fanartFiles(t, r, a.ID)[0]
+	if err := os.Chmod(first, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(first, 0o600) })
+	if _, err := os.ReadFile(first); err == nil {
+		t.Skip("file still readable after chmod (running as root?)")
+	}
+	r.hashImportedFanart(context.Background(), a.ID, filepath.Join(r.imageCacheDir, a.ID))
+	got := fanartHashes(t, r, a.ID)
+	if got[0] != [2]string{"", ""} {
+		t.Errorf("unreadable slot 0 got hashes: %v", got[0])
+	}
+	if got[1][0] != importPhash(t, imgB) {
+		t.Errorf("slot 1 not hashed after slot 0's read failed: %v", got[1])
+	}
+}
