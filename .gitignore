@@ -62,8 +62,8 @@ npm-debug.log*
 package.json
 package-lock.json
 # Exception: Bruno CLI is a real pinned npm project consumed by bruno-ci workflow
-!.github/bruno/package.json
-!.github/bruno/package-lock.json
+!ci/bruno/package.json
+!ci/bruno/package-lock.json
 # Exception: JS unit test harness (tests/unit/) uses the root package.json
 !/package.json
 !/package-lock.json

@@ -60,7 +60,7 @@ jobs:
               - 'go.sum'
               - 'Makefile'
               - '.github/workflows/bruno-ci.yml'
-              - '.github/bruno/**'
+              - 'ci/bruno/**'
 
       - name: Set up Go
         if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
@@ -75,7 +75,7 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-          cache-dependency-path: .github/bruno/package-lock.json
+          cache-dependency-path: ci/bruno/package-lock.json
 
       - name: Generate templ
         if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
@@ -110,16 +110,16 @@ jobs:
 
       - name: Install Bruno CLI
         if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
-        # Bruno CLI is pinned via .github/bruno/package-lock.json. `npm ci`
+        # Bruno CLI is pinned via ci/bruno/package-lock.json. `npm ci`
         # enforces SHA-512 integrity for the full transitive tree, and the
         # lockfile + npm-ecosystem entry in .github/dependabot.yml gives
-        # Dependabot ownership of bumps. Bumping = open .github/bruno, run
+        # Dependabot ownership of bumps. Bumping = open ci/bruno, run
         # `npm install <pkg>@<new>`, commit both files. Relock with npm 11 or
         # later (what Node 24 ships): npm 10 applies overrides across
         # peer-dependency edges differently, so a lockfile it writes after an
         # override change can be rejected by CI's `npm ci`.
         run: |
-          cd .github/bruno
+          cd ci/bruno
           npm ci --no-audit --no-fund
           echo "$(pwd)/node_modules/.bin" >> "$GITHUB_PATH"
 
