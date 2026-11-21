@@ -76,11 +76,17 @@ updates:
       - docker
     open-pull-requests-limit: 5
 
-  # Bruno CLI is pinned via .github/bruno/package-lock.json and installed by
+  # Bruno CLI is pinned via ci/bruno/package-lock.json and installed by
   # the bruno-ci workflow with `npm ci`. Only direct dep is @usebruno/cli;
   # transitives are locked by SHA-512 integrity in the lockfile.
+  #
+  # Do NOT move this project back under .github/: since late May 2026
+  # Dependabot refuses PRs that change non-github-actions manifests under
+  # .github/ (400 "invalid or unauthorized changes", reported as
+  # dependency_file_not_supported), for version AND security updates alike.
+  # See dependabot/dependabot-core#15721.
   - package-ecosystem: npm
-    directory: /.github/bruno
+    directory: /ci/bruno
     schedule:
       interval: weekly
       day: monday

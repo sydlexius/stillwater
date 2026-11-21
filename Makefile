@@ -439,8 +439,8 @@ clean-uat:
 	rm -rf $(CURDIR)/.uat
 
 ## bruno-ci: Build binary, run ephemeral server, execute Bruno API tests, clean up.
-# Required: npm reachable to install the pinned CLI from .github/bruno if not
-# already present (see .github/bruno/package.json). Admin credentials are ephemeral and
+# Required: npm reachable to install the pinned CLI from ci/bruno if not
+# already present (see ci/bruno/package.json). Admin credentials are ephemeral and
 # auto-generated; DO NOT set STILLWATER_ADMIN_PASSWORD to a real password here.
 #
 # Environment variables (all optional -- defaults are ephemeral and CI-safe):
@@ -459,7 +459,7 @@ clean-uat:
 # The server PID is tracked in a temp file and cleaned up on exit.
 bruno-ci: build
 	@set -euo pipefail; \
-	BRUNO_CLI_DIR="$(CURDIR)/.github/bruno"; \
+	BRUNO_CLI_DIR="$(CURDIR)/ci/bruno"; \
 	BRUNO_BIN="$$BRUNO_CLI_DIR/node_modules/.bin/bru"; \
 	if [ ! -x "$$BRUNO_BIN" ]; then \
 	  echo "[bruno-ci] installing pinned Bruno CLI ($$BRUNO_CLI_DIR)"; \
