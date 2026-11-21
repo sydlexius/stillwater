@@ -106,16 +106,44 @@ jobs:
               - '.stylelintrc.json'
               - 'package.json'
               - 'package-lock.json'
+            # a11y: only paths that can change what a rendered page shows or
+            # how it behaves in the browser. This was '**/*.go', which ran the
+            # ~10-minute Playwright matrix for ANY Go change, including
+            # backend-only ones. Go that renders or wires pages is listed below;
+            # backend packages (provider, rule, artist, image, nfo, scanner,
+            # maintenance, ...) skip a11y ON PURPOSE even though templates
+            # import some of them for view-model types: a type change there
+            # breaks the templ build (Build/Test catch it), and the residual
+            # risk -- a backend change that alters only the DATA a page
+            # displays -- is caught on the next PR that touches a handler or
+            # template. ci.yml itself is not listed: harness_touched already
+            # runs the a11y job for it (see the a11y-test `if:`).
             a11y:
-              - 'web/templates/**'
-              - 'web/static/css/**'
-              - 'web/static/js/**'
+              # templates (incl. generated *_templ.go), components, static
+              # CSS/JS/fonts/img -- everything the browser receives
+              - 'web/**'
+              - '**/*.templ'
+              # HTTP handlers render the HTMX fragments; middleware here sets
+              # CSP and other headers the page runs under
+              - 'internal/api/**'
+              # route table and server wiring: which handler serves which page
+              - 'cmd/stillwater/**'
+              # locale string tables + language middleware: every visible label
+              # and aria text (registry-repair-locale.spec.js reads these files)
+              - 'internal/i18n/**'
+              # schema + seeded defaults shape what the harness's fresh empty
+              # database renders on first load
+              - 'internal/database/migrations/**'
+              # go.mod / go.sum are deliberately NOT listed (they were not under
+              # the old '**/*.go' either). On a 120-PR replay they would have
+              # added 24 a11y runs, almost all Dependabot bumps of non-rendering
+              # modules (sqlite, x/sys, oauth2, quic-go). The one dependency that
+              # changes markup, a-h/templ, regenerates web/**/*_templ.go in the
+              # same PR, so 'web/**' already runs a11y for it.
               - 'tests/a11y/**'
               - 'playwright.config.js'
               - 'package.json'
               - 'package-lock.json'
-              - '**/*.go'
-              - '**/*.templ'
 
       # Does this diff touch the Go BUILD/TEST HARNESS? (#2453)
       #
