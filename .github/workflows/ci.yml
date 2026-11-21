@@ -109,15 +109,21 @@ jobs:
             # a11y: only paths that can change what a rendered page shows or
             # how it behaves in the browser. This was '**/*.go', which ran the
             # ~10-minute Playwright matrix for ANY Go change, including
-            # backend-only ones. Go that renders or wires pages is listed below;
-            # backend packages (provider, rule, artist, image, nfo, scanner,
-            # maintenance, ...) skip a11y ON PURPOSE even though templates
-            # import some of them for view-model types: a type change there
-            # breaks the templ build (Build/Test catch it), and the residual
-            # risk -- a backend change that alters only the DATA a page
-            # displays -- is caught on the next PR that touches a handler or
-            # template. ci.yml itself is not listed: harness_touched already
-            # runs the a11y job for it (see the a11y-test `if:`).
+            # backend-only ones. Go that renders or wires pages, seeds the
+            # harness's fresh database, or backs a seam the a11y specs depend
+            # on is listed below. Other backend packages (provider, rule,
+            # artist, image, nfo, scanner, maintenance, ...) skip a11y ON
+            # PURPOSE even though templates import them for view-model types
+            # AND call their display helpers, functions that produce visible
+            # text or decide whether an element renders (provider
+            # DisplayName, artist.FieldValueFromArtist, artist.NormalizeType,
+            # connection.SupportsPlatformState, rule.PlatformPruneThreshold,
+            # ...). A type change there breaks the templ build (Build/Test
+            # catch it). A behavior change confined to those helpers compiles
+            # cleanly and skips a11y BY DESIGN: that residual risk is caught
+            # on the next PR that touches a handler or template. ci.yml itself
+            # is not listed: harness_touched already runs the a11y job for it
+            # (see the a11y-test `if:`).
             a11y:
               # templates (incl. generated *_templ.go), components, static
               # CSS/JS/fonts/img -- everything the browser receives
@@ -128,12 +134,32 @@ jobs:
               - 'internal/api/**'
               # route table and server wiring: which handler serves which page
               - 'cmd/stillwater/**'
+              # RunListeners serves the HTTP handler the harness talks to
+              - 'internal/server/**'
+              # SW_* env parsing the harness boots with (SW_UX selects the UI)
+              - 'internal/config/**'
+              # opens the harness's fresh database
+              - 'internal/database/database.go'
+              # go:embed of migrations/*.sql and the migration runner
+              - 'internal/database/migrate.go'
+              # IsReleaseBuild gates the test seams the a11y specs rely on
+              - 'internal/version/**'
               # locale string tables + language middleware: every visible label
               # and aria text (registry-repair-locale.spec.js reads these files)
               - 'internal/i18n/**'
-              # schema + seeded defaults shape what the harness's fresh empty
-              # database renders on first load
+              # the harness's fresh empty database gets its schema from the
+              # migrations and its default content from Go seeders (next two)
               - 'internal/database/migrations/**'
+              # defaultRules + SeedDefaults: built-in rules (name, description,
+              # severity, config) the Rules and Reports pages render
+              - 'internal/rule/service.go'
+              # scraper SeedDefaults (called from cmd/stillwater/main.go)
+              - 'internal/scraper/**'
+              # settings export envelope; tests/a11y/helpers/seed-settings-import.js
+              # mirrors its encryption format, and only a11y specs check that copy
+              - 'internal/settingsio/**'
+              # SW_FORCE_PROVIDER_ERROR seam websearch-unavailable.spec.js uses
+              - 'internal/provider/injection.go'
               # go.mod / go.sum are deliberately NOT listed (they were not under
               # the old '**/*.go' either). On a 120-PR replay they would have
               # added 24 a11y runs, almost all Dependabot bumps of non-rendering
@@ -519,7 +545,8 @@ jobs:
       - name: Run stylelint (diff-scoped ratchet)
         run: scripts/stylelint-diff-gate.sh "${{ github.event_name == 'push' && github.event.before || github.event.pull_request.base.sha }}"
 
-  # Worker job: does the real a11y work, gated on tests/a11y/** changes.
+  # Worker job: does the real a11y work, gated on the `a11y` path filter OR
+  # harness_touched (see its `if:`).
   # Sharded by Playwright project (#3183) and then by Playwright --shard
   # (#3442): firefox-a11y and chromium-a11y each run as 3 shards, every shard on
   # its OWN runner with its OWN ephemeral server, so no two shards (of one
@@ -583,14 +610,16 @@ jobs:
           # Compatibility leg: a violation here still fails the required
           # check (see a11y-summary below) -- "compatibility" describes how
           # to read the finding, not a pass it gets on the CI verdict.
-          # 3 shards, not 2: Playwright shards by TEST COUNT in file order, so
-          # at 2 the shard boundary fell inside muted-text-contrast.spec.js
-          # (46 tests) and shard 1 got it plus contrast.spec.js -- 203 of 322
-          # tests, ~400s of test time vs ~215s on shard 2, making chromium 1/2
-          # the slowest leg of the whole tier (median 9.4m). At 3 the split is
-          # ~200s/250s/165s (same file boundaries as firefox's 3), so the
-          # slowest leg becomes firefox 1/3. Cost: one more runner's ~100s of
-          # fixed setup.
+          # 3 shards, not 2: playwright.config.js does not set fullyParallel,
+          # so --shard splits by whole spec FILE. At 2 the boundary fell just
+          # after muted-text-contrast.spec.js (46 tests), so shard 1 got all of
+          # it plus contrast.spec.js: 203 of 322 tests vs 119. Measured over 5
+          # successful runs, chromium 1/2's Playwright step had a median of
+          # 403s vs 215s for 2/2 (job medians 8.2m vs 5.2m), the slowest leg
+          # of the tier. At 3 the split is 109/120/93 tests on the same file
+          # boundaries as firefox's 3; summing per-spec medians from the job
+          # logs projects ~200s/250s/165s, so the slowest leg becomes firefox
+          # 1/3. Cost: one more runner's fixed setup (measured ~100s typical).
           - project: chromium-a11y
             engine: chromium
             shard: 1
