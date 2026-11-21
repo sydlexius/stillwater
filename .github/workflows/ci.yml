@@ -521,7 +521,7 @@ jobs:
 
   # Worker job: does the real a11y work, gated on tests/a11y/** changes.
   # Sharded by Playwright project (#3183) and then by Playwright --shard
-  # (#3442): firefox-a11y runs as 3 shards, chromium-a11y as 2, every shard on
+  # (#3442): firefox-a11y and chromium-a11y each run as 3 shards, every shard on
   # its OWN runner with its OWN ephemeral server, so no two shards (of one
   # engine or of both) ever touch one another's server-side state (the
   # cross-talk hazard playwright.config.js's `workers: 1` comment describes is a
@@ -532,7 +532,7 @@ jobs:
   # rather than a permanently-skipped required context, and fans in every shard.
   a11y-test:
     # Per-shard display names render as "A11y Smoke Tests Check
-    # (firefox-a11y 1/3)" ... "(chromium-a11y 2/2)". None of them is a required
+    # (firefox-a11y 1/3)" ... "(chromium-a11y 3/3)". None of them is a required
     # check: the bare name is owned by a11y-summary below, so the required
     # check stays satisfied without a branch-protection update.
     name: A11y Smoke Tests Check (${{ matrix.project }} ${{ matrix.shard }}/${{ matrix.shards }})
@@ -583,14 +583,26 @@ jobs:
           # Compatibility leg: a violation here still fails the required
           # check (see a11y-summary below) -- "compatibility" describes how
           # to read the finding, not a pass it gets on the CI verdict.
+          # 3 shards, not 2: Playwright shards by TEST COUNT in file order, so
+          # at 2 the shard boundary fell inside muted-text-contrast.spec.js
+          # (46 tests) and shard 1 got it plus contrast.spec.js -- 203 of 322
+          # tests, ~400s of test time vs ~215s on shard 2, making chromium 1/2
+          # the slowest leg of the whole tier (median 9.4m). At 3 the split is
+          # ~200s/250s/165s (same file boundaries as firefox's 3), so the
+          # slowest leg becomes firefox 1/3. Cost: one more runner's ~100s of
+          # fixed setup.
           - project: chromium-a11y
             engine: chromium
             shard: 1
-            shards: 2
+            shards: 3
           - project: chromium-a11y
             engine: chromium
             shard: 2
-            shards: 2
+            shards: 3
+          - project: chromium-a11y
+            engine: chromium
+            shard: 3
+            shards: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
