@@ -224,7 +224,7 @@ bash "$SCRIPT_DIR/check-pr-trigger-scope.sh"
 
 echo ""
 gate_step "a11y shard matrix is complete (#3442)"
-# A missing or duplicated shard index, or a spec in no firefox `specs` list,
+# A missing or duplicated shard index, or a spec in no `specs` list of a project,
 # silently drops specs. Mirrored by CI's "Gate Invariant" job (gate.yml), which
 # runs `npm ci` and always requires the `playwright test --list` layer. Here the
 # layer runs whenever node_modules has playwright, and is REQUIRED (missing

@@ -30,7 +30,7 @@ test('sharded run: no stale verdict, one warning', async () => {
   assert.match(warns[0], /sharded run/);
 });
 
-// A firefox file-list shard (no --shard, so config.shard is null) is still a
+// A file-list shard (either project; no --shard, so config.shard is null) is still a
 // slice of the suite: CI marks it with SW_A11Y_SHARD.
 test('file-list shard (SW_A11Y_SHARD, no config.shard): no stale verdict', async () => {
   const warns = [];

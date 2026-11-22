@@ -28,7 +28,7 @@ export default async function globalTeardown(config) {
   if (KNOWN_VIOLATIONS.length === 0) return;
 
   // SHARDED RUNS (#3442): CI splits each engine's suite across runners, with
-  // `--shard` (chromium) or an explicit spec-file list per runner (firefox),
+  // an explicit spec-file list per runner (both projects today) or `--shard`,
   // and each shard's teardown sees only the seen-marks of the spec files IT
   // ran. A file-list run leaves config.shard null, so CI also sets
   // SW_A11Y_SHARD=<shard>/<shards> on every shard; either signal counts. An

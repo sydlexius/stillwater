@@ -553,8 +553,8 @@ jobs:
   # Worker job: does the real a11y work, gated on the `a11y` path filter OR
   # harness_touched (see its `if:`).
   # Sharded by Playwright project (#3183) and then into per-runner slices
-  # (#3442): firefox-a11y runs as 4 shards of explicit spec-file lists and
-  # chromium-a11y as 3 --shard slices (see the matrix comments), every shard on
+  # (#3442): firefox-a11y runs as 4 shards and chromium-a11y as 3, each an
+  # explicit, time-balanced spec-file list (see the matrix comments), every shard on
   # its OWN runner with its OWN ephemeral server, so no two shards (of one
   # engine or of both) ever touch one another's server-side state (the
   # cross-talk hazard playwright.config.js's `workers: 1` comment describes is a
@@ -604,18 +604,27 @@ jobs:
           #
           # FIREFOX: 4 entries with EXPLICIT, time-balanced spec lists, not
           # --shard. Playwright splits --shard by TEST COUNT over whole files
-          # (fullyParallel is off on purpose, see playwright.config.js), so
-          # contrast.spec.js (~250s on firefox, 66% of it 8 painted-contrast
-          # sweeps) always landed with its count-neighbours. All numbers here
-          # are PROJECTED from per-file median durations, not measured shard
-          # runs: --shard=k/3 projects ~414/294/224s of tests (firefox 1/3
-          # ~8.7 min with setup, the tier's pole), and more count shards
-          # barely help (x4 380s, x6 323s). Bin-packing whole files by median
-          # duration (LPT: longest file first, into the lightest bin) projects
-          # ~250/227/227/227s, i.e. ~355s per job with the ~105s fixed setup,
-          # under the ~380s at which Build (median ~370s from run start) stops
-          # being the faster leg. The per-bin "~NNNs" comments below are the
-          # same projection.
+          # (fullyParallel is off on purpose, see playwright.config.js), so the
+          # two ~205s files, contrast.spec.js (8 painted-contrast sweeps) and
+          # muted-text-contrast.spec.js, always landed with their
+          # count-neighbours (--shard=k/3 put ~8.7 min on one firefox runner).
+          # The bins are LPT-packed (longest file first, into the lightest bin)
+          # from MEASURED per-file times: the median, over the x4 runs
+          # 44972681336 (PR #3632) and 44973860058 (main), of each file's wall
+          # time between list-reporter lines (beforeAll hooks included). Firefox
+          # totals ~932s of tests, so 4 bins hold ~233s each: a predicted ~336s
+          # per job with the ~94s median setup (75-121s) and ~8s Playwright
+          # start, i.e. about when Build finishes (~350s from run start; shards
+          # start at ~16s). The first x4 lists, packed from older projections,
+          # measured 5.6/7.0/5.9/5.0 min because muted-text-contrast had grown to
+          # ~205s (projected 146s). The two big files now each anchor a bin
+          # with only small files beside them; a 5th bin would leave each alone
+          # (~309s jobs) for one more runner. The per-bin "~NNNs" comments below
+          # are PREDICTIONS: each is the sum of the per-file medians, and no run
+          # has measured these bins as a whole. The two runs disagree: summed
+          # per run, the bins hold 212-255s (run 44972681336: 255/229/249/245s;
+          # 44973860058: 212/237/217/220s), so expect the slowest firefox
+          # runner at up to ~6.2 min (255s + ~106s setup + ~8s), not ~5.6.
           # `specs` is a folded `>-` scalar (ONE line; `|` fails the guard and
           # the run step) holding full repo paths, because Playwright's file
           # filters are case-insensitive regex SUBSTRING matches: a bare
@@ -623,107 +632,145 @@ jobs:
           # reports-contrast.
           #
           # REBALANCE as specs grow. Every spec file must be in exactly one
-          # list: scripts/check-a11y-shards.sh (local gate and CI's required
-          # Gate Invariant job) fails on a spec in no list, in two lists, or a
-          # path that selects other files, and proves it with `playwright
-          # test --list` against the full suite. Put a NEW spec in the bin
-          # with the least time. To re-derive the bins: take the firefox
-          # shard jobs' logs from a few recent green runs (gh run view
-          # --log), sum each spec file's per-test durations from the list
-          # reporter's pass lines, which end in the test's duration
-          # ("N [firefox-a11y] > tests/a11y/<file>:L:C > <title> (12.3s)"),
-          # take the per-file median, and LPT-pack the files into the 4 bins.
-          # Change the entry count only together with `shards`.
+          # list per project: scripts/check-a11y-shards.sh (local gate and CI's
+          # required Gate Invariant job) fails on a spec in no list, in two
+          # lists, or a path that selects other files, and proves it with
+          # `playwright test --list` against the full suite. Put a NEW spec in
+          # the bin with the least time, in BOTH projects. To re-derive the
+          # bins: take each project's shard jobs' logs from a few recent green
+          # runs (gh run view --log), and per spec file take the time from the
+          # previous file's last list-reporter line (or the "Running N tests"
+          # line) to the file's own last line -- every line is timestamped and
+          # ends in the test's duration ("N [firefox-a11y] >
+          # tests/a11y/<file>:L:C > <title> (12.3s)"), but summing durations
+          # misses beforeAll hooks (~20s on nfo-mbid, ~15s on reports-contrast
+          # and fix-unavailable-badge). Take the per-file median and LPT-pack
+          # the files into that project's bins. Change the entry count only
+          # together with `shards`.
           - project: firefox-a11y
             engine: firefox
             shard: 1
             shards: 4
-            # ~250s of firefox test time
+            # ~234s of firefox test time (predicted: sum of per-file medians)
             specs: >-
+              tests/a11y/backdrop-perceptual.spec.js
+              tests/a11y/base-path-filter-idiom.spec.js
               tests/a11y/contrast.spec.js
+              tests/a11y/google-images-link.spec.js
+              tests/a11y/setup-restore-dropped-rows.spec.js
           - project: firefox-a11y
             engine: firefox
             shard: 2
             shards: 4
-            # ~227s of firefox test time
+            # ~233s of firefox test time (predicted: sum of per-file medians)
             specs: >-
-              tests/a11y/base-path-filter-idiom.spec.js
-              tests/a11y/cheat-sheet.spec.js
-              tests/a11y/merge-extrafanart-report.spec.js
+              tests/a11y/extrafanart-migration.spec.js
+              tests/a11y/filter-flyout-contrast.spec.js
               tests/a11y/mobile-nav.spec.js
-              tests/a11y/modal-escape.spec.js
               tests/a11y/muted-text-contrast.spec.js
-              tests/a11y/nfo-mbid.spec.js
-              tests/a11y/registry-repair-banner.spec.js
+              tests/a11y/platform-backdrop-fixture-hygiene.spec.js
+              tests/a11y/token-pairings.spec.js
               tests/a11y/users-panel-reveal.spec.js
           - project: firefox-a11y
             engine: firefox
             shard: 3
             shards: 4
-            # ~227s of firefox test time
+            # ~233s of firefox test time (predicted: sum of per-file medians)
             specs: >-
               tests/a11y/ai-blocklist-settings.spec.js
-              tests/a11y/backdrop-perceptual.spec.js
-              tests/a11y/blast-radius.spec.js
-              tests/a11y/filter-flyout-contrast.spec.js
+              tests/a11y/cheat-sheet.spec.js
+              tests/a11y/compliance-filter-flyout-resync.spec.js
+              tests/a11y/dialog-input-focus.spec.js
+              tests/a11y/fix-unavailable-badge.spec.js
               tests/a11y/history-producer.spec.js
-              tests/a11y/platform-backdrop-perceptual.spec.js
+              tests/a11y/merge-extrafanart-report.spec.js
               tests/a11y/registry-repair-run.spec.js
-              tests/a11y/reports-contrast.spec.js
               tests/a11y/rule-platform-prune-option.spec.js
-              tests/a11y/settings-import-dropped-rows.spec.js
-              tests/a11y/settings-sortable-single-load.spec.js
-              tests/a11y/token-pairings.spec.js
+              tests/a11y/websearch-ai-filter.spec.js
           - project: firefox-a11y
             engine: firefox
             shard: 4
             shards: 4
-            # ~227s of firefox test time
+            # ~233s of firefox test time (predicted: sum of per-file medians)
             specs: >-
-              tests/a11y/compliance-filter-flyout-resync.spec.js
-              tests/a11y/dialog-input-focus.spec.js
-              tests/a11y/extrafanart-migration.spec.js
+              tests/a11y/blast-radius.spec.js
               tests/a11y/extrafanart-migration-run.spec.js
               tests/a11y/filter-flyout-open-scan.spec.js
-              tests/a11y/fix-unavailable-badge.spec.js
-              tests/a11y/google-images-link.spec.js
-              tests/a11y/platform-backdrop-fixture-hygiene.spec.js
+              tests/a11y/modal-escape.spec.js
+              tests/a11y/nfo-mbid.spec.js
+              tests/a11y/platform-backdrop-perceptual.spec.js
+              tests/a11y/registry-repair-banner.spec.js
               tests/a11y/registry-repair-locale.spec.js
-              tests/a11y/setup-restore-dropped-rows.spec.js
-              tests/a11y/websearch-ai-filter.spec.js
+              tests/a11y/reports-contrast.spec.js
+              tests/a11y/settings-import-dropped-rows.spec.js
+              tests/a11y/settings-sortable-single-load.spec.js
               tests/a11y/websearch-unavailable.spec.js
           # Compatibility leg: a violation here still fails the required
           # check (see a11y-summary below) -- "compatibility" describes how
           # to read the finding, not a pass it gets on the CI verdict.
-          # 3 shards, not 2: playwright.config.js does not set fullyParallel,
-          # so --shard splits by whole spec FILE. At 2 the boundary fell just
-          # after muted-text-contrast.spec.js (46 tests), so shard 1 got all of
-          # it plus contrast.spec.js: 203 of 322 tests vs 119. Measured over 5
-          # successful runs, chromium 1/2's Playwright step had a median of
-          # 403s vs 215s for 2/2 (job medians 8.2m vs 5.2m), the slowest leg
-          # of the tier. At 3 the split is 109/120/93 tests on the same file
-          # boundaries firefox's --shard=k/3 used; summing per-spec medians
-          # from the job logs projects ~200s/251s/166s, so chromium 2/3 is
-          # ~356s with setup, under the ~380s target. Cost: one more runner's
-          # fixed setup (measured ~100s typical).
-          # Chromium keeps --shard (no `specs`) on purpose: it already meets
-          # the target, firefox 1/4 (~355s) sets the tier's pole either way,
-          # and count sharding needs no list upkeep (a new spec lands in a
-          # shard by itself). Explicit LPT lists would give ~206s x3, a gain
-          # nobody waits for. check-a11y-shards.sh proves this leg's --list
-          # union too, so the two mechanisms are guarded identically.
+          # CHROMIUM: 3 entries with explicit LPT lists too, from the same
+          # measured medians: ~614s of tests, ~205s per bin, a predicted ~307s
+          # per job (per-run bin sums 185-225s: run 44972681336 225/224/202s,
+          # 44973860058 185/185/208s, so up to ~5.7 min). It ran --shard=k/3 until the first x4 run measured chromium
+          # 2/3 (120 tests: muted-text-contrast.spec.js, ~129s here, plus its
+          # count-neighbours) at 6.3 min, past Build. A count split cannot fix
+          # that without more runners: --shard=k/4, simulated on the same
+          # medians, still puts ~236s of tests on one runner (~5.7 min). It is
+          # 3 bins, not 2: 2 would hold ~307s of tests each (~6.8 min).
+          # Both projects use lists, never a mix within one project; the
+          # checker supports --shard entries too and proves either the same way.
           - project: chromium-a11y
             engine: chromium
             shard: 1
             shards: 3
+            # ~205s of chromium test time (predicted: sum of per-file medians)
+            specs: >-
+              tests/a11y/ai-blocklist-settings.spec.js
+              tests/a11y/backdrop-perceptual.spec.js
+              tests/a11y/base-path-filter-idiom.spec.js
+              tests/a11y/blast-radius.spec.js
+              tests/a11y/dialog-input-focus.spec.js
+              tests/a11y/history-producer.spec.js
+              tests/a11y/muted-text-contrast.spec.js
+              tests/a11y/platform-backdrop-perceptual.spec.js
+              tests/a11y/rule-platform-prune-option.spec.js
+              tests/a11y/setup-restore-dropped-rows.spec.js
           - project: chromium-a11y
             engine: chromium
             shard: 2
             shards: 3
+            # ~205s of chromium test time (predicted: sum of per-file medians)
+            specs: >-
+              tests/a11y/contrast.spec.js
+              tests/a11y/extrafanart-migration-run.spec.js
+              tests/a11y/extrafanart-migration.spec.js
+              tests/a11y/filter-flyout-contrast.spec.js
+              tests/a11y/filter-flyout-open-scan.spec.js
+              tests/a11y/registry-repair-banner.spec.js
+              tests/a11y/reports-contrast.spec.js
+              tests/a11y/settings-sortable-single-load.spec.js
+              tests/a11y/users-panel-reveal.spec.js
+              tests/a11y/websearch-ai-filter.spec.js
+              tests/a11y/websearch-unavailable.spec.js
           - project: chromium-a11y
             engine: chromium
             shard: 3
             shards: 3
+            # ~205s of chromium test time (predicted: sum of per-file medians)
+            specs: >-
+              tests/a11y/cheat-sheet.spec.js
+              tests/a11y/compliance-filter-flyout-resync.spec.js
+              tests/a11y/fix-unavailable-badge.spec.js
+              tests/a11y/google-images-link.spec.js
+              tests/a11y/merge-extrafanart-report.spec.js
+              tests/a11y/mobile-nav.spec.js
+              tests/a11y/modal-escape.spec.js
+              tests/a11y/nfo-mbid.spec.js
+              tests/a11y/platform-backdrop-fixture-hygiene.spec.js
+              tests/a11y/registry-repair-locale.spec.js
+              tests/a11y/registry-repair-run.spec.js
+              tests/a11y/settings-import-dropped-rows.spec.js
+              tests/a11y/token-pairings.spec.js
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1107,8 +1154,9 @@ jobs:
         env:
           SW_PORT: ${{ steps.port.outputs.port }}
           SW_TEST_URL: http://127.0.0.1:${{ steps.port.outputs.port }}
-          # A `specs` entry (firefox) runs exactly its listed files; an entry
-          # without one (chromium) runs Playwright's count-based --shard. Both
+          # A `specs` entry (every entry today, both projects) runs exactly its
+          # listed files; an entry without one would run Playwright's
+          # count-based --shard (still supported by the guard). Both
           # set SW_A11Y_SHARD so global-teardown.js knows this run saw only a
           # slice of the suite (Playwright's config.shard is null for a
           # file-list run). scripts/a11y-shard-exec.sh is the ONE tokenizer of
