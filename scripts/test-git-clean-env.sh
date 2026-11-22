@@ -166,6 +166,7 @@ HELPERS=(
     test-pre-commit-plain-diff.sh
     test-prefs-coverage.sh
     test-a11y-select.sh
+    test-a11y-bg-build.sh
 )
 
 # Helpers whose own pass/fail verdict this suite enforces (see the loop below).

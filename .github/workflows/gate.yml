@@ -781,6 +781,9 @@ jobs:
           A11Y_SHARDS_LIST: require
         run: bash scripts/test-check-a11y-shards.sh
 
+      - name: a11y background binary build self-test
+        run: bash scripts/test-a11y-bg-build.sh
+
       - name: a11y scope (SPEC/PROJECT) self-test
         run: bash scripts/test-a11y-scope.sh
 

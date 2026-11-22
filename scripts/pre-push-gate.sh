@@ -245,6 +245,9 @@ if [ ! -x "$SCRIPT_DIR/../node_modules/.bin/playwright" ]; then
 fi
 A11Y_SHARDS_LIST=$shards_list bash "$SCRIPT_DIR/check-a11y-shards.sh"
 A11Y_SHARDS_LIST=$shards_list bash "$SCRIPT_DIR/test-check-a11y-shards.sh"
+# The a11y-test job's background binary build (start/wait): every failure
+# class must fail the wait step loudly. Hermetic (fake go), ~10s.
+bash "$SCRIPT_DIR/test-a11y-bg-build.sh"
 bash "$SCRIPT_DIR/test-a11y-scope.sh"
 bash "$SCRIPT_DIR/a11y-select.sh" --check
 bash "$SCRIPT_DIR/test-a11y-select.sh"
