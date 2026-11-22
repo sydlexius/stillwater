@@ -1183,8 +1183,7 @@ jobs:
       # so a failed build never publishes a half-filled cache. Skipped on an
       # exact hit: that entry already holds these inputs.
       - name: Save the a11y binary's Go cache
-        # TEMPORARY (PR #3635 warm-cache measurement): revert before review.
-        if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.head_ref == 'ci/a11y-shard-setup-speedup')) && matrix.project == 'firefox-a11y' && matrix.shard == 1 && steps.go-cache.outputs.cache-hit != 'true'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.project == 'firefox-a11y' && matrix.shard == 1 && steps.go-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
