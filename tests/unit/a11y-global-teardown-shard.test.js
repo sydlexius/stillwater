@@ -1,6 +1,7 @@
 // a11y-global-teardown-shard.test.js - pins #3442: the allowlist staleness
 // check must not call an entry stale in a SHARDED run (its spec may have run in
-// another shard), while an unsharded run still fails when nothing matched.
+// another shard, whether --shard or a CI file-list shard marked by SW_A11Y_SHARD),
+// while an unsharded run still fails when nothing matched.
 
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,6 +30,21 @@ test('sharded run: no stale verdict, one warning', async () => {
   assert.match(warns[0], /sharded run/);
 });
 
+// A firefox file-list shard (no --shard, so config.shard is null) is still a
+// slice of the suite: CI marks it with SW_A11Y_SHARD.
+test('file-list shard (SW_A11Y_SHARD, no config.shard): no stale verdict', async () => {
+  const warns = [];
+  const orig = console.warn;
+  console.warn = (m) => warns.push(m);
+  process.env.SW_A11Y_SHARD = '2/4';
+  try {
+    await globalTeardown({ shard: null });
+  } finally { console.warn = orig; delete process.env.SW_A11Y_SHARD; }
+  assert.equal(warns.length, 1);
+  assert.match(warns[0], /sharded run \(shard 2\/4\)/);
+});
+
 test('unsharded run: stale entry still fails', async () => {
+  delete process.env.SW_A11Y_SHARD;
   await assert.rejects(globalTeardown({ shard: null }), /Stale a11y allowance/);
 });

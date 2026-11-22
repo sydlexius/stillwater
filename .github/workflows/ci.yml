@@ -549,19 +549,20 @@ jobs:
 
   # Worker job: does the real a11y work, gated on the `a11y` path filter OR
   # harness_touched (see its `if:`).
-  # Sharded by Playwright project (#3183) and then by Playwright --shard
-  # (#3442): firefox-a11y and chromium-a11y each run as 3 shards, every shard on
+  # Sharded by Playwright project (#3183) and then into per-runner slices
+  # (#3442): firefox-a11y runs as 4 shards of explicit spec-file lists and
+  # chromium-a11y as 3 --shard slices (see the matrix comments), every shard on
   # its OWN runner with its OWN ephemeral server, so no two shards (of one
   # engine or of both) ever touch one another's server-side state (the
   # cross-talk hazard playwright.config.js's `workers: 1` comment describes is a
   # property of ONE shared server, not of parallelism -- see that file for the
-  # full reasoning). fullyParallel is off, so --shard splits by spec FILE.
+  # full reasoning). fullyParallel is off, so every shard runs whole spec FILES.
   # The always-running a11y-summary wrapper below owns the required "A11y Smoke
   # Tests (Playwright + axe-core)" check name so non-a11y PRs report success
   # rather than a permanently-skipped required context, and fans in every shard.
   a11y-test:
     # Per-shard display names render as "A11y Smoke Tests Check
-    # (firefox-a11y 1/3)" ... "(chromium-a11y 3/3)". None of them is a required
+    # (firefox-a11y 1/4)" ... "(chromium-a11y 3/3)". None of them is a required
     # check: the bare name is owned by a11y-summary below, so the required
     # check stays satisfied without a branch-protection update.
     name: A11y Smoke Tests Check (${{ matrix.project }} ${{ matrix.shard }}/${{ matrix.shards }})
@@ -597,18 +598,97 @@ jobs:
           # violation (see playwright.config.js), not whether it fails CI.
           # `shards` must equal the number of entries for that project: a
           # missing entry silently drops that slice of specs.
+          #
+          # FIREFOX: 4 entries with EXPLICIT, time-balanced spec lists, not
+          # --shard. Playwright splits --shard by TEST COUNT over whole files
+          # (fullyParallel is off on purpose, see playwright.config.js), so
+          # contrast.spec.js (~250s on firefox, 66% of it 8 painted-contrast
+          # sweeps) always landed with its count-neighbours. All numbers here
+          # are PROJECTED from per-file median durations, not measured shard
+          # runs: --shard=k/3 projects ~414/294/224s of tests (firefox 1/3
+          # ~8.7 min with setup, the tier's pole), and more count shards
+          # barely help (x4 380s, x6 323s). Bin-packing whole files by median
+          # duration (LPT: longest file first, into the lightest bin) projects
+          # ~250/227/227/227s, i.e. ~355s per job with the ~105s fixed setup,
+          # under the ~380s at which Build (median ~370s from run start) stops
+          # being the faster leg. The per-bin "~NNNs" comments below are the
+          # same projection.
+          # `specs` is a folded `>-` scalar (ONE line; `|` fails the guard and
+          # the run step) holding full repo paths, because Playwright's file
+          # filters are case-insensitive regex SUBSTRING matches: a bare
+          # "contrast.spec.js" also selects filter-flyout-, muted-text- and
+          # reports-contrast.
+          #
+          # REBALANCE as specs grow. Every spec file must be in exactly one
+          # list: scripts/check-a11y-shards.sh (local gate and CI's required
+          # Gate Invariant job) fails on a spec in no list, in two lists, or a
+          # path that selects other files, and proves it with `playwright
+          # test --list` against the full suite. Put a NEW spec in the bin
+          # with the least time. To re-derive the bins: take the firefox
+          # shard jobs' logs from a few recent green runs (gh run view
+          # --log), sum each spec file's per-test durations from the list
+          # reporter's pass lines, which end in the test's duration
+          # ("N [firefox-a11y] > tests/a11y/<file>:L:C > <title> (12.3s)"),
+          # take the per-file median, and LPT-pack the files into the 4 bins.
+          # Change the entry count only together with `shards`.
           - project: firefox-a11y
             engine: firefox
             shard: 1
-            shards: 3
+            shards: 4
+            # ~250s of firefox test time
+            specs: >-
+              tests/a11y/contrast.spec.js
           - project: firefox-a11y
             engine: firefox
             shard: 2
-            shards: 3
+            shards: 4
+            # ~227s of firefox test time
+            specs: >-
+              tests/a11y/base-path-filter-idiom.spec.js
+              tests/a11y/cheat-sheet.spec.js
+              tests/a11y/merge-extrafanart-report.spec.js
+              tests/a11y/mobile-nav.spec.js
+              tests/a11y/modal-escape.spec.js
+              tests/a11y/muted-text-contrast.spec.js
+              tests/a11y/nfo-mbid.spec.js
+              tests/a11y/registry-repair-banner.spec.js
+              tests/a11y/users-panel-reveal.spec.js
           - project: firefox-a11y
             engine: firefox
             shard: 3
-            shards: 3
+            shards: 4
+            # ~227s of firefox test time
+            specs: >-
+              tests/a11y/ai-blocklist-settings.spec.js
+              tests/a11y/backdrop-perceptual.spec.js
+              tests/a11y/blast-radius.spec.js
+              tests/a11y/filter-flyout-contrast.spec.js
+              tests/a11y/history-producer.spec.js
+              tests/a11y/platform-backdrop-perceptual.spec.js
+              tests/a11y/registry-repair-run.spec.js
+              tests/a11y/reports-contrast.spec.js
+              tests/a11y/rule-platform-prune-option.spec.js
+              tests/a11y/settings-import-dropped-rows.spec.js
+              tests/a11y/settings-sortable-single-load.spec.js
+              tests/a11y/token-pairings.spec.js
+          - project: firefox-a11y
+            engine: firefox
+            shard: 4
+            shards: 4
+            # ~227s of firefox test time
+            specs: >-
+              tests/a11y/compliance-filter-flyout-resync.spec.js
+              tests/a11y/dialog-input-focus.spec.js
+              tests/a11y/extrafanart-migration.spec.js
+              tests/a11y/extrafanart-migration-run.spec.js
+              tests/a11y/filter-flyout-open-scan.spec.js
+              tests/a11y/fix-unavailable-badge.spec.js
+              tests/a11y/google-images-link.spec.js
+              tests/a11y/platform-backdrop-fixture-hygiene.spec.js
+              tests/a11y/registry-repair-locale.spec.js
+              tests/a11y/setup-restore-dropped-rows.spec.js
+              tests/a11y/websearch-ai-filter.spec.js
+              tests/a11y/websearch-unavailable.spec.js
           # Compatibility leg: a violation here still fails the required
           # check (see a11y-summary below) -- "compatibility" describes how
           # to read the finding, not a pass it gets on the CI verdict.
@@ -619,9 +699,16 @@ jobs:
           # successful runs, chromium 1/2's Playwright step had a median of
           # 403s vs 215s for 2/2 (job medians 8.2m vs 5.2m), the slowest leg
           # of the tier. At 3 the split is 109/120/93 tests on the same file
-          # boundaries as firefox's 3; summing per-spec medians from the job
-          # logs projects ~200s/250s/165s, so the slowest leg becomes firefox
-          # 1/3. Cost: one more runner's fixed setup (measured ~100s typical).
+          # boundaries firefox's --shard=k/3 used; summing per-spec medians
+          # from the job logs projects ~200s/251s/166s, so chromium 2/3 is
+          # ~356s with setup, under the ~380s target. Cost: one more runner's
+          # fixed setup (measured ~100s typical).
+          # Chromium keeps --shard (no `specs`) on purpose: it already meets
+          # the target, firefox 1/4 (~355s) sets the tier's pole either way,
+          # and count sharding needs no list upkeep (a new spec lands in a
+          # shard by itself). Explicit LPT lists would give ~206s x3, a gain
+          # nobody waits for. check-a11y-shards.sh proves this leg's --list
+          # union too, so the two mechanisms are guarded identically.
           - project: chromium-a11y
             engine: chromium
             shard: 1
@@ -1017,7 +1104,33 @@ jobs:
         env:
           SW_PORT: ${{ steps.port.outputs.port }}
           SW_TEST_URL: http://127.0.0.1:${{ steps.port.outputs.port }}
-        run: npx playwright test --config=playwright.config.js --project=${{ matrix.project }} --shard=${{ matrix.shard }}/${{ matrix.shards }}
+          # A `specs` entry (firefox) runs exactly its listed files; an entry
+          # without one (chromium) runs Playwright's count-based --shard. Both
+          # set SW_A11Y_SHARD so global-teardown.js knows this run saw only a
+          # slice of the suite (Playwright's config.shard is null for a
+          # file-list run). scripts/a11y-shard-exec.sh is the ONE tokenizer of
+          # SPECS: it fails on a multi-line or non-ASCII value, a non-normalized
+          # path or no paths, logs the exact filters, and appends them.
+          # check-a11y-shards.sh pins this step: the run line must match its
+          # RUN constant byte for byte and this env block its STEP_ENV exactly,
+          # and the step may not gain any other key (if, continue-on-error,
+          # shell, timeout-minutes, id, working-directory, ...). The job may
+          # not set env, container, services, continue-on-error or defaults,
+          # and no other step's run may name Playwright (any case, beyond
+          # browser installs) or GITHUB_ENV/GITHUB_PATH/BASH_ENV. Its --list
+          # proof runs this exact argv per entry, so editing the line or the
+          # env here fails the Gate Invariant job until the checker agrees.
+          # Blind spots (it claims no more): it cannot see other steps' side
+          # effects beyond those rejected patterns (a step that deletes or
+          # edits a spec or the config, or reaches the env files through
+          # indirection, passes; the patterns are textual), composite and other
+          # `uses:` actions, runner images, workflow-level env, or spec-level
+          # skips (`test.skip`/`fixme` inside a spec).
+          SPECS: ${{ matrix.specs }}
+          SW_A11Y_SHARD: ${{ matrix.shard }}/${{ matrix.shards }}
+          PROJECT: ${{ matrix.project }}
+        run: |
+          bash scripts/a11y-shard-exec.sh npx playwright test --config=playwright.config.js --project="$PROJECT"
 
       - name: Stop Stillwater
         if: always()

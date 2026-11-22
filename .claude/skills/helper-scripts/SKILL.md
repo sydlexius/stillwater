@@ -43,9 +43,30 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
   `Gate Invariant` job.
 - `scripts/test-check-pr-trigger-scope.sh` -- hermetic mutation tests for the above.
 - `scripts/check-a11y-shards.sh` -- assert each project in `ci.yml`'s `a11y-test`
-  matrix lists shards exactly 1..N with a constant `shards` (#3442), so a dropped
-  or duplicated shard cannot silently skip specs; `scripts/test-check-a11y-shards.sh`
-  is its mutation test. Run by the gate and the `Gate Invariant` job.
+  matrix lists shards exactly 1..N with a constant `shards` (#3442), that firefox's
+  explicit `specs` lists name every spec file exactly once, and (via `playwright
+  test --list`, needs `npm ci`) that the shards' tests union to the full list
+  with no overlap, so a dropped, duplicated or newly added spec cannot be
+  silently skipped; `scripts/test-check-a11y-shards.sh` is its mutation test.
+  It reads and lists every entry through `scripts/a11y-shard-exec.sh`, the one
+  tokenizer CI's a11y run step also uses (single-line `specs` only). It pins
+  that step exactly (run line of plain words, env, no other key such as
+  `if`/`continue-on-error`/`shell`/`working-directory`; no job-level
+  `env`/`container`/`services`/`continue-on-error`/`defaults`, no
+  workflow-level `defaults`, no other step's run naming Playwright or
+  GITHUB_ENV/GITHUB_PATH/BASH_ENV) and its `--list` proof runs the run line's
+  own argv per entry, so the argv it proves is the argv bash runs in CI.
+  Blind spots (it claims no more): it cannot see other steps' side effects
+  beyond those rejected patterns (a step that deletes or edits a spec or the
+  config, or reaches the env files through indirection, passes; the patterns
+  are textual), composite and other `uses:` actions, runner images,
+  workflow-level env, or spec-level skips (`test.skip`/`fixme` inside a spec).
+  Run by the gate and the `Gate Invariant` job (which runs `npm ci` and
+  requires the `--list` layer). In the gate the `--list`
+  layer runs whenever node_modules has playwright; without it, it FAILS ("run
+  npm ci") if any partition input changed (ci.yml, playwright.config.js,
+  tests/a11y, package*.json, the checker, its harness, the tokenizer), and SKIPs
+  loudly only when none did.
 - `scripts/a11y-scope.sh` -- turns `make test-a11y`'s `SPEC` (space/comma-separated
   `tests/a11y/*.spec.js` globs) and `PROJECT` (firefox|chromium) into anchored Playwright
   args (#3608). Refuses any other token and any glob matching nothing (exit 2), so an
