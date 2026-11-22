@@ -420,6 +420,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Download Go modules (bounded retry)
+        run: bash scripts/go-mod-download-retry.sh
+
       - name: Generate templ
         run: go tool templ generate
 
@@ -1248,6 +1251,21 @@ jobs:
             ${{ runner.os }}-go-${{ hashFiles('go.mod', '**/go.sum') }}-
             ${{ runner.os }}-go-
 
+      # A dependency-bump PR changes go.sum, so the go.sum-hash restore-key above
+      # matches nothing and the shard lands on the bare `<os>-go-` fallback:
+      # main's cache, warm except the bumped module. Without this step each
+      # shard fetches that module from proxy.golang.org inside `go test` with
+      # no retry; one TLS handshake timeout failed #3619's rule-2 shard before
+      # any test ran. Each shard still fetches its own copy: this step adds a
+      # bounded retry (3 attempts, 5s/15s backoff, 120s each, loud ::error::)
+      # and moves the fetch ahead of every network-touching go command. On a
+      # complete cache it costs ~0.02s. It sits before "Resolve shard package
+      # list" because the `rest` shard's `go list` can also fetch modules.
+      # The same step follows setup-go in every Go job on the PR path;
+      # scripts/test-go-mod-download-retry.sh pins each placement.
+      - name: Download Go modules (bounded retry)
+        run: bash scripts/go-mod-download-retry.sh
+
       # Resolve the package list (and optional -run bucket regex) for this
       # shard. Named shards (services / settingsio / providers / scan / cmd /
       # updater) come from the SHARDS map below. The partitioned bases (api /
@@ -1477,6 +1495,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Download Go modules (bounded retry)
+        run: bash scripts/go-mod-download-retry.sh
+
       - name: Merge coverage profiles
         # go tool gocovmerge performs a per-block UNION merge (summing hit
         # counts), so each statement block appears exactly once in the output.
@@ -1519,6 +1540,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Download Go modules (bounded retry)
+        run: bash scripts/go-mod-download-retry.sh
 
       - name: Download coverage artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -1618,6 +1642,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Download Go modules (bounded retry)
+        if: ${{ matrix.skip != true }}
+        run: bash scripts/go-mod-download-retry.sh
 
       - name: Generate templ
         if: ${{ matrix.skip != true }}
