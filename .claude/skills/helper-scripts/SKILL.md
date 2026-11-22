@@ -56,6 +56,14 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
   workflow-level `defaults`, no other step's run naming Playwright or
   GITHUB_ENV/GITHUB_PATH/BASH_ENV) and its `--list` proof runs the run line's
   own argv per entry, so the argv it proves is the argv bash runs in CI.
+  It also pins the background binary build's step order by step name (each
+  step exactly once): setup-go < Go cache restore < `Generate templ` <
+  `Build Tailwind CSS` < `Start the binary build` < setup-node, the start <
+  the wait < `Start Stillwater`, the wait < the Go cache save; and no step
+  between the start and the wait may name web/static/, templ, tailwind,
+  `go generate` or a `*.go`/`*.templ` file (textual). `styles.css` and
+  `*_templ.go` are committed, so a build started too early passes on stale
+  assets with no other check failing.
   Blind spots (it claims no more): it cannot see other steps' side effects
   beyond those rejected patterns (a step that deletes or edits a spec or the
   config, or reaches the env files through indirection, passes; the patterns
@@ -67,6 +75,20 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
   npm ci") if any partition input changed (ci.yml, playwright.config.js,
   tests/a11y, package*.json, the checker, its harness, the tokenizer), and SKIPs
   loudly only when none did.
+- `scripts/a11y-bg-build.sh` -- `start|wait <state-dir>`: the `a11y-test` job's
+  binary build, run in the background so it overlaps the browser/apt setup.
+  `start` launches `go build` detached in its own process group; `wait` prints
+  the full build output and fails on a non-zero exit, a build killed from
+  outside, a missing binary, or a hang past `A11Y_BUILD_TIMEOUT` (default 600s
+  after start; the whole group is killed). State passes in files under the
+  state dir, never the runner's env files (the a11y shard guard bans them).
+  `scripts/test-a11y-bg-build.sh` is its hermetic test (fake go; every case
+  under a 20s `timeout`/`gtimeout` watchdog, so a hang regression fails fast,
+  and its EXIT trap kills every fake process group), run by the gate and the
+  `Gate Invariant` job. Expected saving, two separate parts: the overlap,
+  ~30s median per shard, from a MEASURED setup window (every run shows it,
+  PRs included); and the warm cache, ~11s more, MODELED, visible only once a
+  main push has saved an `a11y-go-` entry (PRs never save one).
 - `scripts/a11y-scope.sh` -- turns `make test-a11y`'s `SPEC` (space/comma-separated
   `tests/a11y/*.spec.js` globs) and `PROJECT` (firefox|chromium) into anchored Playwright
   args (#3608). Refuses any other token and any glob matching nothing (exit 2), so an

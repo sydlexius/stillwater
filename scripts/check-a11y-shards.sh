@@ -29,6 +29,18 @@
 # workflow-level env, or spec-level skips (`test.skip`/`fixme` inside a spec).
 # A project uses one mechanism for all of its entries, never a mix.
 #
+# Step order of the background binary build (scripts/a11y-bg-build.sh). The
+# build embeds web/static/ and compiles the templ output, both COMMITTED, so a
+# build started too early passes on stale CSS with no failure anywhere. By step
+# name (setup-go and setup-node by their `uses` action), each exactly once:
+# setup-go < "Restore the a11y binary's Go cache" < "Generate templ" < "Build
+# Tailwind CSS" < "Start the binary build (background)" < setup-node; the start
+# < "Wait for the binary build" < "Start Stillwater (ephemeral)"; the wait <
+# "Save the a11y binary's Go cache". A missing or duplicated step fails. No step
+# strictly between the start and the wait may mention web/static/, templ,
+# tailwind, go generate, or a *.go / *.templ name in its `run` or `uses` (a
+# TEXTUAL check: it cannot see a write reached through indirection).
+#
 # Layer 1, structural (python3 + PyYAML only, always runs). Per project: every
 # entry carries `shard` and `shards` as positive integers, `shards` constant,
 # the entry count equal to it, and the `shard` values exactly 1..N; the
@@ -203,6 +215,54 @@ for where, d in (("job", job), ("workflow", wf)):
                        f"shell or directory), got {d.get('defaults')!r}")
 if set(job["strategy"]["matrix"]) != {"include"}:
     run_bad.append(f"a11y-test: the matrix must hold only `include`, got {sorted(job['strategy']['matrix'])}")
+
+# ---- the background build's step order (see the header) -------------------
+# web/static/css/styles.css and every *_templ.go are COMMITTED, and nothing else
+# in CI checks styles.css is fresh. So a `go build` started before templ or
+# Tailwind finished (or a generator run while it compiles) still succeeds: it
+# embeds the stale committed CSS and the contrast specs test the wrong sheet,
+# silently. The order is asserted here instead. A step is identified by its
+# `name`; the two unnamed setup actions by their `uses` (the action, before @).
+SETUP_GO, SETUP_NODE = "uses: actions/setup-go", "uses: actions/setup-node"
+GO_RESTORE, TEMPL, TAILWIND = "Restore the a11y binary's Go cache", "Generate templ", "Build Tailwind CSS"
+BG_START, BG_WAIT = "Start the binary build (background)", "Wait for the binary build"
+GO_SAVE, SERVER = "Save the a11y binary's Go cache", "Start Stillwater (ephemeral)"
+# Each consecutive pair must be in this order (strictly; each step exactly once).
+BG_ORDER = [(SETUP_GO, GO_RESTORE), (GO_RESTORE, TEMPL), (TEMPL, TAILWIND), (TAILWIND, BG_START),
+            (BG_START, SETUP_NODE), (BG_START, BG_WAIT), (BG_WAIT, SERVER), (BG_WAIT, GO_SAVE)]
+def step_id(x):
+    if x.get("name") is not None:
+        return str(x["name"])
+    u = x.get("uses")
+    return f"uses: {str(u).split('@', 1)[0]}" if u is not None else None
+ids = [step_id(x) for x in steps]
+at = {}
+for want in dict.fromkeys(k for pair in BG_ORDER for k in pair):
+    hits = [i for i, s in enumerate(ids) if s == want]
+    if len(hits) != 1:
+        run_bad.append(f"a11y-test step order: want exactly one step {want!r}, found {len(hits)}"
+                       + (f" (steps #{', #'.join(str(i + 1) for i in hits)})" if hits else "")
+                       + "; the background build's order cannot be checked without it")
+    else:
+        at[want] = hits[0]
+for a, b in BG_ORDER:
+    if a in at and b in at and not at[a] < at[b]:
+        run_bad.append(f"a11y-test step order: step {a!r} (#{at[a] + 1}) must come before step {b!r} "
+                       f"(#{at[b] + 1}); go build must start only after the files it embeds are generated")
+# While the build compiles, no step may (re)generate or edit what it reads. The
+# check is TEXTUAL, on each step's `run` (whole-line comments dropped) and
+# `uses`: any mention of web/static/, templ, tailwind (any case), go generate,
+# or a *.go / *.templ file name fails, whether or not the step would write it.
+gen_tok = re.compile(r"web/static/|\btempl\b|tailwind|\bgo\s+generate\b|\.go\b|\.templ\b", re.I)
+if BG_START in at and BG_WAIT in at:
+    for x in steps[at[BG_START] + 1:at[BG_WAIT]]:
+        raw = str(x.get("run", ""))
+        code = "\n".join(ln for ln in raw.splitlines() if not ln.lstrip().startswith("#"))
+        hit = sorted({m.group(0) for m in gen_tok.finditer(code + "\n" + str(x.get("uses", "")))})
+        if hit:
+            run_bad.append(f"a11y-test step order: step {step_id(x)!r} runs between {BG_START!r} and {BG_WAIT!r} "
+                           f"and mentions {hit}; nothing may regenerate or edit the build's inputs "
+                           f"(web/static/, templ, Tailwind, go generate, *.go, *.templ) while it compiles")
 # RUN's argv, with the four CI-bound words mapped to this checkout. Each must
 # occur exactly once, so an edit to RUN that drops or repeats one fails here.
 PROJECT_WORD = '--project="$PROJECT"'

@@ -183,8 +183,11 @@ JOBS = {
     ("codeql.yml", "analyze"): None,
 }
 # Cached-Go PR-path jobs deliberately not covered here, with the reason.
+# a11y-test runs setup-go with cache: false (so the scan already skips it) and
+# restores its own a11y-go- GOCACHE + GOMODCACHE entry; the entry stays as the
+# record of why it is not wired if that cache: false is ever reverted.
 EXEMPT = {
-    ("ci.yml", "a11y-test"): "owned by the a11y shard branch; check-a11y-shards.sh pins that job",
+    ("ci.yml", "a11y-test"): "setup-go cache: false + its own a11y-go- cache; check-a11y-shards.sh pins its steps",
 }
 GO_CMD = re.compile(r"(^|[\s;&|(`])go\s+(mod|test|build|run|list|vet|tool|generate|install|env|get)\b", re.M)
 GO_ACTIONS = ("golangci/golangci-lint-action@",)

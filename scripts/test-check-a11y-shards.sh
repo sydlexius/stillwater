@@ -142,6 +142,58 @@ w("wf-defaults", sub1("\npermissions:", "\ndefaults:\n  run:\n    shell: sh\nper
 w("matrix-exclude", sub1("        include:\n", "        exclude:\n          - project: chromium-a11y\n            shard: 2\n        include:\n"))
 w("step-wd", sub1(step, "        working-directory: .\n" + step))
 open(f"{t}/extra.js", "w").write(open(sys.argv[3]).read() + "\n  { name: 'webkit-a11y' },\n")
+# F1: the background build's step order. blocks() splits the a11y-test job's
+# steps into their source text (each from its `      - ` line to the next; the
+# comments above a step ride with the step before it, which YAML ignores).
+def blocks(text=s):
+    js = text.index("\n  a11y-test:\n") + 1
+    nxt = re.compile(r"^  [A-Za-z0-9_-]+:\n", re.M).search(text, js + 1)
+    je = nxt.start() if nxt else len(text)
+    ss = text.index("\n    steps:\n", js) + len("\n    steps:\n")
+    st = [m.start() + ss for m in re.finditer(r"^      - ", text[ss:je], re.M)] + [je]
+    return text[:st[0]], [text[a:b] for a, b in zip(st, st[1:])], text[je:]
+def find(bl, key):
+    hit = [i for i, b in enumerate(bl) if key in b.split("\n", 1)[0]]
+    assert len(hit) == 1, (key, hit)
+    return hit[0]
+def move(key, before):
+    """Move the step whose first line holds `key` to just before the step `before`."""
+    head, bl, tail = blocks()
+    b = bl.pop(find(bl, key))
+    bl.insert(find(bl, before), b)
+    return head + "".join(bl) + tail
+START, WAIT = "name: Start the binary build (background)", "name: Wait for the binary build"
+SAVE, SERVER = "name: Save the a11y binary's Go cache", "name: Start Stillwater (ephemeral)"
+w("ord-start-above-tailwind", move(START, "name: Build Tailwind CSS"))
+w("ord-wait-after-server", move(WAIT, "name: Wait for server ready"))
+w("ord-save-before-wait", move(SAVE, WAIT))
+w("ord-node-above-start", move("uses: actions/setup-node@", START))
+w("ord-templ-below-start", move("name: Generate templ", "uses: actions/setup-node@"))
+# Each BG_ORDER pair must be the deciding rule of at least one case (deleting the
+# pair from the checker must fail this harness), so these move a step across
+# exactly one pair and nowhere the between-start-and-wait scan would also see it.
+TWS = "name: Build Tailwind CSS"
+w("ord-tailwind-after-wait", move(TWS, SAVE))
+w("ord-tailwind-after-server", move(TWS, "name: Wait for server ready"))
+w("ord-restore-above-setup-go", move("name: Restore the a11y binary's Go cache", "uses: actions/setup-go@"))
+w("ord-templ-above-restore", move("name: Generate templ", "name: Restore the a11y binary's Go cache"))
+w("ord-wait-above-start", move(WAIT, START))
+head, bl, tail = blocks()
+i = find(bl, START)
+w("ord-start-removed", head + "".join(bl[:i] + bl[i + 1:]) + tail)
+w("ord-start-dup", head + "".join(bl[:i + 1] + [bl[i]] + bl[i + 1:]) + tail)
+j = find(bl, "uses: actions/setup-go@")
+w("ord-setup-go-removed", head + "".join(bl[:j] + bl[j + 1:]) + tail)
+def between(name, body):
+    """Insert a step between the start and the wait (just before npm ci)."""
+    return sub1("      - name: Install JS dependencies\n",
+                f"      - name: {name}\n        run: {body}\n\n      - name: Install JS dependencies\n")
+w("ord-mid-npx-tailwind", between("Rebuild CSS", "npx @tailwindcss/cli -i web/static/css/input.css -o web/static/css/styles.css"))
+w("ord-mid-tailwindcss", between("Rebuild CSS", "tailwindcss -i in.css -o out.css --minify"))
+w("ord-mid-templ", between("Regen", "go tool templ generate"))
+w("ord-mid-go-generate", between("Regen", "go generate ./..."))
+w("ord-mid-edit-go", between("Patch", "sed -i s/a/b/ internal/version/version.go"))
+w("ord-mid-comment-only", between("Harmless", "|\n          # tailwind and templ are only named in this comment\n          true"))
 PYEOF
 
 NOPW="$T/no-playwright"
@@ -204,6 +256,44 @@ expect FAIL "rejects a duplicated run key" "$T/dup-run.yml" "$CFG" "$NOPW" "cann
 expect FAIL "rejects workflow-level defaults" "$T/wf-defaults.yml" "$CFG" "$NOPW" "workflow-level \`defaults\` must be absent"
 expect FAIL "rejects a matrix exclude" "$T/matrix-exclude.yml" "$CFG" "$NOPW" "the matrix must hold only \`include\`, got ['exclude', 'include']"
 expect FAIL "rejects step working-directory" "$T/step-wd.yml" "$CFG" "$NOPW" "$KEYS" "'working-directory'"
+# F1: the background build's step order.
+ORD="a11y-test step order:"
+TW="'Build Tailwind CSS'" ST="'Start the binary build (background)'" WT="'Wait for the binary build'"
+expect FAIL "order: start moved above Tailwind" "$T/ord-start-above-tailwind.yml" "$CFG" "$NOPW" \
+  "$ORD step $TW (#" "must come before step $ST"
+expect FAIL "order: wait moved after Start Stillwater" "$T/ord-wait-after-server.yml" "$CFG" "$NOPW" \
+  "$ORD step $WT (#" "must come before step 'Start Stillwater (ephemeral)'"
+expect FAIL "order: save moved before wait" "$T/ord-save-before-wait.yml" "$CFG" "$NOPW" \
+  "$ORD step $WT (#" "must come before step \"Save the a11y binary's Go cache\""
+expect FAIL "order: setup-node moved above start" "$T/ord-node-above-start.yml" "$CFG" "$NOPW" \
+  "$ORD step $ST (#" "must come before step 'uses: actions/setup-node'"
+expect FAIL "order: templ moved below start" "$T/ord-templ-below-start.yml" "$CFG" "$NOPW" \
+  "$ORD step 'Generate templ' (#" "must come before step $TW"
+TWRE="re:$ORD step 'Build Tailwind CSS' \\(#[0-9]+\\) must come before step 'Start the binary build \\(background\\)' \\(#[0-9]+\\)"
+expect FAIL "order: Tailwind moved after the wait (go build embeds the stale committed CSS)" \
+  "$T/ord-tailwind-after-wait.yml" "$CFG" "$NOPW" "$TWRE"
+expect FAIL "order: Tailwind moved after Start Stillwater" "$T/ord-tailwind-after-server.yml" "$CFG" "$NOPW" "$TWRE"
+expect FAIL "order: Go cache restore moved above setup-go" "$T/ord-restore-above-setup-go.yml" "$CFG" "$NOPW" \
+  "$ORD step 'uses: actions/setup-go' (#" "must come before step \"Restore the a11y binary's Go cache\""
+expect FAIL "order: templ moved above the Go cache restore" "$T/ord-templ-above-restore.yml" "$CFG" "$NOPW" \
+  "$ORD step \"Restore the a11y binary's Go cache\" (#" "must come before step 'Generate templ'"
+expect FAIL "order: wait moved above start" "$T/ord-wait-above-start.yml" "$CFG" "$NOPW" \
+  "$ORD step $ST (#" "must come before step $WT"
+expect FAIL "order: start step removed" "$T/ord-start-removed.yml" "$CFG" "$NOPW" \
+  "$ORD want exactly one step $ST, found 0;"
+expect FAIL "order: start step duplicated" "$T/ord-start-dup.yml" "$CFG" "$NOPW" \
+  "$ORD want exactly one step $ST, found 2 (steps #"
+expect FAIL "order: setup-go removed" "$T/ord-setup-go-removed.yml" "$CFG" "$NOPW" \
+  "$ORD want exactly one step 'uses: actions/setup-go', found 0;"
+MID="runs between $ST and $WT and mentions"
+expect FAIL "order: npx @tailwindcss/cli between start and wait" "$T/ord-mid-npx-tailwind.yml" "$CFG" "$NOPW" \
+  "$ORD step 'Rebuild CSS' $MID" "'tailwind'" "'web/static/'"
+expect FAIL "order: the repo's tailwindcss invocation between start and wait" "$T/ord-mid-tailwindcss.yml" "$CFG" "$NOPW" \
+  "$ORD step 'Rebuild CSS' $MID ['tailwind']"
+expect FAIL "order: templ generate between start and wait" "$T/ord-mid-templ.yml" "$CFG" "$NOPW" "$ORD step 'Regen' $MID ['templ']"
+expect FAIL "order: go generate between start and wait" "$T/ord-mid-go-generate.yml" "$CFG" "$NOPW" "$ORD step 'Regen' $MID ['go generate']"
+expect FAIL "order: a *.go edit between start and wait" "$T/ord-mid-edit-go.yml" "$CFG" "$NOPW" "$ORD step 'Patch' $MID ['.go']"
+expect OK "order: a comment naming tailwind/templ between start and wait is not a hit" "$T/ord-mid-comment-only.yml" "$CFG" "$NOPW"
 # R3-I2/M2: a COHERENT edit of RUN (checker constant and ci.yml line together).
 # A scratch copy of the checker (with the tokenizer beside it) carries the new RUN.
 # shellcheck disable=SC2016 # RUN's literal text: $PROJECT is expanded by CI's bash, not here

@@ -361,9 +361,18 @@ jobs:
 
   # Prune stale per-commit Go caches. The primer's key embeds github.sha (see
   # above), so every main commit adds an ~800 MB entry and nothing evicts the
-  # old ones before the 10 GiB cap (8 entries = ~6.4 GiB of dead weight). Only
-  # the primer saves a Go cache (the test shards use actions/cache/restore), so
-  # this is the single writer to keep in step with.
+  # old ones before the 10 GiB cap (8 entries = ~6.4 GiB of dead weight). Two
+  # writers save such a Go cache, both on main only, and each prefix is pruned
+  # to KEEP on its own: the primer (`Linux-go-`; the test shards only restore)
+  # and the a11y-test job's binary cache (`a11y-go-`, ~250 MB, saved by one
+  # shard when the Go build inputs changed; its key is content-derived, so a
+  # main push with unchanged Go inputs saves nothing). setup-go's own
+  # `setup-go-` entries are one per go.sum and out of scope. Those saves happen on
+  # pushes that change Go code, which run the primer and so this job too.
+  # This job does not wait for a11y-test, so it can run before that push's
+  # a11y save: the a11y prefix then peaks at KEEP+1 entries until the next
+  # prune (still bounded; GitHub's 7-day eviction backstops a gap). GOCACHE
+  # inside an entry stays bounded by Go's own trim of objects unused 5 days.
   # Ordering: actions/cache saves in its POST step, after every normal step of
   # the primer job, so pruning inside that job would run BEFORE this commit's
   # save. A separate job with `needs: go-cache-primer` starts only after the
@@ -373,7 +382,8 @@ jobs:
   # runs are cancelled by the workflow-level concurrency group). KEEP must not
   # drop to 1. Trade-off: re-running an old main commit re-saves its entry and
   # can push the head's entry out (lost warmth only; heals on the next push).
-  # Scope: main-ref `Linux-go-` entries only; PR-ref and other caches untouched.
+  # Scope: main-ref `Linux-go-` and `a11y-go-` entries only; PR-ref and other
+  # caches untouched.
   # Fail-safe: a listing or delete failure only warns, never fails CI.
   prune-go-caches:
     name: Prune Stale Go Caches
@@ -389,17 +399,22 @@ jobs:
           REPO: ${{ github.repository }}
           KEEP: "2"
         run: |
-          # --paginate: more than 100 entries exist, one page would miss some.
-          ids=$(gh api --paginate "repos/${REPO}/actions/caches?per_page=100&ref=refs/heads/main&key=Linux-go-" \
-            --jq '.actions_caches[] | .id' 2>/dev/null) || {
-            echo "::warning::cache listing failed; skipping prune."; exit 0; }
-          # Ids are monotonic: highest = newest; everything past the first KEEP is stale.
-          stale=$(printf '%s\n' "$ids" | sed '/^$/d' | sort -rn | tail -n +$((KEEP + 1)))
-          [ -z "$stale" ] && { echo "Nothing to prune (<= ${KEEP} Go caches)."; exit 0; }
-          for id in $stale; do
-            gh api -X DELETE "repos/${REPO}/actions/caches/${id}" >/dev/null \
-              && echo "Deleted cache ${id}" \
-              || echo "::warning::could not delete cache ${id}"
+          # One pass per writer's key prefix (see the job comment). The listing
+          # `key` filter is a prefix match, and neither prefix is a prefix of
+          # the other, so a pass never sees the other writer's entries.
+          for prefix in Linux-go- a11y-go-; do
+            # --paginate: more than 100 entries exist, one page would miss some.
+            ids=$(gh api --paginate "repos/${REPO}/actions/caches?per_page=100&ref=refs/heads/main&key=${prefix}" \
+              --jq '.actions_caches[] | .id' 2>/dev/null) || {
+              echo "::warning::cache listing failed for ${prefix}; skipping its prune."; continue; }
+            # Ids are monotonic: highest = newest; everything past the first KEEP is stale.
+            stale=$(printf '%s\n' "$ids" | sed '/^$/d' | sort -rn | tail -n +$((KEEP + 1)))
+            [ -z "$stale" ] && { echo "Nothing to prune (<= ${KEEP} ${prefix} caches)."; continue; }
+            for id in $stale; do
+              gh api -X DELETE "repos/${REPO}/actions/caches/${id}" >/dev/null \
+                && echo "Deleted ${prefix} cache ${id}" \
+                || echo "::warning::could not delete cache ${id}"
+            done
           done
 
   # Worker job: does the real lint work, gated on code changes. The always-
@@ -776,15 +791,86 @@ jobs:
         with:
           persist-credentials: false
 
+      # cache: false -- the restore step below owns this job's Go cache.
+      # setup-go's built-in cache is ONE immutable entry keyed on go.sum, shared
+      # with lint/coverage/build-matrix and created on main by whichever of them
+      # saved first: it lacked 6 modules this binary needs and every build
+      # object for it, so each shard re-downloaded those modules and compiled
+      # cold (32-50s).
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # A DEDICATED, warm build cache for exactly this binary (and the templ
+      # tool): GOCACHE + GOMODCACHE as left by the build below, ~250 MB
+      # compressed. NOT the primer's `Linux-go-` entry: that one is ~1.1 GB of
+      # race-instrumented test objects and restores in 18-35s, more than this
+      # build costs cold. Measured locally, a warm rebuild is ~1s plus the
+      # packages the diff changed (3s for one internal/api file) vs 28s cold.
+      # Key: <go.mod+go.sum>-<Go build inputs>, so a run whose Go inputs match
+      # the newest main entry hits it exactly (and saves nothing), and the
+      # restore-keys fall back to the newest entry for the same dependencies,
+      # then to any entry. A stale or missing entry only costs warmth: the
+      # build cache is content-addressed, so a mismatch recompiles, never
+      # reuses a wrong object. Restore-only here; the save step after the build
+      # writes it on main pushes only, and prune-go-caches bounds the count.
+      # hashFiles runs before npm ci, so no node_modules file is in the hash.
+      - name: Restore the a11y binary's Go cache
+        id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: a11y-go-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ hashFiles('**/*.go', '**/*.templ', 'web/static/**') }}
+          restore-keys: |
+            a11y-go-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            a11y-go-${{ runner.os }}-
+
+      # BUILD ORDER: templ + Tailwind first, then the binary build in the
+      # BACKGROUND, then node/npm/browser/apt setup while it compiles. The build
+      # was the longest setup step (32-50s cold, ~45s median); the node,
+      # browser and apt steps after it take ~25-50s, so the build now runs
+      # under them instead of after them. Tailwind must FINISH before `go build` starts:
+      # web/static/embed.go embeds css/ (styles.css is Tailwind's output), and
+      # the templ output is compiled in. Nothing after the start step writes a
+      # file the build reads (npm ci writes node_modules/, and the browser/apt
+      # steps write outside the checkout). scripts/check-a11y-shards.sh
+      # enforces this order by step name, and rejects any step between the
+      # start and the wait that names web/static/, templ, tailwind, go generate
+      # or a *.go/*.templ file: styles.css and *_templ.go are committed, so a
+      # build started too early would pass on stale assets.
+      #
+      # Expected setup saving, two parts, stated separately:
+      #   - Overlap (MEASURED window, runs 44972681336 + 44973860058, 14
+      #     shards): saving = min(build, window) = ~30s median per shard. Every
+      #     run shows it, PRs included. Assumes no CPU contention between the
+      #     build and dpkg/browser extraction (unmeasured).
+      #   - Warm cache (MODELED, not measured): ~11s median more, from a ~8s
+      #     warm build extrapolated from local numbers and a +3s restore. Only
+      #     a run that restores an a11y-go- entry can show it, and only a main
+      #     push saves one, so no PR sees it before the first main push after
+      #     this lands; re-measure then.
+      - name: Generate templ
+        run: go tool templ generate
+
+      - uses: $/.github/actions/setup-tailwind
+
+      - name: Build Tailwind CSS
+        run: tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify
+
+      # Detached: returns at once. State (pid, deadline, log, exit status)
+      # goes to files under $RUNNER_TEMP/a11y-build, read by the wait step; no
+      # step in this job may touch the runner's env files (the shard guard,
+      # scripts/check-a11y-shards.sh, rejects it), and none needs to.
+      - name: Start the binary build (background)
+        run: bash scripts/a11y-bg-build.sh start "$RUNNER_TEMP/a11y-build"
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
           cache: 'npm'
-
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
 
       - name: Install JS dependencies
         run: npm ci
@@ -1077,24 +1163,33 @@ jobs:
           path: ~/.cache/playwright-apt/${{ matrix.engine }}
           key: playwright-apt-${{ matrix.engine }}-${{ steps.apt-key.outputs.os }}-${{ steps.apt-key.outputs.img }}-${{ steps.apt-key.outputs.pk }}-${{ hashFiles('package-lock.json') }}
 
-      - name: Generate templ
-        run: go tool templ generate
+      # The binary build ran here, serially and cold, for 32-50s per shard. It
+      # is warm once a main push has saved an a11y-go- entry (see the restore
+      # step; cold until then) and starts in the background as soon as the
+      # assets it embeds exist (see "Start the binary build" above); this step
+      # collects it before the server starts.
+      - name: Wait for the binary build
+        # a11y-bg-build.sh fails this step, with the full build output shown,
+        # on a compile error, a module fetch failure, a build killed from
+        # outside, or an exit 0 that left no ./stillwater. A hung build is
+        # killed at its own deadline (600s after start); this limit backstops
+        # the wait loop itself.
+        timeout-minutes: 12
+        run: bash scripts/a11y-bg-build.sh wait "$RUNNER_TEMP/a11y-build"
 
-      - uses: $/.github/actions/setup-tailwind
-
-      - name: Build Tailwind CSS
-        run: tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify
-
-      - name: Build binary
-        run: |
-          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.1.0-dev")
-          COMMIT=$(git rev-parse --short HEAD)
-          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          PKG=github.com/sydlexius/stillwater/internal/version
-          CGO_ENABLED=0 go build \
-            -trimpath \
-            -ldflags="-s -w -X ${PKG}.Version=${VERSION} -X ${PKG}.Commit=${COMMIT} -X ${PKG}.Date=${DATE}" \
-            -o stillwater ./cmd/stillwater
+      # Main pushes only (a PR-ref entry is invisible to other PRs), one shard
+      # only (entries are immutable: the other six would race to reserve the
+      # same key and fail with a warning), and only after a successful build,
+      # so a failed build never publishes a half-filled cache. Skipped on an
+      # exact hit: that entry already holds these inputs.
+      - name: Save the a11y binary's Go cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.project == 'firefox-a11y' && matrix.shard == 1 && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
       - name: Pick a free port
         id: port
