@@ -138,6 +138,8 @@ jobs:
               - 'internal/server/**'
               # SW_* env parsing the harness boots with (SW_UX selects the UI)
               - 'internal/config/**'
+              # auth service behind global-setup's setup+login; every spec reuses that session
+              - 'internal/auth/**'
               # opens the harness's fresh database
               - 'internal/database/database.go'
               # go:embed of migrations/*.sql and the migration runner
