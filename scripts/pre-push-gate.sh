@@ -203,6 +203,36 @@ fi
 echo "OK"
 
 echo ""
+gate_step "git-init guard presence (#3051)"
+# `git init <path>` re-initializes an inherited GIT_DIR and IGNORES <path>. The
+# pre-push hook exports GIT_DIR, this gate inherits it, and several checks below
+# build fixture repositories. From a worktree -- which SHARES the main repo's
+# .git/config -- an unguarded fixture line wrote core.bare=true into the MAIN
+# repository, silently disabling its mass-deletion guard. It fired six times in
+# one session, noticed none of them, and surfaced days later as an unrelated
+# `git merge --ff-only` refusing to run in a work tree.
+#
+# THIS RUNS BEFORE EVERY FIXTURE-BUILDING CHECK, and that ordering is the whole
+# point: it PREVENTS the damage rather than reporting it. Placed after those
+# checks (as it first was, and again later, below the a11y shard step's
+# fixture-building self-tests), a newly-added unguarded `git init` would
+# corrupt the main repository earlier in this same gate run and the checker
+# would announce it too late to matter. So it is the first step after the
+# conflict-marker scan (which runs no script), and scripts/test-gate-timing.sh
+# fails if any script that builds a fixture repository -- directly, or through
+# a harness that names it -- is invoked above the checker. The behavioral suite
+# stays late, where it can also confirm the checks above left the repository
+# alone.
+#
+# The checker runs BEFORE its own mutation tests, because those tests build
+# fixture repositories too: the prevention rule covers them like any other
+# check. The self-test still runs every time, so a checker that examined ZERO
+# files and exited 0 (the first implementation used a bash 4.0 builtin, so on
+# macOS system bash it did exactly that) still fails the gate one line later.
+bash "$SCRIPT_DIR/check-git-init-guarded.sh"
+bash "$SCRIPT_DIR/test-check-git-init-guarded.sh"
+
+echo ""
 gate_step "Gate invariant (no advisory step in the default path)"
 # Assert this script still satisfies the rule in the header block: a check in
 # the default path either BLOCKS or is not in the default path. Three greps
@@ -275,29 +305,6 @@ gate_step "go mod download retry self-test (#3619)"
 # and every Go job on the PR path runs it after setup-go and before its first
 # go command. Mirrored by CI's "Gate Invariant" job (gate.yml).
 bash "$SCRIPT_DIR/test-go-mod-download-retry.sh"
-
-echo ""
-gate_step "git-init guard presence (#3051)"
-# `git init <path>` re-initializes an inherited GIT_DIR and IGNORES <path>. The
-# pre-push hook exports GIT_DIR, this gate inherits it, and several checks below
-# build fixture repositories. From a worktree -- which SHARES the main repo's
-# .git/config -- an unguarded fixture line wrote core.bare=true into the MAIN
-# repository, silently disabling its mass-deletion guard. It fired six times in
-# one session, noticed none of them, and surfaced days later as an unrelated
-# `git merge --ff-only` refusing to run in a work tree.
-#
-# THIS RUNS BEFORE ANY FIXTURE-BUILDING CHECK, and that ordering is the whole
-# point: it PREVENTS the damage rather than reporting it. Placed after those
-# checks (as it first was), a newly-added unguarded `git init` would corrupt the
-# main repository earlier in this same gate run and the checker would announce
-# it too late to matter. The behavioral suite stays late, where it can also
-# confirm the checks above left the repository alone.
-#
-# Its own mutation tests run first, for the reason every guard here self-tests:
-# the first implementation used a bash 4.0 builtin, so on macOS system bash it
-# examined ZERO files and exited 0 -- a guard reporting safety it never checked.
-bash "$SCRIPT_DIR/test-check-git-init-guarded.sh"
-bash "$SCRIPT_DIR/check-git-init-guarded.sh"
 
 echo ""
 gate_step "Tool version drift"
