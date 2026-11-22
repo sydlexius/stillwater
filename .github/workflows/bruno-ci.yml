@@ -69,6 +69,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Download Go modules (bounded retry)
+        if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
+        run: bash scripts/go-mod-download-retry.sh
+
       - name: Set up Node
         if: steps.filter.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

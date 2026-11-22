@@ -142,6 +142,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Download Go modules (bounded retry)
+        if: steps.filter.outputs.relevant == 'true'
+        run: bash scripts/go-mod-download-retry.sh
+
       # Install Tailwind CSS via the shared composite action (single source of
       # truth for version + SHA; see .github/actions/setup-tailwind).
       - uses: $/.github/actions/setup-tailwind
@@ -434,6 +438,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Download Go modules (bounded retry)
+        if: steps.filter.outputs.relevant == 'true'
+        run: bash scripts/go-mod-download-retry.sh
 
       - uses: $/.github/actions/setup-tailwind
         if: steps.filter.outputs.relevant == 'true'
@@ -810,6 +818,9 @@ jobs:
       - name: Release blockers check self-test
         run: bash scripts/test-check-release-blockers.sh
 
+      - name: go mod download retry self-test
+        run: bash scripts/test-go-mod-download-retry.sh
+
       # Harness boot-site guard (#2310): every test-harness server must set
       # SW_AI_BLOCKLIST_URL empty so no test job downloads the AI blocklist.
       # The boot sites it guards live in tests/**, scripts/**, workflows and
@@ -822,6 +833,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Download Go modules (bounded retry)
+        run: bash scripts/go-mod-download-retry.sh
 
       - name: Harness servers skip the AI blocklist download
         run: go test -count=1 -run 'TestHarnessServersSkipAIBlocklist|TestFindHarnessBootSites|TestHarnessFilesScanDepthAndExtensions' ./cmd/stillwater/

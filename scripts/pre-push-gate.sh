@@ -266,6 +266,14 @@ gate_step "release-blockers check self-test (#2905)"
 bash "$SCRIPT_DIR/test-check-release-blockers.sh"
 
 echo ""
+gate_step "go mod download retry self-test (#3619)"
+# Hermetic (fake go on PATH): the retry helper retries a failing fetch at most
+# 3 times, does not retry a deterministic failure, fails loudly with ::error::,
+# and every Go job on the PR path runs it after setup-go and before its first
+# go command. Mirrored by CI's "Gate Invariant" job (gate.yml).
+bash "$SCRIPT_DIR/test-go-mod-download-retry.sh"
+
+echo ""
 gate_step "git-init guard presence (#3051)"
 # `git init <path>` re-initializes an inherited GIT_DIR and IGNORES <path>. The
 # pre-push hook exports GIT_DIR, this gate inherits it, and several checks below

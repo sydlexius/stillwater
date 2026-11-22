@@ -265,6 +265,23 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
 - `scripts/check-bruno-parity.sh` -- API-route vs Bruno-request parity guard:
   flag API routes registered in `internal/api/router.go` with NO corresponding
   Bruno request. Called by pre-push-gate and CI's `Bruno Route Parity` job.
+- `scripts/go-mod-download-retry.sh` -- `go mod download` with a bounded
+  retry (#3619): up to 3 attempts, 120s timeout each, 5s/15s backoff; a
+  deterministic failure (checksum mismatch / SECURITY ERROR, unknown revision,
+  invalid version) is not retried. Every failure path ends in an `::error::`
+  that points at the Go error above it (a proxy.golang.org fault is the usual
+  cause and a re-run helps; a checksum or version error will repeat). Exit 2
+  if `timeout` is missing. Run as the `Download Go modules (bounded retry)`
+  step right after setup-go in every Go job on the PR path (ci.yml Lint, Test
+  Shard, Build Matrix, Coverage Upload/Floor; gate.yml Generated Files,
+  Provider Failure Smoke, Gate Invariant; Bruno; CodeQL Analyze Go), because
+  setup-go restores by an exact go.sum key and each job otherwise fetches a
+  bumped module inside go test/build with no retry. Always runs: ~0.02s on a
+  complete module cache. `scripts/test-go-mod-download-retry.sh` is its
+  hermetic test (fake `go`) and pins every placement (one step, exact run,
+  setup-go's own `if:` only, no `continue-on-error`, after setup-go and before
+  the first go command) plus a scan that flags any unlisted cached Go job;
+  run by the gate and `Gate Invariant`.
 - `make check-openapi` -- validate the OpenAPI spec against handler
   implementations. Not a script: it runs `TestOpenAPIConsistency` in
   `internal/api/`.

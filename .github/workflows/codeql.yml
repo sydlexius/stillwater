@@ -104,6 +104,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Download Go modules (bounded retry)
+        run: bash scripts/go-mod-download-retry.sh
+
       - name: Generate templ
         run: go tool templ generate
 
