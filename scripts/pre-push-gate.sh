@@ -224,10 +224,27 @@ bash "$SCRIPT_DIR/check-pr-trigger-scope.sh"
 
 echo ""
 gate_step "a11y shard matrix is complete (#3442)"
-# A missing or duplicated shard index silently drops specs. Mirrored by CI's
-# "Gate Invariant" job (gate.yml).
-bash "$SCRIPT_DIR/check-a11y-shards.sh"
-bash "$SCRIPT_DIR/test-check-a11y-shards.sh"
+# A missing or duplicated shard index, or a spec in no firefox `specs` list,
+# silently drops specs. Mirrored by CI's "Gate Invariant" job (gate.yml), which
+# runs `npm ci` and always requires the `playwright test --list` layer. Here the
+# layer runs whenever node_modules has playwright, and is REQUIRED (missing
+# playwright FAILS) when the diff touches anything that decides the partition.
+# Only a fresh worktree (no node_modules) pushing a diff that touches none of
+# them drops to the structural layer: deterministic, since the partition is then
+# the base's, which CI already proved.
+shards_list=require
+if [ ! -x "$SCRIPT_DIR/../node_modules/.bin/playwright" ]; then
+  shards_inputs=$(git_plain_diff --name-only "$BASE" -- .github/workflows/ci.yml playwright.config.js \
+    tests/a11y package.json package-lock.json scripts/check-a11y-shards.sh \
+    scripts/test-check-a11y-shards.sh scripts/a11y-shard-exec.sh) \
+    || { echo "FAIL: cannot diff a11y shard inputs against $BASE" >&2; exit 1; }
+  if [ -z "$shards_inputs" ]; then
+    shards_list=off
+    gate_skip deterministic "a11y shard --list layer: skipped -- no node_modules and no partition input (ci.yml, playwright.config.js, tests/a11y, package*.json, the shard checker/harness/tokenizer) changed vs $BASE; CI's Gate Invariant runs it"
+  fi
+fi
+A11Y_SHARDS_LIST=$shards_list bash "$SCRIPT_DIR/check-a11y-shards.sh"
+A11Y_SHARDS_LIST=$shards_list bash "$SCRIPT_DIR/test-check-a11y-shards.sh"
 bash "$SCRIPT_DIR/test-a11y-scope.sh"
 bash "$SCRIPT_DIR/a11y-select.sh" --check
 bash "$SCRIPT_DIR/test-a11y-select.sh"

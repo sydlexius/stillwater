@@ -741,10 +741,36 @@ jobs:
       - name: PR trigger guard self-test
         run: bash scripts/test-check-pr-trigger-scope.sh
 
+      # The a11y shard guard's second layer runs `playwright test --list` to
+      # prove every test runs in exactly one shard (firefox's shards are
+      # hand-maintained spec-file lists, so a new spec in no list would
+      # otherwise be dropped silently). That needs the npm tree, and it must
+      # run HERE, in an always-running required job: the jobs in ci.yml that
+      # already install npm (JS Unit Tests, CSS Lint, the a11y matrix itself)
+      # are path-gated and can be skipped. `--list` loads the config and spec
+      # files only; it starts no server and needs no browser binary.
+      # The checker REQUIRES the --list layer unless told A11Y_SHARDS_LIST=off
+      # (only the local gate does that, and only when no partition input
+      # changed); it is pinned to `require` here so CI can never opt out.
+      # `npm ci --ignore-scripts`: --list needs no package install script
+      # (playwright downloads no browsers on install), and this job runs on
+      # every PR, so dependency lifecycle scripts never execute in it.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install JS dependencies (a11y shard --list proof)
+        run: npm ci --ignore-scripts
+
       - name: Check the a11y shard matrix is complete
+        env:
+          A11Y_SHARDS_LIST: require
         run: bash scripts/check-a11y-shards.sh
 
       - name: a11y shard matrix guard self-test
+        env:
+          A11Y_SHARDS_LIST: require
         run: bash scripts/test-check-a11y-shards.sh
 
       - name: a11y scope (SPEC/PROJECT) self-test
