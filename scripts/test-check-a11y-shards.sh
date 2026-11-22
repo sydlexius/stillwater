@@ -17,7 +17,9 @@ MODE="${A11Y_SHARDS_LIST:-require}"
 T="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$T"' EXIT
 rc=0
 # expect <OK|FAIL> <name> <ci-file> <config> <pw-bin> [substring...]: the checker
-# must print the marker, exit 0 only for OK, and print every substring.
+# must print the marker, exit 0 only for OK, and print every substring. A
+# substring prefixed `re:` is an extended regex instead (to tie a message to its
+# project when another project prints the same words).
 # LIST_MODE (default off: structural cases) is the checker's A11Y_SHARDS_LIST;
 # CHECKER (default the real one) is the checker script to run.
 expect() {
@@ -26,7 +28,12 @@ expect() {
   out=$(A11Y_SHARDS_LIST="${LIST_MODE:-off}" PLAYWRIGHT_BIN="$pw" \
         bash "${CHECKER:-$D/check-a11y-shards.sh}" "$ci" "$cfg" 2>&1) || s=$?
   [ "$want_m" = "OK" ] && want=0
-  for sub in "$@"; do grep -qF -- "$sub" <<<"$out" || miss="$miss [$sub]"; done
+  for sub in "$@"; do
+    case "$sub" in
+      re:*) grep -qE -- "${sub#re:}" <<<"$out" || miss="$miss [$sub]" ;;
+      *) grep -qF -- "$sub" <<<"$out" || miss="$miss [$sub]" ;;
+    esac
+  done
   if [ "$s" -eq "$want" ] && grep -q "^$want_m: a11y-test matrix shards" <<<"$out" && [ -z "$miss" ]; then
     echo "PASS: $name"
   else
@@ -44,22 +51,31 @@ def w(name, text):
 def sub1(old, new, text=s):
     assert text.count(old) >= 1, f"anchor not found: {old!r}"
     return text.replace(old, new, 1)
-# chromium entries carry only shard/shards: the --shard mechanism.
+# Both projects use `specs` lists in ci.yml. The --shard mechanism (an entry
+# with only shard/shards) is still supported, so its cases run on `sh`: the real
+# file with chromium's lists (and their bin comments) stripped.
 cr = lambda k, n="3": f"          - project: chromium-a11y\n            engine: chromium\n            shard: {k}\n            shards: {n}\n"
-i = s.index(cr(2)); j = s.index(cr(3))
-w("missing", s[:i] + s[j:])
-w("dup", sub1(cr(2), cr(1)))
-w("mismatch", sub1(cr(2), cr(2, "4")))
-w("bool", sub1(cr(1), cr(1, "true")))
-w("zero", sub1(cr(1), cr(1, "0")))
-w("nototal", sub1(cr(1), "          - project: chromium-a11y\n            engine: chromium\n            shard: 1\n"))
-w("strshard", sub1(cr(1), cr("one")))
-w("noshard", sub1(cr(1), "          - project: chromium-a11y\n            engine: chromium\n            shards: 3\n"))
+sh, n = re.subn(r"(          - project: chromium-a11y\n            engine: chromium\n            shard: \d\n            shards: 3\n)"
+                r"(?:            #.*\n)*            specs: >-\n(?:              .*\n)+", r"\1", s)
+assert n == 3, n
+w("shardbase", sh)
+i = sh.index(cr(2)); j = sh.index(cr(3))
+w("missing", sh[:i] + sh[j:])
+w("dup", sub1(cr(2), cr(1), sh))
+w("mismatch", sub1(cr(2), cr(2, "4"), sh))
+w("bool", sub1(cr(1), cr(1, "true"), sh))
+w("zero", sub1(cr(1), cr(1, "0"), sh))
+w("nototal", sub1(cr(1), "          - project: chromium-a11y\n            engine: chromium\n            shard: 1\n", sh))
+w("strshard", sub1(cr(1), cr("one"), sh))
+w("noshard", sub1(cr(1), "          - project: chromium-a11y\n            engine: chromium\n            shards: 3\n", sh))
 w("noproject", re.sub(r"          - project: firefox-a11y\n(            .*\n|              .*\n)+", "", s))
 w("nojob", sub1("  a11y-test:\n", "  a11y-renamed:\n"))
 # specs-list mutations (firefox).
-w("mixed", sub1(cr(1), cr(1) + "            specs: tests/a11y/contrast.spec.js\n"))
-w("emptyspecs", sub1("            specs: >-\n              tests/a11y/contrast.spec.js\n", "            specs: ''\n"))
+w("mixed", sub1(cr(1), cr(1) + "            specs: tests/a11y/contrast.spec.js\n", sh))
+# firefox shard 1's whole `specs` block (its first entry, so the first match).
+ff1 = re.search(r"            specs: >-\n(?:              .*\n)+", s).group(0)
+assert "tests/a11y/contrast.spec.js" in ff1, ff1
+w("emptyspecs", sub1(ff1, "            specs: ''\n"))
 w("droppath", sub1("              tests/a11y/nfo-mbid.spec.js\n", ""))
 w("duppath", sub1("              tests/a11y/contrast.spec.js\n",
                   "              tests/a11y/contrast.spec.js\n              tests/a11y/nfo-mbid.spec.js\n"))
@@ -67,13 +83,15 @@ w("barename", sub1("              tests/a11y/contrast.spec.js\n", "             
 w("ghost", sub1("              tests/a11y/contrast.spec.js\n",
                 "              tests/a11y/contrast.spec.js\n              tests/a11y/no-such-file.spec.js\n"))
 # C1 (#3442): the tokenizer, shared by the guard and CI's run step.
-b2 = "            specs: >-\n              tests/a11y/base-path-filter-idiom.spec.js\n"
+# firefox shard 2's `specs` header and first path (its second entry).
+b2 = re.findall(r"            specs: >-\n              .*\n", s)[1]
+f2 = b2.split("\n")[1]
+assert s.count(f2 + "\n              ") >= 1 and s.index(f2) == s.index(b2) + len("            specs: >-\n"), b2
 w("literal", sub1(b2, b2.replace(">-", "|")))
-w("nbsp", sub1("              tests/a11y/base-path-filter-idiom.spec.js\n              ",
-               "              tests/a11y/base-path-filter-idiom.spec.js\u00a0"))
+w("nbsp", sub1(f2 + "\n              ", f2 + "\u00a0"))
 w("badchar", sub1("              tests/a11y/contrast.spec.js\n", "              tests/a11y/contrast.spec.js$\n"))
 w("dashtoken", sub1("              tests/a11y/contrast.spec.js\n", "              tests/a11y/contrast.spec.js --headed\n"))
-w("blankspecs", sub1("            specs: >-\n              tests/a11y/contrast.spec.js\n", "            specs: '   '\n"))
+w("blankspecs", sub1(ff1, "            specs: '   '\n"))
 run = "          bash scripts/a11y-shard-exec.sh npx playwright test --config=playwright.config.js --project=\"$PROJECT\"\n"
 w("oldrun", sub1(run, '          read -ra sel <<<"$SPECS"\n          npx playwright test --project="$PROJECT" "${sel[@]}"\n'))
 w("envdrift", sub1("          SPECS: ${{ matrix.specs }}\n", "          SPECS: ${{ matrix.files }}\n"))
@@ -128,7 +146,8 @@ PYEOF
 
 NOPW="$T/no-playwright"
 echo "-- structural (layer 1; playwright hidden)"
-expect OK "real ci.yml" "$CI" "$CFG" "$NOPW" "firefox-a11y x4 (specs)" "chromium-a11y x3 (shard)"
+expect OK "real ci.yml" "$CI" "$CFG" "$NOPW" "firefox-a11y x4 (specs)" "chromium-a11y x3 (specs)"
+expect OK "a project on --shard entries" "$T/shardbase.yml" "$CFG" "$NOPW" "firefox-a11y x4 (specs)" "chromium-a11y x3 (shard)"
 expect FAIL "rejects missing" "$T/missing.yml" "$CFG" "$NOPW" "chromium-a11y: shard=[1, 3] shards=[3]"
 expect FAIL "rejects dup" "$T/dup.yml" "$CFG" "$NOPW" "chromium-a11y: shard=[1, 1, 3]"
 expect FAIL "rejects mismatch" "$T/mismatch.yml" "$CFG" "$NOPW" "shards=[3, 4]"
@@ -141,7 +160,7 @@ expect FAIL "rejects a config project absent from the matrix" "$CI" "$T/extra.js
 expect FAIL "rejects mixed mechanisms" "$T/mixed.yml" "$CFG" "$NOPW" "chromium-a11y: mixes \`specs\` lists and --shard entries"
 expect FAIL "rejects empty specs" "$T/emptyspecs.yml" "$CFG" "$NOPW" "specs must be a non-empty string of paths"
 expect FAIL "rejects a spec dropped from every list" "$T/droppath.yml" "$CFG" "$NOPW" "spec file in no shard list: tests/a11y/nfo-mbid.spec.js"
-expect FAIL "rejects a spec in two lists" "$T/duppath.yml" "$CFG" "$NOPW" "tests/a11y/nfo-mbid.spec.js listed in more than one shard [1, 2]"
+expect FAIL "rejects a spec in two lists" "$T/duppath.yml" "$CFG" "$NOPW" "firefox-a11y: tests/a11y/nfo-mbid.spec.js listed in more than one shard [1, 4]"
 expect FAIL "rejects a bare file name" "$T/barename.yml" "$CFG" "$NOPW" "lists contrast.spec.js, which is not a spec file"
 expect FAIL "rejects a path that is not a file" "$T/ghost.yml" "$CFG" "$NOPW" "lists tests/a11y/no-such-file.spec.js, which is not a spec file"
 expect FAIL "rejects a \`specs: |\` multi-line block (CI's read saw line 1 only)" "$T/literal.yml" "$CFG" "$NOPW" \
@@ -190,9 +209,10 @@ expect FAIL "rejects step working-directory" "$T/step-wd.yml" "$CFG" "$NOPW" "$K
 # shellcheck disable=SC2016 # RUN's literal text: $PROJECT is expanded by CI's bash, not here
 base='bash scripts/a11y-shard-exec.sh npx playwright test --config=playwright.config.js --project="$PROJECT"'
 runedit() { # <name> <new RUN> [drop-specs]: writes $T/re-<name>/scripts/check-a11y-shards.sh and $T/re-<name>.yml
+  # RE_SRC (default the real ci.yml) is the workflow the edit is applied to.
   mkdir -p "$T/re-$1/scripts"
   cp "$D/a11y-shard-exec.sh" "$T/re-$1/scripts/"
-  NEW="$2" BASE="$base" DROP="${3:-}" python3 - "$D/check-a11y-shards.sh" "$CI" "$T/re-$1/scripts/check-a11y-shards.sh" "$T/re-$1.yml" <<'PYEOF'
+  NEW="$2" BASE="$base" DROP="${3:-}" python3 - "$D/check-a11y-shards.sh" "${RE_SRC:-$CI}" "$T/re-$1/scripts/check-a11y-shards.sh" "$T/re-$1.yml" <<'PYEOF'
 import os, re, sys
 new, base = os.environ["NEW"], os.environ["BASE"]
 chk, ci = open(sys.argv[1]).read(), open(sys.argv[2]).read()
@@ -202,7 +222,7 @@ chk = chk.replace(a, "RUN = %r\n" % new)
 ci = ci.replace(b, "          %s\n" % new)
 if os.environ["DROP"]:
     ci, n = re.subn(r"            specs: >-\n(              .*\n)+", "", ci)
-    assert n == 4, n
+    assert n == 7, n
 open(sys.argv[3], "w").write(chk); open(sys.argv[4], "w").write(ci)
 PYEOF
 }
@@ -269,6 +289,8 @@ cp -R "$REPO/tests/a11y" "$C/tests/a11y"
 for l in node_modules internal web; do ln -s "$REPO/$l" "$C/$l"; done
 CC="$C/playwright.config.js"
 LIST_MODE=require expect OK "real ci.yml: --list union equals the full list" "$CI" "$CC" "$PW" \
+  "firefox-a11y x4 (specs) --list" "chromium-a11y x3 (specs) --list" "no overlap"
+LIST_MODE=require expect OK "--list: a project on --shard entries" "$T/shardbase.yml" "$CC" "$PW" \
   "firefox-a11y x4 (specs) --list" "chromium-a11y x3 (shard) --list" "no overlap"
 # A NEW spec that no list names: both layers must report it.
 cat > "$C/tests/a11y/zz-shard-guard-dummy.spec.js" <<'JS'
@@ -307,6 +329,25 @@ runedit grep-invert "$base --grep-invert=contrast"
 LIST_MODE=require CHECKER="$T/re-grep-invert/scripts/check-a11y-shards.sh" expect FAIL \
   "--list: a coherent RUN edit that narrows the selection shows as a gap" "$T/re-grep-invert.yml" "$CC" "$PW" \
   "chromium-a11y --list:" "test(s) run in NO shard" "firefox-a11y --list:"
+# The same two layer-2 failures on a project on --shard entries (chromium in
+# shardbase.yml): its listing is Playwright's count-based split, so a gap or a
+# duplicate there must be reported for it too, not only for `specs` projects.
+RE_SRC="$T/shardbase.yml" runedit grep-invert-shard "$base --grep-invert=contrast"
+LIST_MODE=require CHECKER="$T/re-grep-invert-shard/scripts/check-a11y-shards.sh" expect FAIL \
+  "--list: a coherent RUN edit that narrows the selection shows as a gap (--shard project)" "$T/re-grep-invert-shard.yml" "$CC" "$PW" \
+  "chromium-a11y --list:" "test(s) run in NO shard" 're:chromium-a11y --list: [0-9]+ test\(s\) run in NO shard'
+# A --shard project's duplicate: no RUN edit can make two --shard entries
+# overlap (the tokenizer appends --shard=k/n after RUN's words and Playwright's
+# last --shard wins), so a wrapper rewrites shard 2's --shard=2/3 to 1/3. Shards
+# 1 and 2 then list the same tests.
+cat > "$T/pw-shard21" <<SH
+#!/bin/bash
+a=(); for x in "\$@"; do [ "\$x" = --shard=2/3 ] && x=--shard=1/3; a+=("\$x"); done
+exec "$PW" "\${a[@]}"
+SH
+chmod +x "$T/pw-shard21"
+LIST_MODE=require expect FAIL "--list: two --shard entries selecting the same tests show as a duplicate" \
+  "$T/shardbase.yml" "$CC" "$T/pw-shard21" 're:chromium-a11y --list: [0-9]+ test\(s\) run in more than one shard'
 LIST_MODE=require expect FAIL "--list: rejects a \`specs: |\` block" "$T/literal.yml" "$CC" "$PW" \
   "firefox-a11y shard 2: invalid specs" "firefox-a11y --list: shard 2 listing failed"
 # R2-M1/M2: a Playwright JSON shape change fails with the FAIL line, never a

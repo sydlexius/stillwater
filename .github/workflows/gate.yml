@@ -750,7 +750,7 @@ jobs:
         run: bash scripts/test-check-pr-trigger-scope.sh
 
       # The a11y shard guard's second layer runs `playwright test --list` to
-      # prove every test runs in exactly one shard (firefox's shards are
+      # prove every test runs in exactly one shard (both projects' shards are
       # hand-maintained spec-file lists, so a new spec in no list would
       # otherwise be dropped silently). That needs the npm tree, and it must
       # run HERE, in an always-running required job: the jobs in ci.yml that

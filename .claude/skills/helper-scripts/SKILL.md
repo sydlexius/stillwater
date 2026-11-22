@@ -43,8 +43,8 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
   `Gate Invariant` job.
 - `scripts/test-check-pr-trigger-scope.sh` -- hermetic mutation tests for the above.
 - `scripts/check-a11y-shards.sh` -- assert each project in `ci.yml`'s `a11y-test`
-  matrix lists shards exactly 1..N with a constant `shards` (#3442), that firefox's
-  explicit `specs` lists name every spec file exactly once, and (via `playwright
+  matrix lists shards exactly 1..N with a constant `shards` (#3442), that each
+  project's explicit `specs` lists name every spec file exactly once, and (via `playwright
   test --list`, needs `npm ci`) that the shards' tests union to the full list
   with no overlap, so a dropped, duplicated or newly added spec cannot be
   silently skipped; `scripts/test-check-a11y-shards.sh` is its mutation test.
