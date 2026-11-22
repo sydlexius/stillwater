@@ -15,7 +15,11 @@ rc=0
 ok() { echo "PASS: $1"; }
 bad() { echo "FAIL: $1"; [ -n "${2:-}" ] && printf '%s\n' "$2" | sed 's/^/      /'; rc=1; }
 
-command -v timeout >/dev/null 2>&1 || { echo "FAIL: 'timeout' (coreutils) is required to run this test" >&2; exit 1; }
+# The same resolution as the helper: `timeout`, else Homebrew's `gtimeout`.
+# Neither -> FAIL loudly (this runs unconditionally in pre-push-gate.sh; a
+# silent skip would hide the helper's bound going untested).
+REAL_TIMEOUT="$(command -v timeout || command -v gtimeout || true)"
+[ -n "$REAL_TIMEOUT" ] || { echo "FAIL: 'timeout' or 'gtimeout' (coreutils) is required to run this test" >&2; exit 1; }
 python3 -c 'import yaml' 2>/dev/null || { echo "FAIL: python3 with PyYAML is required to run this test" >&2; exit 1; }
 
 mkdir -p "$T/bin"
@@ -31,7 +35,7 @@ if [ "$1 $2" = "mod download" ]; then
   fi
   exit 0
 fi
-if [ "$1 $2" = "env GOPROXY" ]; then echo "https://proxy.golang.org,direct"; exit 0; fi
+if [ "$1 $2" = "env GOPROXY" ]; then echo "${GOPROXY:-https://proxy.golang.org,direct}"; exit 0; fi
 echo "fake go: unexpected args: $*" >&2; exit 99
 EOF
 chmod +x "$T/bin/go"
@@ -77,8 +81,40 @@ if [ "$ST" -eq 1 ] && [ "$CALLS" -eq 1 ] && grep -q '^::error::go mod download f
 else bad "non-transient short-circuit (st=$ST calls=$CALLS)" "$OUT"; fi
 
 run 3 'go: example.com/m@v9.9.9: invalid version: unknown revision v9.9.9'
-if [ "$ST" -eq 1 ] && [ "$CALLS" -eq 1 ]; then ok "an unknown revision / invalid version is not retried"
+if [ "$ST" -eq 1 ] && [ "$CALLS" -eq 1 ]; then ok "an unknown revision is not retried"
 else bad "unknown revision short-circuit (st=$ST calls=$CALLS)" "$OUT"; fi
+
+# Go wraps a transient VCS fetch failure in `invalid version:`; that prefix
+# alone must not short-circuit the retry.
+run 2 "go: example.com/m@v1.2.3: invalid version: git ls-remote -q origin in /tmp/x: exit status 128: fatal: unable to access 'https://example.com/m/': Could not resolve host: example.com"
+if [ "$ST" -eq 0 ] && [ "$CALLS" -eq 3 ] && grep -q 'succeeded on attempt 3/3' <<<"$OUT" \
+   && ! grep -q 'non-transient' <<<"$OUT"; then
+  ok "an 'invalid version:' wrapping a network error is retried (success on attempt 3)"
+else bad "invalid version wrapping a VCS network error (st=$ST calls=$CALLS)" "$OUT"; fi
+
+# GOPROXY may be a private proxy URL with credentials: never echoed.
+echo 0 >"$T/count"; ST=0
+OUT=$(PATH="$T/bin:$PATH" FAKE_GO_COUNT="$T/count" FAKE_GO_FAIL=3 GOPROXY='https://user:s3cret@proxy.example/' \
+      GO_MOD_DOWNLOAD_BACKOFF="0 0" GO_MOD_DOWNLOAD_TIMEOUT=10 bash "$SUT" 2>&1) || ST=$?
+if [ "$ST" -eq 1 ] && [ "$(cat "$T/count")" -eq 3 ] && grep -q '^::error::go mod download failed after 3 attempts' <<<"$OUT" \
+   && ! grep -q 's3cret' <<<"$OUT"; then
+  ok "the final ::error:: does not print GOPROXY (no credential leak)"
+else bad "GOPROXY credential leak (st=$ST)" "$OUT"; fi
+
+# A zero per-attempt timeout (any spelling) would disable the deadline.
+for z in 0 00; do
+  echo 0 >"$T/count"; ST=0
+  OUT=$(PATH="$T/bin:$PATH" FAKE_GO_COUNT="$T/count" GO_MOD_DOWNLOAD_TIMEOUT="$z" bash "$SUT" 2>&1) || ST=$?
+  if [ "$ST" -eq 2 ] && [ "$(cat "$T/count")" -eq 0 ] \
+     && grep -q "^::error::go-mod-download-retry: GO_MOD_DOWNLOAD_TIMEOUT must be a positive number of seconds, got '$z'" <<<"$OUT"; then
+    ok "GO_MOD_DOWNLOAD_TIMEOUT=$z exits 2 without calling go"
+  else bad "GO_MOD_DOWNLOAD_TIMEOUT=$z (st=$ST calls=$(cat "$T/count"))" "$OUT"; fi
+done
+# ...while zero-second backoff sleeps stay valid.
+run 2
+if [ "$ST" -eq 0 ] && [ "$CALLS" -eq 3 ] && ! grep -q '::error::' <<<"$OUT"; then
+  ok "GO_MOD_DOWNLOAD_BACKOFF=\"0 0\" is accepted"
+else bad "zero backoff accepted (st=$ST calls=$CALLS)" "$OUT"; fi
 
 # Per-attempt timeout: a hung `go mod download` is killed and counted as a failed attempt.
 cat >"$T/bin/go" <<'EOF'
@@ -93,15 +129,35 @@ if [ "$ST" -eq 1 ] && [ "$(cat "$T/count")" -eq 2 ] && grep -q 'timed out after 
   ok "a hung attempt is killed by the per-attempt timeout and retried"
 else bad "per-attempt timeout (st=$ST)" "$OUT"; fi
 
-# Missing `timeout`: a PATH holding only bash and the fake go (no coreutils).
-mkdir -p "$T/notimeout"
-ln -s "$(command -v bash)" "$T/notimeout/bash"
-ln -s "$T/bin/go" "$T/notimeout/go"
+# minpath <dir> <tool>... : a PATH dir holding symlinks to ONLY the named
+# host tools plus the fake go, so the host's /usr/bin/timeout cannot leak in.
+minpath() {
+  local dir="$1" t; shift
+  mkdir -p "$dir"
+  for t in "$@"; do ln -s "$(command -v "$t")" "$dir/$t"; done
+  ln -s "$T/bin/go" "$dir/go"
+}
+NEEDS=(bash cat grep mktemp rm sleep)
+
+# Only `gtimeout` (Homebrew coreutils on macOS): the helper uses it.
+minpath "$T/gtimeout-only" "${NEEDS[@]}"
+printf '#!%s\necho used >"%s"\nexec "%s" "$@"\n' "$(command -v bash)" "$T/gtimeout-used" "$REAL_TIMEOUT" >"$T/gtimeout-only/gtimeout"
+chmod +x "$T/gtimeout-only/gtimeout"
+echo 0 >"$T/count"; ST=0
+OUT=$(PATH="$T/gtimeout-only" FAKE_GO_COUNT="$T/count" "$T/gtimeout-only/bash" "$SUT" 2>&1) || ST=$?
+if [ "$ST" -eq 0 ] && [ "$(cat "$T/count")" -eq 1 ] && [ -f "$T/gtimeout-used" ] \
+   && grep -q 'succeeded on attempt 1/3' <<<"$OUT"; then
+  ok "with only gtimeout on PATH the helper bounds the download with it"
+else bad "gtimeout fallback (st=$ST calls=$(cat "$T/count"))" "$OUT"; fi
+
+# Neither `timeout` nor `gtimeout`: exit 2 loudly, go never called.
+minpath "$T/notimeout" "${NEEDS[@]}"
 echo 0 >"$T/count"; ST=0
 OUT=$(PATH="$T/notimeout" FAKE_GO_COUNT="$T/count" "$T/notimeout/bash" "$SUT" 2>&1) || ST=$?
-if [ "$ST" -eq 2 ] && [ "$(cat "$T/count")" -eq 0 ] && grep -q "^::error::.*'timeout' (coreutils) not found" <<<"$OUT"; then
-  ok "missing timeout exits 2 loudly without an unbounded download"
-else bad "missing timeout (st=$ST)" "$OUT"; fi
+if [ "$ST" -eq 2 ] && [ "$(cat "$T/count")" -eq 0 ] \
+   && grep -q "^::error::.*neither 'timeout' nor 'gtimeout' (coreutils) found" <<<"$OUT"; then
+  ok "missing timeout and gtimeout exits 2 loudly without an unbounded download"
+else bad "missing timeout/gtimeout (st=$ST)" "$OUT"; fi
 
 # --- workflow wiring ---------------------------------------------------------
 cat >"$T/wire.py" <<'PYEOF'

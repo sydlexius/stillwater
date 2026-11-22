@@ -266,12 +266,15 @@ standalone pre-PR step; use `dev-restart.sh` and never kill by port; and
   flag API routes registered in `internal/api/router.go` with NO corresponding
   Bruno request. Called by pre-push-gate and CI's `Bruno Route Parity` job.
 - `scripts/go-mod-download-retry.sh` -- `go mod download` with a bounded
-  retry (#3619): up to 3 attempts, 120s timeout each, 5s/15s backoff; a
-  deterministic failure (checksum mismatch / SECURITY ERROR, unknown revision,
-  invalid version) is not retried. Every failure path ends in an `::error::`
-  that points at the Go error above it (a proxy.golang.org fault is the usual
-  cause and a re-run helps; a checksum or version error will repeat). Exit 2
-  if `timeout` is missing. Run as the `Download Go modules (bounded retry)`
+  retry (#3619): up to 3 attempts, 120s timeout each (must be positive:
+  `timeout 0` disables the deadline), 5s/15s backoff; a deterministic failure
+  (checksum mismatch / SECURITY ERROR, unknown revision) is not retried, but a
+  bare `invalid version:` is (Go wraps transient VCS fetch errors in it).
+  Every failure path ends in an `::error::` that points at the Go error above
+  it (a proxy.golang.org fault is the usual cause and a re-run helps; a
+  checksum or version error will repeat) and never prints GOPROXY (it may
+  carry credentials). Uses `timeout`, else `gtimeout` (Homebrew coreutils);
+  exit 2 if neither exists. Run as the `Download Go modules (bounded retry)`
   step right after setup-go in every Go job on the PR path (ci.yml Lint, Test
   Shard, Build Matrix, Coverage Upload/Floor; gate.yml Generated Files,
   Provider Failure Smoke, Gate Invariant; Bruno; CodeQL Analyze Go), because
