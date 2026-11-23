@@ -4,11 +4,12 @@
 // measurement (renderedContrast, min glyph pixel) can fail these.
 //   - the "N of M compliant" captions (compliance + health summaries)
 //   - every rail description: inactive, active, and a hovered inactive row
+//   - the Results | Matrix tab bar with MATRIX active (axe, not pixels; see below)
 // Preconditions are counted, never skipped: a missing element fails the test.
 import { test, expect } from 'playwright/test';
 
 import { disableTransitions } from './helpers/settle.js';
-import { applyTheme, restorePersistedTheme, renderedContrast } from './helpers/axe.js';
+import { buildAxeBuilder, formatViolations, applyTheme, restorePersistedTheme, renderedContrast } from './helpers/axe.js';
 import { seedUnfixableFinding } from './helpers/seed-unfixable-finding.js';
 
 const RAIL_ITEMS = 12; // repBuiltinReports in web/templates/reports_page.templ
@@ -82,5 +83,38 @@ for (const theme of ['dark', 'light']) {
     for (const [k, v] of Object.entries(got)) {
       expect(v, `rail description (${k}) contrast, ${theme}`).toBeGreaterThanOrEqual(4.5);
     }
+  });
+
+  // The active tab label (.sw-rep-tab.is-active) failed AA once axe 4.14.1
+  // started resolving the reports surface behind it (#3638). The full-page
+  // scans already cover RESULTS active, the server-rendered default; nothing
+  // else ever switches to Matrix, so this clicks it the way a user does and
+  // scans the tab bar with Matrix holding the active style. Scoped to the tab
+  // bar so a failure names this element, not unrelated page content. axe, not
+  // renderedContrast: the pixel sampler reads this 13px label ~3.9:1 even when
+  // its computed colours clear AA, so it would fail correct colours.
+  test(`reports tab bar contrast with Matrix active (${theme})`, async ({ page }) => {
+    await page.goto('/reports/compliance');
+    await page.waitForLoadState('load');
+    await applyTheme(expect, page, theme);
+    const matrix = page.locator('#sw-rep-tab-btn-matrix');
+    const results = page.locator('#sw-rep-tab-btn-results');
+    await matrix.waitFor();
+    await matrix.click();
+    await expect(matrix).toHaveClass(/\bis-active\b/);
+    await expect(matrix).toHaveAttribute('aria-selected', 'true');
+    await expect(results).not.toHaveClass(/\bis-active\b/);
+    await expect(results).toHaveAttribute('aria-selected', 'false');
+    await page.mouse.move(0, 0); // no :hover colour on either tab
+
+    const scan = await buildAxeBuilder(page).include('#sw-rep-tabbar').analyze();
+    const contrast = scan.violations.filter((v) => v.id === 'color-contrast');
+    expect(contrast, `tab bar color-contrast violations (${theme}):\n${formatViolations(contrast)}`).toHaveLength(0);
+    // A label axe could not resolve lands in "incomplete" and would pass the
+    // check above vacuously; require the active label to be a measured PASS.
+    const passed = (scan.passes.find((r) => r.id === 'color-contrast')?.nodes ?? [])
+      .map((n) => JSON.stringify(n.target));
+    expect(passed, `active Matrix tab was not measured as a color-contrast pass (${theme})`)
+      .toContain(JSON.stringify(['#sw-rep-tab-btn-matrix']));
   });
 }
