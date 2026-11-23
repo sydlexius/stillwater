@@ -6340,8 +6340,14 @@ html[data-motion="on"] .sw-next-artist-detail .sw-field-actions button.htmx-requ
   color: var(--sw-content-text);
 }
 
+/* The active label is TEXT, so it takes the AA accent ink rather than the
+   brand accent fill: --sw-accent-primary (#3b82f6) measured 4.12:1 on the dark
+   reports surface and 3.64:1 on the light one, under the 4.5:1 floor for this
+   13px label (axe 4.14.1 resolves that background; 4.14.0 left it incomplete).
+   --swd-blue-ink is blue-600 in light and blue-300 in dark. The underline is a
+   non-text indicator (3:1), so it keeps the brand accent. */
 .sw-rep-tab.is-active {
-  color: var(--sw-accent-primary);
+  color: var(--swd-blue-ink);
   border-bottom-color: var(--sw-accent-primary);
 }
 

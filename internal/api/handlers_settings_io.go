@@ -217,7 +217,10 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 			extras += fmt.Sprintf(" %d API tokens reassigned to the importing admin.", result.OwnershipReassigned)
 		}
 		fragment := fmt.Sprintf(
-			`<div class="text-sm text-green-600 dark:text-green-400">`+
+			// green-800 in light, not green-600: green-600 measured 3.19:1 on the
+			// light settings pane, under the 4.5:1 AA floor for this small text.
+			// Same pair as the setup restore summary (handlers_setup_restore.go:141).
+			`<div class="text-sm text-green-800 dark:text-green-400">`+
 				`Import complete: %d settings, %d connections, %d profiles, %d webhooks, %d provider keys, %d priorities,`+
 				` %d rules, %d scraper configs, %d preferences.%s`+
 				`</div>`,

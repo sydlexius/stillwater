@@ -423,8 +423,11 @@ func TestHandleSettingsImport_RoundTrip_HTMX(t *testing.T) {
 	if !strings.Contains(body2, "Import complete:") {
 		t.Errorf("expected 'Import complete:' in HTMX response, got: %s", body2)
 	}
-	if !strings.Contains(body2, "text-green") {
-		t.Errorf("expected green HTML fragment for success, got: %s", body2)
+	// Cheap drift guard on the AA-passing pair; the rendered contrast check is
+	// tests/a11y/settings-import-dropped-rows.spec.js (green-600 measured 3.19:1
+	// on the light settings pane).
+	if !strings.Contains(body2, `<div class="text-sm text-green-800 dark:text-green-400">Import complete:`) {
+		t.Errorf("expected the AA green pair on the success summary, got: %s", body2)
 	}
 	// A clean import must not render the dropped-rows warning (#3012).
 	if strings.Contains(body2, "dropped rows") {
