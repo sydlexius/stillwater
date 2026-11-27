@@ -121,7 +121,7 @@ jobs:
             // milestones unknown, so the conflict warning below is left alone rather
             // than judged on part of the references.
             const milestones = new Map();
-            let incomplete = truncated; // a cut-short list is not the whole set
+            let incomplete = false; // set when a referenced issue cannot be read
             for (const num of issueNumbers) {
               try {
                 const issue = await github.rest.issues.get({
@@ -205,6 +205,26 @@ jobs:
             // Warn if issues reference conflicting milestones (upsert to avoid spam)
             if (incomplete) {
               core.warning('A referenced issue could not be read; leaving the conflict warning as it is.');
+            } else if (truncated) {
+              // More references than are looked up: a conflict cannot be judged, so
+              // the note says so, replacing any conflict warning that may be stale.
+              const capBody = [
+                sentinel,
+                `This PR references more than ${MAX_REFS} issues, so its milestone is not set automatically and milestone conflicts are not checked. Set the milestone by hand.`,
+              ].join('\n');
+              const [first, ...rest] = notes;
+              if (first) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner, repo: context.repo.repo, comment_id: first.id, body: capBody,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, body: capBody,
+                });
+              }
+              for (const c of rest) {
+                await deleteNote(c);
+              }
             } else if (milestones.size > 1) {
               const list = entries
                 .map(m => `- **${m.title}** (from ${m.issues.map(n => '#' + n).join(', ')})`)
@@ -251,7 +271,7 @@ jobs:
 
             // With part of the references unread, the first one's milestone is
             // unknown, so assigning from the rest could pick the wrong milestone.
-            if (incomplete) {
+            if (incomplete || truncated) {
               core.warning('Not assigning a milestone: not every referenced issue was read.');
               return;
             }
