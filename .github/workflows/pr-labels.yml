@@ -109,10 +109,20 @@ jobs:
             // with the job reporting success (#2412).
             const pattern = /\b(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?|part\s+of)\s+#(\d+)/gi;
             const issueNumbers = [];
+            // Every reference costs one API call and the body is untrusted, so at
+            // most MAX_REFS distinct references are looked up.
+            const MAX_REFS = 25;
+            let truncated = false;
             let match;
             while ((match = pattern.exec(body)) !== null) {
               const n = parseInt(match[1], 10);
-              if (!issueNumbers.includes(n)) issueNumbers.push(n);
+              if (issueNumbers.includes(n)) continue;
+              if (issueNumbers.length === MAX_REFS) {
+                truncated = true;
+                core.warning(`The PR body references more than ${MAX_REFS} issues; only the first ${MAX_REFS} are used.`);
+                break;
+              }
+              issueNumbers.push(n);
             }
 
             if (issueNumbers.length === 0) {

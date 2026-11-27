@@ -1,7 +1,10 @@
 # Automatically assign a milestone to PRs based on the issues they reference.
 # Parses "Fixes #N", "Closes #N", and "Resolves #N" from the PR body,
 # looks up each issue's milestone, and assigns the first one found.
-# Warns via comment if referenced issues have conflicting milestones.
+# Warns via comment if referenced issues have conflicting milestones, and deletes
+# that comment again once the references no longer conflict. If a referenced
+# issue cannot be read (other than not existing), the comment is left as it is
+# for that run.
 
 name: PR Milestone
 
@@ -28,7 +31,8 @@ name: PR Milestone
 # The conflict-warning upsert also reads existing PR comments, which ARE
 # fork-authored. It matches on the sentinel AND on the comment's author being
 # our own bot, so a planted sentinel cannot redirect the privileged
-# updateComment onto an attacker's comment (see the note at that call).
+# updateComment, or the privileged deleteComment that removes a stale warning,
+# onto an attacker's comment (see the note at that lookup).
 #
 # Job permissions are minimized (`issues: read`, `pull-requests: write`) against
 # a top-level `permissions: {}`.
@@ -85,23 +89,34 @@ jobs:
             // with the job reporting success (#2412).
             const pattern = /\b(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?|part\s+of)\s+#(\d+)/gi;
             const issueNumbers = [];
+            // Every reference costs one API call and the body is untrusted, so at
+            // most MAX_REFS distinct references are looked up.
+            const MAX_REFS = 25;
+            let truncated = false;
             let match;
             while ((match = pattern.exec(body)) !== null) {
               const num = parseInt(match[1], 10);
-              if (!issueNumbers.includes(num)) {
-                issueNumbers.push(num);
+              if (issueNumbers.includes(num)) continue;
+              if (issueNumbers.length === MAX_REFS) {
+                truncated = true;
+                core.warning(`The PR body references more than ${MAX_REFS} issues; only the first ${MAX_REFS} are used.`);
+                break;
               }
+              issueNumbers.push(num);
             }
 
-            if (issueNumbers.length === 0) {
-              core.info('No issue references found in PR body, skipping');
-              return;
-            }
+            // No early return when nothing is referenced: a PR edited down to no
+            // references must still get a stale conflict warning removed below.
+            core.info(issueNumbers.length === 0
+              ? 'No issue references found in PR body'
+              : `Found issue references: ${issueNumbers.map(n => '#' + n).join(', ')}`);
 
-            core.info(`Found issue references: ${issueNumbers.map(n => '#' + n).join(', ')}`);
-
-            // Look up milestones for each referenced issue
+            // Look up milestones for each referenced issue. A number that does not
+            // exist (404) has no milestone. Any other read failure leaves the set of
+            // milestones unknown, so the conflict warning below is left alone rather
+            // than judged on part of the references.
             const milestones = new Map();
+            let incomplete = truncated; // a cut-short list is not the whole set
             for (const num of issueNumbers) {
               try {
                 const issue = await github.rest.issues.get({
@@ -121,21 +136,71 @@ jobs:
                   milestones.get(ms.number).issues.push(num);
                 }
               } catch (err) {
+                if (err.status !== 404) incomplete = true;
                 core.warning(`Could not fetch issue #${num}: ${err.message}`);
               }
-            }
-
-            if (milestones.size === 0) {
-              core.info('No referenced issues have milestones, skipping');
-              return;
             }
 
             const entries = Array.from(milestones.values());
             const target = entries[0];
 
+            // Keep the conflict warning in step with the current references on every
+            // run: posted or updated while they span milestones, deleted once they do
+            // not (one milestone, none, or no references), so an edited PR never keeps
+            // a stale warning. The lookup therefore sits outside the size check.
+            const sentinel = '<!-- pr-milestone-conflict -->';
+
+            // Find our existing warning comments: update the first instead of
+            // posting a second one, and delete any extras. All matches are handled,
+            // not only the first, because an older copy of this workflow read only
+            // the first page of comments and could post a duplicate.
+            //
+            // github.paginate, not a bare listComments: the unpaginated call
+            // returns only the first 30 comments, so on a longer thread the
+            // search missed an existing warning and createComment posted a
+            // duplicate -- the exact spam this upsert exists to prevent. Every
+            // other list call in these workflows paginates; this one did not.
+            //
+            // The author filter is a security boundary, not tidiness. The
+            // sentinel is just a string in a comment body, so matching on it
+            // alone let a fork PR author plant it in a comment of their own and
+            // have this privileged updateComment or deleteComment target a
+            // comment they chose. A comment's author cannot be forged, so requiring OUR bot to be
+            // the author closes that. Checked with `type === 'Bot'` as well,
+            // because a human account could in principle be named to collide.
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              per_page: 100,
+            });
+            const notes = comments.filter(c =>
+              c.body &&
+              c.body.includes(sentinel) &&
+              c.user &&
+              c.user.type === 'Bot' &&
+              c.user.login === 'github-actions[bot]'
+            );
+            const [existing, ...extras] = notes;
+
+            // Another run on the same PR may already have deleted a comment: a 404
+            // means it is gone, which is the goal. Any other error still throws.
+            const deleteNote = async (c) => {
+              try {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: c.id,
+                });
+              } catch (err) {
+                if (err.status !== 404) throw err;
+              }
+            };
+
             // Warn if issues reference conflicting milestones (upsert to avoid spam)
-            if (milestones.size > 1) {
-              const sentinel = '<!-- pr-milestone-conflict -->';
+            if (incomplete) {
+              core.warning('A referenced issue could not be read; leaving the conflict warning as it is.');
+            } else if (milestones.size > 1) {
               const list = entries
                 .map(m => `- **${m.title}** (from ${m.issues.map(n => '#' + n).join(', ')})`)
                 .join('\n');
@@ -148,36 +213,6 @@ jobs:
                 `Auto-assigned the milestone from the first match: **${target.title}**.`,
                 'Update manually if this is incorrect.',
               ].join('\n');
-
-              // Find our existing warning comment to update instead of posting a
-              // second one.
-              //
-              // github.paginate, not a bare listComments: the unpaginated call
-              // returns only the first 30 comments, so on a longer thread the
-              // search missed an existing warning and createComment posted a
-              // duplicate -- the exact spam this upsert exists to prevent. Every
-              // other list call in these workflows paginates; this one did not.
-              //
-              // The author filter is a security boundary, not tidiness. The
-              // sentinel is just a string in a comment body, so matching on it
-              // alone let a fork PR author plant it in a comment of their own and
-              // have this privileged updateComment target a comment they chose.
-              // A comment's author cannot be forged, so requiring OUR bot to be
-              // the author closes that. Checked with `type === 'Bot'` as well,
-              // because a human account could in principle be named to collide.
-              const comments = await github.paginate(github.rest.issues.listComments, {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: pr.number,
-                per_page: 100,
-              });
-              const existing = comments.find(c =>
-                c.body &&
-                c.body.includes(sentinel) &&
-                c.user &&
-                c.user.type === 'Bot' &&
-                c.user.login === 'github-actions[bot]'
-              );
 
               if (existing) {
                 await github.rest.issues.updateComment({
@@ -196,7 +231,22 @@ jobs:
                 });
               }
 
+              for (const c of extras) {
+                await deleteNote(c);
+              }
+
               core.warning(`Conflicting milestones detected, assigned "${target.title}"`);
+            } else if (notes.length > 0) {
+              // The references no longer span milestones: remove every stale warning.
+              for (const c of notes) {
+                await deleteNote(c);
+              }
+              core.info('Deleted the stale conflict warning comment');
+            }
+
+            if (milestones.size === 0) {
+              core.info('No referenced issues have milestones, nothing to assign');
+              return;
             }
 
             // Only auto-assign when the PR has no milestone; respect manual choices
