@@ -244,6 +244,13 @@ jobs:
               core.info('Deleted the stale conflict warning comment');
             }
 
+            // With part of the references unread, the first one's milestone is
+            // unknown, so assigning from the rest could pick the wrong milestone.
+            if (incomplete) {
+              core.warning('Not assigning a milestone: not every referenced issue was read.');
+              return;
+            }
+
             if (milestones.size === 0) {
               core.info('No referenced issues have milestones, nothing to assign');
               return;
