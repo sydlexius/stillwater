@@ -75,6 +75,11 @@ jobs:
   require-label:
     name: Require release label
     runs-on: ubuntu-latest
+    # One run per PR at a time; a newer event cancels an older run, so an
+    # out-of-date run cannot recreate or overwrite what a newer one decided.
+    concurrency:
+      group: pr-labels-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     permissions:
       issues: read
       pull-requests: write
